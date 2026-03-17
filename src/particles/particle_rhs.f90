@@ -1,0 +1,1003 @@
+!==================================================================================================================================
+! Copyright (c) 2010 - 2018 Prof. Claus-Dieter Munz and Prof. Stefanos Fasoulas
+!
+! This file is part of PICLas (piclas.boltzplatz.eu/piclas/piclas). PICLas is free software: you can redistribute it and/or modify
+! it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3
+! of the License, or (at your option) any later version.
+!
+! PICLas is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+! of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License v3.0 for more details.
+!
+! You should have received a copy of the GNU General Public License along with PICLas. If not, see <http://www.gnu.org/licenses/>.
+!==================================================================================================================================
+#include "piclas.h"
+
+MODULE MOD_part_RHS
+!===================================================================================================================================
+! Subroutine to compute the particle right hand side, therefore the acceleration due to the Lorentz-force with
+! respect to the Lorentz factor
+!===================================================================================================================================
+IMPLICIT NONE
+PRIVATE
+
+INTERFACE CalcPartRHS
+  MODULE PROCEDURE CalcPartRHS
+END INTERFACE
+
+INTERFACE CalcPartRHSSingleParticle
+  MODULE PROCEDURE CalcPartRHSSingleParticle
+END INTERFACE
+
+INTERFACE PartRHS
+  PROCEDURE PartRHS
+END INTERFACE
+
+!----------------------------------------------------------------------------------------------------------------------------------
+PUBLIC :: CalcPartRHS
+PUBLIC :: PartVeloToGammaVelo, GammaVeloToPartVelo
+PUBLIC :: PartRHS
+PUBLIC :: CalcPartRHSSingleParticle
+PUBLIC :: CalcPartRHSRotRefFrame
+PUBLIC :: CalcPartPosInRotRef
+PUBLIC :: PushGranularSpecies
+!----------------------------------------------------------------------------------------------------------------------------------
+
+ABSTRACT INTERFACE
+  SUBROUTINE PartRHSInterface(PartID,FieldAtParticle,Push,LorentzFacInvIn)
+    INTEGER,INTENT(IN)              :: PartID          ! Particle ID
+    REAL,DIMENSION(1:6),INTENT(IN)  :: FieldAtParticle ! Electric and magnetic fields E, B at the position of the particle
+    REAL,DIMENSION(1:3),INTENT(OUT) :: Push            ! dP/dt: acceleration of the particle (change of momentum)
+    REAL,INTENT(IN),OPTIONAL        :: LorentzFacInvIn ! Reciprocal Lorentz factor
+  END SUBROUTINE
+END INTERFACE
+
+PROCEDURE(PartRHSInterface),POINTER :: PartRHS    !< pointer defining the standard inner Riemann solver
+
+INTEGER,PARAMETER      :: PRM_PART_RHS_NR  = 0   ! non-relativistic
+INTEGER,PARAMETER      :: PRM_PART_RHS_R   = 1   ! relativistic
+INTEGER,PARAMETER      :: PRM_PART_RHS_RN  = 3   ! relativistic-new
+INTEGER,PARAMETER      :: PRM_PART_RHS_REM = 31  ! relativistic-EM (electromagnetic)
+INTEGER,PARAMETER      :: PRM_PART_RHS_RM  = 5   ! relativistic, momentum-based
+INTEGER,PARAMETER      :: PRM_PART_RHS_CEM = 9   ! constant-EM (acceleration due to an electro-magnetic field that is constant)
+
+
+INTERFACE InitPartRHS
+  MODULE PROCEDURE InitPartRHS
+END INTERFACE
+
+PUBLIC :: InitPartRHS
+!==================================================================================================================================
+
+PUBLIC :: DefineParametersParticleRHS
+CONTAINS
+
+
+!==================================================================================================================================
+!> Define parameters
+!==================================================================================================================================
+SUBROUTINE DefineParametersParticleRHS()
+! MODULES
+USE MOD_Globals
+USE MOD_ReadInTools ,ONLY: prms,addStrListEntry
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------
+! INPUT / OUTPUT VARIABLES
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+!==================================================================================================================================
+CALL prms%SetSection("Particle RHS")
+CALL prms%CreateIntFromStringOption('Part-LorentzType', "Lorentz force calculation for charged particles: "//&
+                                                        "non-relativistic ("//TRIM(int2strf(PRM_PART_RHS_NR))//"), "//&
+                                                        "relativistic ("//TRIM(int2strf(PRM_PART_RHS_R))//"), "//&
+                                                        "relativistic-new ("//TRIM(int2strf(PRM_PART_RHS_RN))//"), "//&
+                                                        "relativistic-EM ("//TRIM(int2strf(PRM_PART_RHS_REM))//"), "//&
+                                                        "relativistic-momentum ("//TRIM(int2strf(PRM_PART_RHS_RM))//"), "//&
+                                                        "constant-EM ("//TRIM(int2strf(PRM_PART_RHS_CEM))//")", "non-relativistic")
+CALL addStrListEntry('Part-LorentzType' , 'non-relativistic'      , PRM_PART_RHS_NR)
+CALL addStrListEntry('Part-LorentzType' , 'relativistic'          , PRM_PART_RHS_R)
+CALL addStrListEntry('Part-LorentzType' , 'relativistic-new'      , PRM_PART_RHS_RN)
+CALL addStrListEntry('Part-LorentzType' , 'relativistic-EM'       , PRM_PART_RHS_REM)
+CALL addStrListEntry('Part-LorentzType' , 'relativistic-momentum' , PRM_PART_RHS_RM)
+CALL addStrListEntry('Part-LorentzType' , 'constant-EM'           , PRM_PART_RHS_CEM)
+END SUBROUTINE DefineParametersParticleRHS
+
+
+!==================================================================================================================================!
+!> Initialize particle RHS functions
+!==================================================================================================================================!
+SUBROUTINE InitPartRHS()
+! MODULES
+USE MOD_Globals
+USE MOD_ReadInTools   ,ONLY: GETINTFROMSTR
+USE MOD_Particle_Vars ,ONLY: PartLorentzType
+!----------------------------------------------------------------------------------------------------------------------------------
+IMPLICIT NONE
+! INPUT / OUTPUT VARIABLES
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                    :: dummy(1:3)
+!==================================================================================================================================
+PartLorentzType = GETINTFROMSTR('Part-LorentzType')
+SELECT CASE(PartLorentzType)
+CASE(PRM_PART_RHS_NR) ! 0
+  PartRHS => PartRHS_NR
+CASE(PRM_PART_RHS_R) ! 1
+  PartRHS => PartRHS_R
+CASE(PRM_PART_RHS_RN) ! 3
+  PartRHS => PartRHS_RN
+CASE(PRM_PART_RHS_REM) ! 31
+  PartRHS => PartRHS_REM
+CASE(PRM_PART_RHS_RM) ! 5
+  PartRHS => PartRHS_RM
+CASE(PRM_PART_RHS_CEM) ! 9
+  PartRHS => PartRHS_CEM
+CASE DEFAULT
+  CALL CollectiveStop(__STAMP__,'Part-LorentzType not defined!')
+END SELECT
+
+! Suppress compiler warning
+RETURN
+CALL PartRHS_NR(0,(/0.,0.,0.,0.,0.,0./),dummy)
+CALL PartRHS_R(0,(/0.,0.,0.,0.,0.,0./),dummy)
+CALL PartRHS_RN(0,(/0.,0.,0.,0.,0.,0./),dummy)
+CALL PartRHS_REM(0,(/0.,0.,0.,0.,0.,0./),dummy)
+CALL PartRHS_RM(0,(/0.,0.,0.,0.,0.,0./),dummy)
+CALL PartRHS_CEM(0,(/0.,0.,0.,0.,0.,0./),dummy)
+END SUBROUTINE InitPartRHS
+
+
+SUBROUTINE CalcPartRHS()
+!===================================================================================================================================
+! Computes the acceleration from the Lorentz force with respect to the species data and velocity
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals
+USE MOD_Particle_Vars         ,ONLY: PDM,Pt
+USE MOD_PICInterpolation_Vars ,ONLY: FieldAtParticle
+USE MOD_Part_Tools            ,ONLY: isPushParticle
+!----------------------------------------------------------------------------------------------------------------------------------
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLE
+INTEGER                          :: iPart
+!===================================================================================================================================
+! Loop all particles and call particle right-hand-side calculation
+DO iPart = 1,PDM%ParticleVecLength
+  ! Particle is inside and not a neutral particle
+  IF(PDM%ParticleInside(iPart))THEN
+     IF(isPushParticle(iPart))THEN
+        CALL PartRHS(iPart,FieldAtParticle(1:6,iPart),Pt(1:3,iPart))
+     END IF ! isPushParticle(iPart)
+  END IF ! PDM%ParticleInside(iPart)
+  ! Pt(:,iPart)=0.
+END DO
+END SUBROUTINE CalcPartRHS
+
+
+SUBROUTINE CalcPartRHSSingleParticle(iPart)
+!===================================================================================================================================
+! Computes the acceleration from the Lorentz force with respect to the species data and velocity
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals
+USE MOD_Particle_Vars         ,ONLY: PDM,Pt
+USE MOD_PICInterpolation_Vars ,ONLY: FieldAtParticle
+!----------------------------------------------------------------------------------------------------------------------------------
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLE
+INTEGER,INTENT(IN)            :: iPart
+!===================================================================================================================================
+! Particle is inside and not a neutral particle
+IF(PDM%ParticleInside(iPart))THEN
+  CALL PartRHS(iPart,FieldAtParticle(1:6,iPart),Pt(1:3,iPart))
+  RETURN
+END IF ! PDM%ParticleInside(iPart)
+Pt(:,iPart)=0.
+END SUBROUTINE CalcPartRHSSingleParticle
+
+
+PPURE SUBROUTINE PartRHS_NR(PartID,FieldAtParticle,Pt,LorentzFacInvIn)
+!===================================================================================================================================
+! 'non-relativistic'
+! Particle Right-Hand-Side: Non-relativistic push
+! Former FUNCTION NON_RELATIVISTIC_PUSH
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals,           ONLY : cross
+USE MOD_Particle_Vars,     ONLY : Species, PartSpecies
+#if (PP_nVar==8)
+USE MOD_Particle_Vars,     ONLY : PartState
+#endif
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN)       :: PartID
+REAL,INTENT(IN)          :: FieldAtParticle(1:6)
+REAL,INTENT(IN),OPTIONAL :: LorentzFacInvIn
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(OUT)    :: Pt(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                :: E(1:3),qmt
+#if (PP_nVar==8)
+REAL                :: B(1:3),Velo(3)
+#endif
+!===================================================================================================================================
+qmt = Species(PartSpecies(PartID))%ChargeIC/Species(PartSpecies(PartID))%MassIC
+
+E(1:3) = FieldAtParticle(1:3) * qmt
+#if (PP_nVar==8)
+B(1:3) = FieldAtParticle(4:6) * qmt
+#endif
+! Calc Lorentz forces in x, y, z direction:
+#if (PP_nVar==8)
+Velo(1) = PartState(4,PartID)
+Velo(2) = PartState(5,PartID)
+Velo(3) = PartState(6,PartID)
+Pt = E + CROSS(Velo,B)
+#else
+Pt(1) = E(1)
+Pt(2) = E(2)
+Pt(3) = E(3)
+#endif
+
+! Suppress compiler warning
+RETURN
+qmt=LorentzFacInvIn ! dummy statement
+END SUBROUTINE PartRHS_NR
+
+
+SUBROUTINE PartRHS_R(PartID,FieldAtParticle,Pt,LorentzFacInvIn)
+!===================================================================================================================================
+! 'relativistic'
+! Particle Right-Hand-Side: relativistic push (old slow function)
+! Former FUNCTION SLOW_RELATIVISTIC_PUSH
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals       ,ONLY: abort,DOTPRODUCT
+#if USE_MPI
+USE MOD_Globals       ,ONLY: MyRank
+#endif
+USE MOD_Particle_Vars ,ONLY: PartState, Species, PartSpecies
+USE MOD_Globals_Vars  ,ONLY: c2_inv, c2
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN)       :: PartID
+REAL,INTENT(IN)          :: FieldAtParticle(1:6)
+REAL,INTENT(IN),OPTIONAL :: LorentzFacInvIn
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(OUT)    :: Pt(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                :: velosq, LorentzFac,qmt
+REAL                :: E(1:3)
+#if (PP_nVar==8)
+REAL                :: B(1:3)
+#endif
+!===================================================================================================================================
+velosq = DOTPRODUCT(PartState(4:6,PartID))
+
+IF(velosq.GT.c2) THEN
+ IPWRITE(*,*) ' Particle is faster than the speed of light (v_x^2 + v_y^2 + v_z^2 > c^2)'
+ IPWRITE(*,*) ' Species-ID',PartSpecies(PartID)
+  CALL abort(&
+  __STAMP__&
+  ,'Particle is faster than the speed of light. Maybe reducing the time step would help. Particle-Nr., velosq/c2:',PartID,velosq*c2_inv)
+END IF
+
+! MPF in ChargeIC and MassIC cancels out.
+LorentzFac = (SQRT(1.0 - velosq * c2_inv))
+qmt = Species(PartSpecies(PartID))%ChargeIC/Species(PartSpecies(PartID))%MassIC * LorentzFac
+E(1:3) = FieldAtParticle(1:3) * qmt
+#if (PP_nVar==8)
+B(1:3) = FieldAtParticle(4:6) * qmt
+#endif
+! Calc Lorentz forces in x, y, z direction:
+#if (PP_nVar==8)
+Pt(1) = E(1) + PartState(5,PartID) * B(3) - PartState(6,PartID) * B(2)
+Pt(2) = E(2) + PartState(6,PartID) * B(1) - PartState(4,PartID) * B(3)
+Pt(3) = E(3) + PartState(4,PartID) * B(2) - PartState(5,PartID) * B(1)
+#else
+Pt(1) = E(1)
+Pt(2) = E(2)
+Pt(3) = E(3)
+#endif
+
+! Suppress compiler warning
+RETURN
+qmt=LorentzFacInvIn ! dummy statement
+END SUBROUTINE PartRHS_R
+
+
+SUBROUTINE PartRHS_RN(PartID,FieldAtParticle,Pt,LorentzFacInvIn)
+!===================================================================================================================================
+! 'relativistic-new'
+! Particle Right-Hand-Side: relativistic push (old fast function)
+! Former FUNCTION FAST_RELATIVISTIC_PUSH
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals       ,ONLY: abort
+#if USE_MPI
+USE MOD_Globals       ,ONLY: MyRank
+#endif
+USE MOD_Particle_Vars ,ONLY: PartState, Species, PartSpecies
+USE MOD_Globals_Vars  ,ONLY: c2_inv, c2
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN)       :: PartID
+REAL,INTENT(IN)          :: FieldAtParticle(1:6)
+REAL,INTENT(IN),OPTIONAL :: LorentzFacInvIn
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(OUT)    :: Pt(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                :: velosq, LorentzFac,qmt
+REAL                :: E(1:3)
+#if (PP_nVar==8)
+REAL                :: B(1:3)
+#endif
+REAL                :: LorentzFac2,LorentzFac3, v1s,v2s,v3s, Vinv(3,3), v1,v2,v3, normfac
+!===================================================================================================================================
+! required helps
+v1  = PartState(4,PartID)
+v2  = PartState(5,PartID)
+v3  = PartState(6,PartID)
+
+v1s = v1*v1
+v2s = v2*v2
+v3s = v3*v3
+velosq = v1s+v2s+v3s
+IF(velosq.GT.c2) THEN
+ IPWRITE(*,*) ' Particle is faster than the speed of light (v_x^2 + v_y^2 + v_z^2 > c^2)'
+ IPWRITE(*,*) ' Species-ID',PartSpecies(PartID)
+ IPWRITE(*,*) ' x=',PartState(1,PartID),' y=',PartState(2,PartID),' z=',PartState(3,PartID)
+ CALL abort(&
+  __STAMP__&
+  ,'Particle is faster than the speed of light. Particle-Nr., velosq/c2:',PartID,velosq*c2_inv)
+END IF
+
+LorentzFac=SQRT(1.0 - velosq*c2_inv)
+LorentzFac2=LorentzFac*LorentzFac
+LorentzFac3=LorentzFac2*LorentzFac
+normfac=1.0/(c2*LorentzFac2 + velosq)
+! define inverted matrix
+Vinv(1,1) = (c2*LorentzFac3 + (v2s+v3s)*LorentzFac)*normfac
+Vinv(1,2) =-(v1*v2*LorentzFac)*normfac
+Vinv(1,3) =-(v1*v3*LorentzFac)*normfac
+Vinv(2,1) = Vinv(1,2)
+Vinv(2,2) = (c2*LorentzFac3 + (v1s+v3s)*LorentzFac)*normfac
+Vinv(2,3) =-(v2*v3*LorentzFac)*normfac
+Vinv(3,1) = Vinv(1,3)
+Vinv(3,2) = Vinv(2,3)
+Vinv(3,3) = (c2*LorentzFac3 + (v1s+v2s)*LorentzFac)*normfac
+
+qmt = Species(PartSpecies(PartID))%ChargeIC/Species(PartSpecies(PartID))%MassIC
+
+E(1:3) = FieldAtParticle(1:3) * qmt
+#if (PP_nVar==8)
+B(1:3) = FieldAtParticle(4:6) * qmt
+#endif
+! Calc Lorentz forces in x, y, z direction:
+#if (PP_nVar==8)
+Pt(1) = E(1) + PartState(5,PartID) * B(3) - PartState(6,PartID) * B(2)
+Pt(2) = E(2) + PartState(6,PartID) * B(1) - PartState(4,PartID) * B(3)
+Pt(3) = E(3) + PartState(4,PartID) * B(2) - PartState(5,PartID) * B(1)
+#else
+Pt(1) = E(1)
+Pt(2) = E(2)
+Pt(3) = E(3)
+#endif
+
+Pt = MATMUL(Vinv,Pt)
+
+! Suppress compiler warning
+RETURN
+qmt=LorentzFacInvIn ! dummy statement
+END SUBROUTINE PartRHS_RN
+
+
+SUBROUTINE PartRHS_REM(PartID,FieldAtParticle,Pt,LorentzFacInvIn)
+!===================================================================================================================================
+! 'relativistic-EM' (electromagnetic)
+! Particle Right-Hand-Side: relativistic push (old fast function)
+! Former FUNCTION ACCELERATION_RELATIVISTIC_PUSH
+!
+! Returns the relativistic acceleration a = dv/dt
+! see W. Rindler, Relativity: Special, General, and Cosmological, 2006, Oxford University Press, New York, p.125
+!
+! CAUTION: This routines is used for HDG in combination with magnetic (external) fields
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals       ,ONLY: abort
+#if USE_MPI
+USE MOD_Globals       ,ONLY: MyRank
+#endif
+USE MOD_Particle_Vars ,ONLY: PartState, Species, PartSpecies
+USE MOD_Globals_Vars  ,ONLY: c2_inv, c2
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+! INPUT VARIABLES
+INTEGER,INTENT(IN)       :: PartID
+REAL,INTENT(IN)          :: FieldAtParticle(1:6)
+REAL,INTENT(IN),OPTIONAL :: LorentzFacInvIn
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(OUT)    :: Pt(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                :: velosq,F(1:3)
+!===================================================================================================================================
+ASSOCIATE (&
+      qmt => Species(PartSpecies(PartID))%ChargeIC/Species(PartSpecies(PartID))%MassIC ,& ! charge/m_0
+      v1  => PartState(4,PartID) ,& ! Velocity in x
+      v2  => PartState(5,PartID) ,& ! Velocity in y
+      v3  => PartState(6,PartID) ,& ! Velocity in z
+      E1  => FieldAtParticle(1)  ,& ! Electric field in x
+      E2  => FieldAtParticle(2)  ,& ! Electric field in y
+      E3  => FieldAtParticle(3)  ,& ! Electric field in z
+      B1  => FieldAtParticle(4)  ,& ! Magnetic field in x
+      B2  => FieldAtParticle(5)  ,& ! Magnetic field in y
+      B3  => FieldAtParticle(6)   & ! Magnetic field in z
+      )
+
+  ! Check squared velocity with c^2
+  velosq = v1*v1 + v2*v2 + v3*v3
+  IF(velosq.GT.c2) THEN
+    IPWRITE(*,*) ' Particle is faster than the speed of light (v_x^2 + v_y^2 + v_z^2 > c^2)'
+    IPWRITE(*,*) ' Species-ID',PartSpecies(PartID)
+    IPWRITE(*,*) ' x=',PartState(1,PartID),' y=',PartState(2,PartID),' z=',PartState(3,PartID)
+    CALL abort(__STAMP__,'Particle is faster than the speed of light. Particle-Nr., velosq/c2:',PartID,velosq*c2_inv)
+  END IF
+  ASSOCIATE ( gammas => SQRT(1.0 - velosq*c2_inv) ) ! Inverse of Lorentz factor
+
+    F(1) = E1 + v2 * B3 - v3 * B2
+    F(2) = E2 + v3 * B1 - v1 * B3
+    F(3) = E3 + v1 * B2 - v2 * B1
+
+    ! Calculate the acceleration
+    Pt = gammas * qmt * ( F - DOT_PRODUCT(F,PartState(4:6,PartID))*PartState(4:6,PartID)*c2_inv )
+  END ASSOCIATE
+END ASSOCIATE
+
+! Suppress compiler warning
+RETURN
+velosq=LorentzFacInvIn ! dummy statement
+END SUBROUTINE PartRHS_REM
+
+
+SUBROUTINE PartRHS_RM(PartID,FieldAtParticle,Pt,LorentzFacInvIn)
+!===================================================================================================================================
+! 'relativistic-momentum' (electromagnetic)
+! Particle Right-Hand-Side: relativistic push (old fast function)
+! Former FUNCTION RELATIVISTIC_PUSH
+!
+! full relativistic push in case that the particle velocity*gamma is updated in time
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals       ,ONLY: cross,DOTPRODUCT
+USE MOD_Particle_Vars ,ONLY: PartState, Species, PartSpecies
+USE MOD_Globals_Vars  ,ONLY: c2_inv
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN)       :: PartID
+REAL,INTENT(IN)          :: FieldAtParticle(1:6)
+REAL,INTENT(IN),OPTIONAL :: LorentzFacInvIn
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(OUT)         :: Pt(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                :: LorentzFacInv,qmt
+REAL                :: E(1:3)
+#if (PP_nVar==8)
+REAL                :: B(1:3),Velo(3)
+#endif
+!===================================================================================================================================
+! Calculate Lorentz factor gamma -> 1/gamma
+IF(PRESENT(LorentzFacInvIn))THEN
+  LorentzFacInv=LorentzFacInvIn
+ELSE
+  LorentzFacInv=1.0+DOTPRODUCT(PartState(4:6,PartID))*c2_inv
+  LorentzFacInv=1.0/SQRT(LorentzFacInv)
+END IF
+
+qmt = Species(PartSpecies(PartID))%ChargeIC/Species(PartSpecies(PartID))%MassIC
+
+E(1:3) = FieldAtParticle(1:3) * qmt
+#if (PP_nVar==8)
+B(1:3) = FieldAtParticle(4:6) * qmt
+#endif
+! Calc Lorentz forces in x, y, z direction:
+#if (PP_nVar==8)
+Velo(1) = LorentzFacInv*PartState(4,PartID)
+Velo(2) = LorentzFacInv*PartState(5,PartID)
+Velo(3) = LorentzFacInv*PartState(6,PartID)
+Pt = E + CROSS(Velo,B)
+#else
+Pt(1) = E(1)
+Pt(2) = E(2)
+Pt(3) = E(3)
+#endif
+
+END SUBROUTINE PartRHS_RM
+
+
+SUBROUTINE PartRHS_CEM(PartID,FieldAtParticle,Pt,LorentzFacInvIn)
+!===================================================================================================================================
+! 'constant-EM'
+!
+! A constant electromagnetic field E = (/Ex, Ey, Ez/) = const. and B = (/Bx, By, Bz/) = const. is used for all charged
+! particles (simply uses the "externalField" variable)
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals               ,ONLY: abort
+USE MOD_Particle_Vars         ,ONLY: PartState, Species, PartSpecies
+USE MOD_Globals_Vars          ,ONLY: c2_inv,c2
+#if USE_MPI
+USE MOD_Globals               ,ONLY: MyRank
+#endif
+USE MOD_PICInterpolation_Vars ,ONLY: externalField
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN)       :: PartID
+REAL,INTENT(IN)          :: FieldAtParticle(1:6)
+REAL,INTENT(IN),OPTIONAL :: LorentzFacInvIn
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(OUT)         :: Pt(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                :: velosq,F(1:3)
+!===================================================================================================================================
+ASSOCIATE (&
+      qmt => Species(PartSpecies(PartID))%ChargeIC/Species(PartSpecies(PartID))%MassIC ,& ! charge/m_0
+      vx  => PartState(4,PartID) ,& ! Velocity in x
+      vy  => PartState(5,PartID) ,& ! Velocity in y
+      vz  => PartState(6,PartID) ,& ! Velocity in z
+      E1  => externalField(1)    ,& ! Electric field in x
+      E2  => externalField(2)    ,& ! Electric field in y
+      E3  => externalField(3)    ,& ! Electric field in z
+      B1  => externalField(4)    ,& ! Magnetic field in x
+      B2  => externalField(5)    ,& ! Magnetic field in y
+      B3  => externalField(6)     & ! Magnetic field in z
+      )
+
+  ! Check squared velocity with c^2
+  velosq = vx*vx + vy*vy + vz*vz
+  IF(velosq.GT.c2) THEN
+    IPWRITE(*,*) ' Particle is faster than the speed of light (v_x^2 + v_y^2 + v_z^2 > c^2)'
+    IPWRITE(*,*) ' Species-ID',PartSpecies(PartID)
+    IPWRITE(*,*) ' x=',PartState(1,PartID),' y=',PartState(2,PartID),' z=',PartState(3,PartID)
+    CALL abort(&
+        __STAMP__&
+        ,'Particle is faster than the speed of light. Particle-Nr., velosq/c2:',PartID,velosq*c2_inv)
+  END IF
+  ASSOCIATE ( gammas => SQRT(1.0-velosq*c2_inv) ) ! Inverse of Lorentz factor
+
+    F(1) = E1 + vy * B3 - vz * B2
+    F(2) = E2 + vz * B1 - vx * B3
+    F(3) = E3 + vx * B2 - vy * B1
+
+    ! Calculate the acceleration
+    Pt = gammas * qmt * ( F - DOT_PRODUCT(F,PartState(4:6,PartID))*PartState(4:6,PartID)*c2_inv )
+  END ASSOCIATE
+END ASSOCIATE
+
+! Suppress compiler warning
+RETURN
+velosq=LorentzFacInvIn ! dummy statement
+velosq=FieldAtParticle(1) ! dummy statement
+
+END SUBROUTINE PartRHS_CEM
+
+
+PPURE FUNCTION CalcPartRHSRotRefFrame(PosRotRef,VeloRotRef)
+!===================================================================================================================================
+!> Calculate the acceleration in the rotational frame of reference due to the position and velocity
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals       ,ONLY: CROSS
+USE MOD_Particle_Vars ,ONLY: RotRefFrameOmega
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+REAL,INTENT(IN)          :: PosRotRef(1:3), VeloRotRef(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL                     :: CalcPartRHSRotRefFrame(1:3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+!===================================================================================================================================
+
+IF(ALL(ALMOSTZERO(VeloRotRef(1:3)))) THEN
+  CalcPartRHSRotRefFrame(1:3) = - CROSS(RotRefFrameOmega(1:3),CROSS(RotRefFrameOmega(1:3),PosRotRef(1:3)))
+ELSE
+  CalcPartRHSRotRefFrame(1:3) = - CROSS(RotRefFrameOmega(1:3),CROSS(RotRefFrameOmega(1:3),PosRotRef(1:3))) &
+                                - 2.*CROSS(RotRefFrameOmega(1:3),VeloRotRef(1:3))
+END IF
+
+END FUNCTION CalcPartRHSRotRefFrame
+
+
+SUBROUTINE GammaVeloToPartVelo(iPart)
+!===================================================================================================================================
+! map the gamma*velocity to velocity
+!===================================================================================================================================
+! MODULES                                                                                                                          !
+!----------------------------------------------------------------------------------------------------------------------------------!
+USE MOD_Globals
+USE MOD_Particle_Vars ,ONLY: PartState
+USE MOD_Globals_Vars  ,ONLY: c2_inv
+!----------------------------------------------------------------------------------------------------------------------------------!
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------!
+! INPUT VARIABLES
+INTEGER,INTENT(IN)               :: iPart
+!----------------------------------------------------------------------------------------------------------------------------------!
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                             :: LorentzFacInv
+!===================================================================================================================================
+
+LorentzFacInv=1.0+DOTPRODUCT(PartState(4:6,iPart))*c2_inv
+LorentzFacInv=1.0/SQRT(LorentzFacInv)
+PartState(4:6,iPart) = LorentzFacInv*PartState(4:6,iPart)
+
+END SUBROUTINE GammaVeloToPartVelo
+
+
+SUBROUTINE PartVeloToGammaVelo(iPart)
+!===================================================================================================================================
+! map the particle velocity to gamma*velocity
+!===================================================================================================================================
+! MODULES                                                                                                                          !
+!----------------------------------------------------------------------------------------------------------------------------------!
+USE MOD_Globals
+USE MOD_Particle_Vars ,ONLY: PartState
+USE MOD_Globals_Vars  ,ONLY: c2_inv
+!----------------------------------------------------------------------------------------------------------------------------------!
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------!
+! INPUT VARIABLES
+INTEGER,INTENT(IN)               :: iPart
+!----------------------------------------------------------------------------------------------------------------------------------!
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                             :: LorentzFac
+!===================================================================================================================================
+
+LorentzFac=1.0-DOTPRODUCT(PartState(4:6,iPart))*c2_inv
+LorentzFac=1.0/SQRT(LorentzFac)
+PartState(4:6,iPart) = LorentzFac*PartState(4:6,iPart)
+
+END SUBROUTINE PartVeloToGammaVelo
+
+
+SUBROUTINE CalcPartPosInRotRef(iPart, RotTimestep)
+!===================================================================================================================================
+!> Particle push in rotational frame of reference using the midpoint method
+!===================================================================================================================================
+! MODULES
+USE MOD_Particle_Vars         ,ONLY: PartState, InRotRefFrame, PartVeloRotRef
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)           :: iPart
+REAL, INTENT(IN)              :: RotTimestep
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                          :: Pt_local(1:3), Pt_local_old(1:3), VeloRotRef_half(1:3), PartState_half(1:3)
+!===================================================================================================================================
+IF(InRotRefFrame(iPart)) THEN
+  ! Midpoint method
+  ! calculate the acceleration (force / mass) at the current time step
+  Pt_local_old(1:3) = CalcPartRHSRotRefFrame(PartState(1:3,iPart), PartVeloRotRef(1:3,iPart))
+  ! estimate the midpoint velocity in the rotational frame
+  VeloRotRef_half(1:3) = PartVeloRotRef(1:3,iPart) + 0.5*Pt_local_old(1:3)*RotTimestep
+  ! estimate the midpoint position
+  PartState_half(1:3) = PartState(1:3,iPart) + 0.5*PartVeloRotRef(1:3,iPart)*RotTimestep
+  ! calculate the acceleration (force / mass) at the midpoint
+  Pt_local(1:3) = CalcPartRHSRotRefFrame(PartState_half(1:3), VeloRotRef_half(1:3))
+  ! update the position using the midpoint velocity in the rotational frame
+  PartState(1:3,iPart) = PartState(1:3,iPart) + VeloRotRef_half(1:3)*RotTimestep
+  ! update the velocity in the rotational frame using the midpoint acceleration
+  PartVeloRotRef(1:3,iPart) = PartVeloRotRef(1:3,iPart) + Pt_local(1:3)*RotTimestep
+ELSE
+  PartState(1:3,iPart) = PartState(1:3,iPart) + PartState(4:6,iPart) * RotTimestep
+END IF
+
+END SUBROUTINE CalcPartPosInRotRef
+
+
+SUBROUTINE PushGranularSpecies()
+!===================================================================================================================================
+! Routine for the calculation of the new velocity and position of granular species
+!===================================================================================================================================
+! MODULES
+USE MOD_Particle_Vars           ,ONLY: PEM, BGGValueForGranularSpec, UseVarTimeStep, PartTimeStep, VarTimeStep
+USE MOD_DSMC_Vars               ,ONLY: BGGas
+USE MOD_Mesh_Vars               ,ONLY: nElems,offSetElem
+USE MOD_Particle_Vars           ,ONLY: Species, PartSpecies
+USE MOD_Particle_Mesh_Vars      ,ONLY: ElemVolume_Shared
+USE MOD_Mesh_Tools              ,ONLY: GetCNElemID
+USE MOD_Part_Tools              ,ONLY: CalcVelocity_maxwell_particle, CalcERot_particle
+USE MOD_TimeDisc_Vars           ,ONLY: dt
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER                     :: iElem, iLoop, iPart, nPart, BGGSpecID, CNElemID
+LOGICAL                     :: GranularSpecInside
+REAL                        :: ElemVolume, dtVar
+!===================================================================================================================================
+DO iElem = 1, nElems ! element/cell main loop
+  GranularSpecInside = .FALSE.
+  ! check: at least one granular particle is within the cell
+  iPart = PEM%pStart(iElem)
+  nPart = PEM%pNumber(iElem)
+  DO iLoop = 1, nPart
+    IF(Species(PartSpecies(iPart))%InterID.EQ.100) THEN
+      GranularSpecInside = .TRUE.
+      EXIT
+    END IF
+    iPart = PEM%pNext(iPart)
+  END DO
+  IF(.NOT.GranularSpecInside) CYCLE  ! no granular particle within the cell
+  ! generate sample of 100 gas particles from background gas distribution
+  IF(BGGas%NumberOfSpecies.GT.0) THEN
+    BGGSpecID = BGGas%MapBGSpecToSpec(1) !  bggSpec==1, currently only 1 BGG Spec is allowed with Granular flow
+    BGGValueForGranularSpec = 0.0   ! reset virtual DSMC particle array
+    CNElemID = GetCNElemID(iElem+offSetElem)
+    ElemVolume = ElemVolume_Shared(CNElemID)
+    IF(BGGas%Distribution(1,7,iElem).GT.0.) THEN ! skip empty cells
+      BGGValueForGranularSpec(5,1:100) = BGGas%Distribution(1,7,iElem) * ElemVolume / 100.  ! W_g
+      DO iPart = 1,100
+        BGGValueForGranularSpec(1:3,iPart) = CalcVelocity_maxwell_particle(BGGSpecID,BGGas%Distribution(1,4:6,iElem)) &  ! velo
+                                          + BGGas%Distribution(1,1:3,iElem)
+        BGGValueForGranularSpec(4,iPart) = CalcERot_particle(BGGSpecID,BGGas%Distribution(1,9,iElem),iPart)  ! e_rot
+      END DO
+    END IF
+  END IF
+  ! Loop over solid particles within the element, calculate force and energy contributions and push/update solid particle
+  iPart = PEM%pStart(iElem)
+  nPart = PEM%pNumber(iElem)
+  DO iLoop = 1, nPart
+    IF(Species(PartSpecies(iPart))%InterID.EQ.100) THEN
+      IF (UseVarTimeStep) THEN
+        dtVar = dt * PartTimeStep(iPart)
+      ELSE
+        dtVar = dt
+      END IF
+      IF(VarTimeStep%UseSpeciesSpecific) dtVar = dtVar * Species(PartSpecies(iPart))%TimeStepFactor
+      CALL CalcPosAndVeloForGranularSpecies(iPart,dtVar)
+    END IF
+    iPart = PEM%pNext(iPart)
+  END DO
+END DO ! iElem Loop
+
+END SUBROUTINE PushGranularSpecies
+
+
+SUBROUTINE CalcPosAndVeloForGranularSpecies(iPart,dtVar)
+!===================================================================================================================================
+! Routine for the calculation of the new velocity and position of granular species using a Leapfrog integration
+! Two influences are currently implemented:
+! 1. Gravity
+! 2. Fluid-particle interaction
+!===================================================================================================================================
+! MODULES
+USE MOD_Particle_Vars ,ONLY: PartState, GravityDir, UseGravitation, SkipGranularUpdate, PEM, LastPartPos
+USE MOD_Globals_Vars  ,ONLY: GravityAccelerationEarth
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)           :: iPart
+REAL, INTENT(IN)              :: dtVar
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                     :: Pt(3)
+!===================================================================================================================================
+! 1. Gravity:
+IF(UseGravitation) THEN
+  Pt(:) = GravityDir(:) * GravityAccelerationEarth
+END IF
+! 2.Fluid-particle interaction
+CALL CalcFlowGranularInteraction(iPart,Pt,dtVar)
+LastPartPos(1:3,iPart)=PartState(1:3,iPart)
+PEM%LastGlobalElemID(iPart)=PEM%GlobalElemID(iPart)
+IF(.NOT.SkipGranularUpdate) THEN
+  ! New velocity and position
+  ! 1. leapfrog step v(t+dt/2):
+  PartState(4:6,iPart) = PartState(4:6,iPart) + 0.5 * dtVar * Pt(1:3)
+  ! 2. leapfrog step r(t+dt):
+  PartState(1:3,iPart) = PartState(1:3,iPart) + dtVar * PartState(4:6,iPart)
+  ! 3. leapfrog step v(t+dt):
+  PartState(4:6,iPart) = PartState(4:6,iPart) + 0.5 * dtVar * Pt(1:3)
+END IF
+
+END SUBROUTINE CalcPosAndVeloForGranularSpecies
+
+
+SUBROUTINE CalcFlowGranularInteraction(iPart,Pt,dtVar)
+!===================================================================================================================================
+! Routine for the Calculation of Fluid-Particle Interaction and Bulk Temperature Update of the Granular Particle
+! This routine calculates the fluid-particle momentum and energy transfer by iterating over all DSMC particles within the same cell
+! as the granular particle. The individual momentum and energy contributions of each DSMC particle are computed
+! and used to update the force on the granular particle and its bulk temperature.
+! For the background gas, values are directly generated from the background gas distribution.
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals
+USE MOD_Particle_Vars           ,ONLY: PartState, PEM, Species, PartSpecies, SkipGranularUpdate,ForceAverage, BGGValueForGranularSpec
+USE MOD_Globals_Vars            ,ONLY: BoltzmannConst, PI
+USE MOD_DSMC_Vars               ,ONLY: SpecDSMC, PartStateIntEn, BGGas
+USE MOD_Particle_Mesh_Vars      ,ONLY: ElemVolume_Shared
+USE MOD_Mesh_Vars               ,ONLY: offSetElem
+USE MOD_Mesh_Tools              ,ONLY: GetCNElemID
+USE MOD_Particle_Analyze_Vars   ,ONLY: CalcGranularDragHeat
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)           :: iPart
+REAL, INTENT(IN)              :: dtVar
+REAL, INTENT(INOUT)           :: Pt(3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER                  :: ElemID, nPart, locPart, iLoop, SpecID, SpecIDSolid, CNElemID
+REAL                     :: Energy, VeloRelAbs, ElemVolume, ERotGas, WeightGas
+REAL                     :: RadiusSolid, TempSolid, VeloRel(3), Force(3)
+!===================================================================================================================================
+Force = 0.0
+Energy = 0.0
+
+ElemID = PEM%LocalElemID(iPart)
+SpecIDSolid = PartSpecies(iPart)
+CNElemID = GetCNElemID(ElemID+offSetElem)
+ElemVolume = ElemVolume_Shared(CNElemID)
+RadiusSolid = SpecDSMC(SpecIDSolid)%dref / 2.0
+TempSolid   = PartStateIntEn( 1,iPart)
+
+IF(BGGas%NumberOfSpecies.GT.0) THEN
+  ! Loop over a fixed number of particles
+  DO iLoop = 1, 100
+    IF(BGGValueForGranularSpec(5,iLoop).LE.0.) CYCLE ! skip empty cells
+    SpecID = BGGas%MapBGSpecToSpec(1)
+    WeightGas     = BGGValueForGranularSpec(5,iLoop)
+    VeloRel(1:3)  = BGGValueForGranularSpec(1:3,iLoop) - PartState(4:6,iPart)
+    VeloRelAbs    = VECNORM3D(VeloRel)
+    ERotGas       = BGGValueForGranularSpec(4,iLoop)
+    ! Force contribution
+    Force(1:3) = Force(1:3) + CalcForceToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,VeloRel)
+    ! Energy contribution
+    Energy = Energy + CalcEnergyToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,ERotGas)
+  END DO
+ELSE
+  nPart = PEM%pNumber(ElemID)
+  locPart = PEM%pStart(ElemID)
+  DO iLoop = 1, nPart
+    SpecID = PartSpecies(locPart)
+    IF(Species(SpecID)%InterID.NE.100) THEN
+      WeightGas     = Species(SpecID)%MacroParticleFactor
+      VeloRel(1:3)  = PartState(4:6,locPart) - PartState(4:6,iPart)
+      VeloRelAbs    = VECNORM3D(VeloRel)
+      ERotGas       = PartStateIntEn( 2,locPart)
+      ! Force contribution
+      Force(1:3) = Force(1:3) + CalcForceToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,VeloRel)
+      ! Energy contribution
+      Energy = Energy + CalcEnergyToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,ERotGas)
+    END IF
+    locPart = PEM%pNext(locPart)
+  END DO
+END IF ! BGG Distribution
+
+Pt(1:3) = Pt(1:3) + Force(1:3) / Species(SpecIDSolid)%MassIC
+IF(.NOT.SkipGranularUpdate) THEN
+  PartStateIntEn( 1,iPart) = PartStateIntEn( 1,iPart) + Energy * dtVar &
+                            / ( SpecDSMC(SpecIDSolid)%SpecificHeatSolid * Species(SpecIDSolid)%MassIC )
+END IF
+
+IF(CalcGranularDragHeat) THEN
+  ForceAverage(1) = ForceAverage(1) + 1.0
+  ForceAverage(2) = ForceAverage(2) + Force(1)
+  ForceAverage(3) = ForceAverage(3) + Force(2)
+  ForceAverage(4) = ForceAverage(4) + Force(3)
+  ForceAverage(5) = ForceAverage(5) + Energy
+END IF
+
+END SUBROUTINE CalcFlowGranularInteraction
+
+!===============================================================================================================================
+!> Calculate the force contribution of a single gas particle to a solid particle
+!===============================================================================================================================
+PURE FUNCTION CalcForceToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,VeloRel)
+! MODULES
+USE MOD_Globals_Vars  ,ONLY: BoltzmannConst, PI
+USE MOD_Particle_Vars ,ONLY: Species
+USE MOD_DSMC_Vars     ,ONLY: SpecDSMC
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)   :: SpecID       !< Index of the gas species
+REAL, INTENT(IN)      :: WeightGas    !< Weight of the gas species
+REAL, INTENT(IN)      :: RadiusSolid  !< Radius of solid particle
+REAL, INTENT(IN)      :: VeloRelAbs   !< Magnitude of relative velocity
+REAL, INTENT(IN)      :: TempSolid    !< Temperature of solid particle
+REAL, INTENT(IN)      :: VeloRel(1:3) !< Relative velocity
+REAL, INTENT(IN)      :: ElemVolume
+!-------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL                  :: CalcForceToSolidParticle(1:3)
+!===============================================================================================================================
+
+CalcForceToSolidParticle(1:3) = VeloRel(1:3) * WeightGas * (PI * RadiusSolid * RadiusSolid) / ElemVolume * ((Species(SpecID)%MassIC * VeloRelAbs) &
+  + SpecDSMC(SpecID)%ThermalACCGranularPart / 3.0 * SQRT(2. * PI * Species(SpecID)%MassIC * BoltzmannConst * TempSolid))
+
+END FUNCTION CalcForceToSolidParticle
+
+!===============================================================================================================================
+!> Calculate the energy contribution of a single gas particle to a solid particle
+!===============================================================================================================================
+PURE FUNCTION CalcEnergyToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,ERotGas)
+! MODULES
+USE MOD_Globals_Vars  ,ONLY: BoltzmannConst, PI
+USE MOD_Particle_Vars ,ONLY: Species
+USE MOD_DSMC_Vars     ,ONLY: SpecDSMC
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)   :: SpecID       !< Index of the gas species
+REAL, INTENT(IN)      :: WeightGas    !< Weight of the gas species
+REAL, INTENT(IN)      :: RadiusSolid  !< Radius of solid particle
+REAL, INTENT(IN)      :: VeloRelAbs   !< Magnitude of relative velocity
+REAL, INTENT(IN)      :: TempSolid    !< Temperature of solid particle
+REAL, INTENT(IN)      :: ERotGas      !< Rotational energy of gas species
+REAL, INTENT(IN)      :: ElemVolume
+!-------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL                  :: CalcEnergyToSolidParticle
+!===============================================================================================================================
+
+CalcEnergyToSolidParticle = WeightGas * (PI * RadiusSolid * RadiusSolid) * SpecDSMC(SpecID)%ThermalACCGranularPart * VeloRelAbs / ElemVolume &
+  * ((0.5 * Species(SpecID)%MassIC * VeloRelAbs * VeloRelAbs) + ERotGas - (2.0 + 0.5 * SpecDSMC(SpecID)%Xi_Rot) * BoltzmannConst * TempSolid)
+
+END FUNCTION CalcEnergyToSolidParticle
+
+END MODULE MOD_part_RHS

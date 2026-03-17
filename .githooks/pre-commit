@@ -1,0 +1,281 @@
+#!/bin/sh
+#==================================================================================================================================
+# Copyright (c) 2010 - 2022 Prof. Claus-Dieter Munz and Prof. Stefanos Fasoulas
+#
+# This file is part of PICLas (piclas.boltzplatz.eu/piclas/piclas). PICLas is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3
+# of the License, or (at your option) any later version.
+#
+# PICLas is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License v3.0 for more details.
+#
+# You should have received a copy of the GNU General Public License along with PICLas. If not, see <http://www.gnu.org/licenses/>.
+#==================================================================================================================================
+
+#===================================================================================================================================
+# Check the number and total size of files about to be commited
+#===================================================================================================================================
+
+# Executables, command -v is safe with sh
+BN_EXE=$(command -v basename)
+DU_EXE=$(command -v du)
+GIT_EXE=$(command -v git)
+LS_EXE=$(command -v ls)
+TR_EXE=$(command -v tr)
+
+# Check if override is requested
+if [ "$GIT_OVERRIDE_LIMITS" = "1" ]; then
+  echo 'Detected "GIT_OVERRIDE_LIMITS=1", overriding pre-commit check ...'
+  exit 0
+fi
+
+# General variables
+# SIZELIMIT=1048576 # 1 MB
+SIZESINGLELIMIT=1000000
+SIZESINGLEWARN=100000
+SIZETOTALLIMIT=1000000
+SIZETOTALWARN=100000
+
+# Number of existing files plus 100
+NUMBERLIMIT=$($GIT_EXE ls-tree --full-tree -r --name-only HEAD | wc -l)
+NUMBERLIMIT=$(($NUMBERLIMIT + 100))
+NUMBERWARN=100
+
+# Local variables
+ERROR=0
+FILEERR=0
+FILEWARN=0
+FILESUM=0
+FILESUMERR=0
+FILESUMWARN=0
+EXEERR=0
+TABERR=0
+SHMPOINTERROR=0
+VECNORMERROR=0
+MPICOMMWORLDERR=0
+SPECDBERR=0
+
+EXELINE=''
+TABLINE=''
+SPECDBLINE=''
+SIZEWARNLINE=''
+SIZEDENYLINE=''
+
+# Check if file is opened in a terminal
+if test -t 1; then
+  # Check if terminal supports color
+  NbrOfColors=$(command -v tput > /dev/null && tput colors)
+  if test -n "$NbrOfColors" && test "$NbrOfColors" -ge 8; then
+    NC="$(tput sgr0)"
+    RED="$(tput setaf 1)"
+    GREEN="$(tput setaf 2)"
+    YELLOW="$(tput setaf 3)"
+  fi
+fi
+
+# Get a list of all staged files
+CHANGED=$($GIT_EXE diff --staged --name-only)
+
+# Check if any changes are present
+if [ -n "$CHANGED" ]; then
+  # Sort found files by size (-S) in reverse ordering (-r)
+  CHANGED=$(echo "$CHANGED" | $TR_EXE '\n' ' ')
+  SORTED=$($LS_EXE --sort=size -r $CHANGED 2> /dev/null)
+  NUMBER=$($GIT_EXE diff --staged --numstat | wc -l)
+
+  # Check the number of files
+  if [ "$NUMBER" -ge "$NUMBERLIMIT" ]; then
+    printf "${RED}Number of changed files ($NUMBER) exceeds limit ($NUMBERLIMIT)!${NC}\n"
+    ERROR=1
+  elif [ "$NUMBER" -ge "$NUMBERWARN" ]; then
+    printf "${YELLOW}Number of changed files ($NUMBER)!${NC}\n"
+  fi
+
+  # Loop over all changes
+  for file in $SORTED; do
+
+    # Check if path is a file that exists
+    #  -f  True if FILE exists and is a regular file.
+    if [ -f "$file" ]; then
+      # -b, --bytes           equivalent to '--apparent-size --block-size=1'
+      LINE=$($LS_EXE -alhs "$file")
+      FILESIZE=$($DU_EXE -b "$file" | cut -d '	' -f1) # this is a tab, not a white space
+
+      # Sum up the total file sizes
+      FILESUM=$(($FILESUM + $FILESIZE))
+
+      # Check the file size limit
+      if [ "$FILESIZE" -gt "$SIZESINGLELIMIT" ]; then
+        # Error header
+        ERROR=1
+        FILEERR=1
+        SIZEDENYLINE="$LINE\n$SIZEDENYLINE"
+      # Check the file size warning
+      elif [ "$FILESIZE" -gt "$SIZESINGLEWARN" ]; then
+        # Warning header
+        FILEWARN=1
+        SIZEWARNLINE="$LINE"
+      fi
+    fi
+
+    # Check total file size
+    if [ "$FILESUM" -gt "$SIZETOTALLIMIT" ]; then
+      # Error header
+      ERROR=1
+      FILESUMERR=1
+    # Check the file size warning
+    elif [ "$FILESUM" -gt "$SIZETOTALWARN" ]; then
+      # Error header
+      FILESUMWARN=1
+    fi
+
+    # Check if file is executable
+    if [ -x "$file" ]; then
+      # Excude the pre-commit executable and any shell scripts that end on .sh
+      if [ "$file" != ".githooks/pre-commit" ] && [ "${file##*.}" != "sh" ] ; then
+        # Error header
+        ERROR=1
+        EXEERR=1
+        LINE=$($LS_EXE -alhs "$file")
+        EXELINE="$LINE\n$EXELINE"
+      fi
+    fi
+
+    # Check for tab characters in specific file endings
+    name=$($BN_EXE -- "$file")
+    # Get file extension
+    ext="${name##*.}"
+    # Get file name without extension
+    name="${name%.*}"
+    # Only check .txt, .f90 and .ini files in the following
+    if [ "$ext" = "txt" ] || [ "$ext" = "f90" ] || [ "$ext" = "ini" ]; then
+      # Use grep to find tab characters
+      # -P, --perl-regexp         PATTERNS are Perl regular expressions
+      NbrOfLinesWithTabs=$(grep -Pc '\t' "$file")
+      if [ "${NbrOfLinesWithTabs}" -gt 0 ]; then
+        LINE=$($LS_EXE -alhs "$file")
+        ERROR=1
+        TABERR=1
+        TABLINE="$LINE\n$TABLINE"
+      fi
+    fi
+
+    # Check for MPI_COMM_WORLD usage instead of MPI_COMM_PICLAS. Except when using it in MPI_COMM_DUP(), which is allowed.
+    # Only check .txt, .f90 and .ini files in the following
+    if [ "$ext" = "f90" ]; then
+      # Use grep to find tab characters
+      # -P, --perl-regexp         PATTERNS are Perl regular expressions
+      NbrOfLinesWithMPICommWorld=$(grep -v -e '^\s*!' $file | grep 'MPI_COMM_WORLD' | grep -v 'MPI_COMM_DUP' | wc -l)
+      if [ "${NbrOfLinesWithMPICommWorld}" -gt 0 ]; then
+        LINE=$($LS_EXE -alhs "$file")
+        ERROR=1
+        MPICOMMWORLDERR=1
+        MPICOMMWORLDLINE="$LINE\n$MPICOMMWORLDLINE"
+      fi
+    fi
+
+    # Check for strings with SHM array, function pointer and a sum with a pattern similar to _Shared(GetCNElemID(ElemID+offsetElem))
+    if [ "$ext" = "f90" ]; then
+      # -i, --ignore-case         ignore case distinctions in patterns and data
+      # -r, --recursive           like --directories=recurse
+      # -P, --perl-regexp         PATTERNS are Perl regular expressions
+      # -o, --only-matching       show only nonempty parts of lines that match
+      # SHMPOINTMATCH=$(grep -iEo 'shared\((.*?get.*?\+.*?)\)' "$file")
+      SHMPOINTMATCH=$(grep -iPo '^(?!\s*!).*shared\((.*?get.*?\+.*?)\)' "$file")
+      if [ -n "${SHMPOINTMATCH}" ]; then
+        ERROR=1
+        SHMPOINTERROR=1
+        # SHMPOINTLINES="$(grep -HniE 'shared\((.*?get.*?\+.*?)\)' "$file")"
+        SHMPOINTLINES="$(grep -HniP  '^(?!\s*!).*shared\((.*?get.*?\+.*?)\)' "$file")"
+      fi
+    fi
+
+    # Check for old deprecated function
+    # OLD: FUNCTION VECNORM(v1)
+    # NEW: FUNCTION VECNORM3D(v1)
+    if [ "$ext" = "f90" ]; then
+      # -i, --ignore-case         ignore case distinctions in patterns and data
+      # -r, --recursive           like --directories=recurse
+      # -P, --perl-regexp         PATTERNS are Perl regular expressions
+      #   \b                      word boundary
+      # -o, --only-matching       show only nonempty parts of lines that match
+      VECNORMMATCH=$(grep -iPo '\bVECNORM\(' "$file" | grep -iv "PetscCall")
+      if [ -n "${VECNORMMATCH}" ]; then
+        ERROR=1
+        VECNORMERROR=1
+        # -H, --with-filename       print file name with output lines
+        VECNORMLINES=$(grep -HniP '\bVECNORM\(' "$file" | grep -iv "PetscCall")
+      fi
+    fi
+
+    # Check if file is SpeciesDatabase.h5, which is not allowed to be changed
+    if [ "$file" = "SpeciesDatabase.h5" ]; then
+      # Error header
+      ERROR=1
+      SPECDBERR=1
+      LINE=$($LS_EXE -alhs "$file")
+      SPECDBLINE="$LINE\n$EXELINE"
+    fi
+
+  done
+
+  # Error output
+  if [ $FILEERR -ne 0 ]; then
+    printf "\n%sThe following file(s) exceed the file size limit (%s bytes)%s\n" "${RED}" "$SIZESINGLELIMIT" "${NC}"
+    printf "%s\n" "${SIZEDENYLINE}"
+  fi
+
+  if [ $FILEWARN -ne 0 ]; then
+    printf "\n${YELLOW}The following large file(s) are about to be committed (>$SIZESINGLEWARN bytes)${NC}\n"
+    printf "%s\n" "${SIZEWARNLINE}"
+  fi
+
+  if [ $FILESUMERR -ne 0 ]; then
+    printf "\n${RED}The total file size exceeds the size limit ($SIZETOTALLIMIT bytes)${NC}\n"
+  fi
+
+  if [ $FILESUMWARN -ne 0 ]; then
+    printf "\n${YELLOW}Total file size to be committed ($FILESUM bytes)${NC}\n"
+  fi
+
+  if [ "$EXEERR" -ne 0 ]; then
+    printf "\n${RED}ERROR: The following file(s) are executable, which is not allowed. Remove the execute permission via 'chmod -x filename' to fix the files. Run 'git add' on the fixed files and then 'git commit' afterwards.${NC}\n"
+    printf "%s\n" "${EXELINE}"
+  fi
+
+  if [ "$TABERR" -ne 0 ]; then
+    printf "\n${RED}ERROR: The following file(s) contain tabs (see https://en.wikipedia.org/wiki/Tab_key), which is not allowed. Remove the tab stops from all files. Run 'git add' on the fixed files and 'git commit' afterwards.${NC}\n"
+    printf "%s\n" "${TABLINE}"
+  fi
+
+  if [ "$SHMPOINTERROR" -ne 0 ]; then
+    printf "\n${RED}ERROR: The following file(s) contain a combination of SHM array, function pointer and a sum, which is not allowed.\nMove the function pointer to a new line and store the index in a separate integer variable to access the SHM.\nRun 'git add' on the fixed files and 'git commit' afterwards.${NC}\n"
+    printf "%s\n" "${SHMPOINTLINES}"
+  fi
+
+  if [ "$VECNORMERROR" -ne 0 ]; then
+    printf "\n${RED}ERROR: The following file(s) contain a deprecated function, which is not allowed.\nFUNCTION VECNORM(v1) has been renamed to FUNCTION VECNORM3D(v1).\nRun 'git add' on the fixed files and 'git commit' afterwards.${NC}\n"
+    printf "%s\n" "${VECNORMLINES}"
+  fi
+
+  if [ "$SPECDBERR" -ne 0 ]; then
+    printf "\n${RED}ERROR: SpeciesDatabase.h5 has been changed, which is not allowed. Remove changes from this file (e.g. via 'git checkout SpeciesDatabase.h5'). Run 'git add' on the fixed file and 'git commit' afterwards.${NC}\n"
+    printf "%s\n" "${SPECDBLINE}"
+  fi
+
+  if [ "$MPICOMMWORLDERR" -ne 0 ]; then
+    printf "${RED}ERROR: The following file(s) contain MPI_COMM_WORLD, which is not allowed. Replace them all by MPI_COMM_PICLAS, except when calling MPI_COMM_DUP(). Run 'git add' on the fixed files and 'git commit' afterwards.${NC}\n"
+    printf "$MPICOMMWORLDLINE"
+  fi
+
+  # Abort if hook encountered any error
+  if [ "$ERROR" -ne 0 ]; then
+    echo "\nCommit rejected! If you still want to commit your work by ignoring the errors, you can override this check by passing 'GIT_OVERRIDE_LIMITS=1' to git, e.g., run 'GIT_OVERRIDE_LIMITS=1 git commit'."
+    exit 1
+  fi
+
+# git commit should not allow to be run without staged changes
+else
+  echo 'No staged changes. Exiting ...'
+  exit 0
+fi

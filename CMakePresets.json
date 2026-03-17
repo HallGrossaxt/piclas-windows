@@ -1,0 +1,93 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-ucrt64-poisson",
+      "displayName": "Windows MSYS2 UCRT64 - Poisson/RK3 (plasma wave tutorial)",
+      "description": "Poisson solver (HDGSEM) + RK3 time integration, required for pic-poisson-plasma-wave tutorial",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-poisson",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "RK3",
+        "PICLAS_UNITTESTS":      "OFF",
+        "PICLAS_BUILD_POSTI":    "ON"
+      }
+    },
+    {
+      "name": "windows-ucrt64",
+      "displayName": "Windows MSYS2 UCRT64 (Release)",
+      "description": "Build PICLas on Windows using MSYS2 UCRT64 toolchain (gfortran 15, HDF5 2.1.0, Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-ucrt64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":       "Release",
+        "CMAKE_C_COMPILER":       "C:/msys64/ucrt64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER":     "C:/msys64/ucrt64/bin/g++.exe",
+        "CMAKE_Fortran_COMPILER": "C:/msys64/ucrt64/bin/gfortran.exe",
+        "CMAKE_MAKE_PROGRAM":     "C:/msys64/ucrt64/bin/ninja.exe",
+        "CMAKE_PREFIX_PATH":      "C:/msys64/ucrt64",
+        "HDF5_ROOT":              "C:/msys64/ucrt64",
+        "HDF5_DIR":               "C:/msys64/ucrt64/lib/cmake/hdf5",
+        "LIBS_BUILD_HDF5":        "OFF",
+        "HDF5_Fortran_INCLUDE_DIR": "C:/msys64/ucrt64/include",
+        "LIBS_USE_MPI":           "OFF",
+        "LIBS_BUILD_MATH_LIB":    "OFF",
+        "LAPACK_ROOT":            "C:/msys64/ucrt64",
+        "PICLAS_BUILD_POSTI":     "OFF",
+        "PICLAS_IPO":             "OFF",
+        "PICLAS_INSTRUCTION":     "-march=x86-64-v2 -mtune=generic"
+      },
+      "environment": {
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      }
+    },
+    {
+      "name": "windows-ucrt64-mpi",
+      "displayName": "Windows MSYS2 UCRT64 + MS-MPI (Release)",
+      "description": "MPI-enabled build using MSYS2 UCRT64 toolchain and Microsoft MPI (mingw-w64-ucrt-x86_64-msmpi)",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-mpi",
+      "cacheVariables": {
+        "LIBS_USE_MPI":           "ON",
+        "MPI_HOME":               "C:/msys64/ucrt64",
+        "MPI_C_COMPILER":         "C:/msys64/ucrt64/bin/mpicc",
+        "MPI_CXX_COMPILER":       "C:/msys64/ucrt64/bin/mpicxx",
+        "MPI_Fortran_COMPILER":   "C:/msys64/ucrt64/bin/mpifort"
+      }
+    },
+    {
+      "name": "windows-ucrt64-debug",
+      "displayName": "Windows MSYS2 UCRT64 (Debug)",
+      "description": "Debug build of PICLas on Windows using MSYS2 UCRT64",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-ucrt64-poisson",
+      "configurePreset": "windows-ucrt64-poisson",
+      "jobs": 0
+    },
+    {
+      "name": "windows-ucrt64",
+      "configurePreset": "windows-ucrt64",
+      "jobs": 0
+    },
+    {
+      "name": "windows-ucrt64-mpi",
+      "configurePreset": "windows-ucrt64-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-ucrt64-debug",
+      "configurePreset": "windows-ucrt64-debug",
+      "jobs": 0
+    }
+  ]
+}

@@ -1,0 +1,339 @@
+!==================================================================================================================================
+! Copyright (c) 2010 - 2018 Prof. Claus-Dieter Munz and Prof. Stefanos Fasoulas
+!
+! This file is part of PICLas (piclas.boltzplatz.eu/piclas/piclas). PICLas is free software: you can redistribute it and/or modify
+! it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3
+! of the License, or (at your option) any later version.
+!
+! PICLas is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+! of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License v3.0 for more details.
+!
+! You should have received a copy of the GNU General Public License along with PICLas. If not, see <http://www.gnu.org/licenses/>.
+!==================================================================================================================================
+#include "piclas.h"
+
+MODULE MOD_Particle_Vars
+!===================================================================================================================================
+! Contains the Particles' variables (general for all modules: PIC, DSMC, FP)
+!===================================================================================================================================
+! MODULES
+USE MOD_Particle_Emission_Vars
+USE MOD_Particle_SurfaceFlux_Vars
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+PUBLIC
+SAVE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! GLOBAL VARIABLES
+#ifdef INTKIND8
+INTEGER, PARAMETER :: IK = SELECTED_INT_KIND(18)
+#else
+INTEGER, PARAMETER :: IK = SELECTED_INT_KIND(8)
+#endif
+
+!-----------------------------------------------------------------------------------------------------------------------------------
+
+LOGICAL               :: DoFieldIonization                                   ! Do Field Ionization by quantum tunneling
+INTEGER               :: FieldIonizationModel                                !'Field Ionization models. Implemented models are:
+!                                                                            ! * Ammosov-Delone-Krainov (ADK) model
+!                                                                            ! * Ammosov-Delone-Krainov (ADK) model Yu 2018
+LOGICAL,ALLOCATABLE   :: SpecReset(:)                                        ! Flag for resetting species distribution with init
+                                                                             ! during restart
+LOGICAL               :: printRandomSeeds                                    ! print random seeds or not
+LOGICAL               :: DoInitialIonization                                 ! When restarting from a state, ionize the species to a
+                                                                             ! specific degree
+INTEGER               :: InitialIonizationSpecies                            ! Supply the number of species that are considered for
+                                                                             ! automatic ionization
+INTEGER , ALLOCATABLE :: InitialIonizationSpeciesID(:)                       ! Supply a vector with the species IDs that are used
+                                                                             ! for the initial ionization.
+REAL                  :: InitialIonizationChargeAverage                      ! Average charge for each atom/molecule in the cell
+REAL    , ALLOCATABLE :: PartState(:,:)                                      ! 1st index: x,y,z,vx,vy,vz
+!                                                                            ! 2nd index: 1:NParts
+REAL    , ALLOCATABLE :: PartPosRef(:,:)                                     ! (1:3,1:NParts) particles pos mapped to -1|1 space
+REAL    , ALLOCATABLE :: PartVeloRotRef(:,:)                                 ! (1:3,1:NParts) Velocity in the rotational reference frame
+REAL    , ALLOCATABLE :: LastPartVeloRotRef(:,:)                             ! (1:3,1:NParts) Last Velocity in the rotational reference frame
+REAL    , ALLOCATABLE :: Pt(:,:)                                             ! Derivative of PartState (vx,xy,vz) only
+                                                                             ! since temporal derivative of position
+                                                                             ! is the velocity. Thus we can take
+                                                                             ! PartState(4:6,:) as Pt(1:3)
+                                                                             ! (1:NParts,1:6) with 2nd index: x,y,z,vx,vy,vz
+INTEGER               :: PartDataSize                                        ! Number of entries in each line of PartData
+CHARACTER(LEN=255),ALLOCATABLE :: PartDataVarNames(:)                        ! Corresponding variable names of PartData for output/read-in
+INTEGER,PARAMETER     :: PartIntSize=2                                       ! Number of entries in each line of PartInt
+REAL,ALLOCATABLE      :: PartData(:,:)                                       ! PartState ordered along SFC, particle number per
+                                                                             ! element given in PartInt
+INTEGER,ALLOCATABLE   :: VibQuantData(:,:)                                   ! Vibrational quantization
+INTEGER               :: MaxQuantNum
+REAL,ALLOCATABLE      :: ElecDistriData(:,:)                                 ! Electronic excitation distribution
+INTEGER               :: MaxElecQuant
+REAL,ALLOCATABLE      :: AD_Data(:,:)                                        ! Ambipolar diffusion
+
+INTEGER(KIND=IK),ALLOCATABLE :: PartInt(:,:)                                 ! Particle number per element
+INTEGER(KIND=IK)             :: locnPart,offsetnPart                         ! Number and offset of particles on processors
+#if (PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509)
+LOGICAL               :: velocityOutputAtTime
+REAL    , ALLOCATABLE :: velocityAtTime(:,:)
+#endif /*(PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509)*/
+REAL    , ALLOCATABLE :: Pt_temp(:,:)                                        ! LSERK4 additional derivative of PartState
+
+                                                                             ! (1:NParts,1:6) with 2nd index: x,y,z,vx,vy,vz
+REAL    , ALLOCATABLE :: LastPartPos(:,:)                                    ! 1st index: x,y,z
+!                                                                            ! 2nd index: 1:NParts with 2nd index
+INTEGER , ALLOCATABLE :: PartSpecies(:)                                      ! (1:NParts)
+REAL    , ALLOCATABLE :: PartMPF(:)                                          ! (1:NParts) MacroParticleFactor by variable MPF
+INTEGER , ALLOCATABLE :: InterPlanePartIndx(:)                               ! Index list of Particles that are created
+                                                                             ! at rot periodic inter plane
+INTEGER               :: InterPlanePartNumber                                ! Number of Particles that are created
+                                                                             ! at rot periodic inter plane
+REAL    , ALLOCATABLE :: PartTimeStep(:)                                     ! (1:NParts) Variable time step
+INTEGER               :: PartLorentzType
+CHARACTER(LEN=256)    :: ParticlePushMethod                                  ! Type of PP-Method
+INTEGER               :: nrSeeds                                             ! Number of Seeds for Random Number Generator
+INTEGER , ALLOCATABLE :: seeds(:)                        !        =>NULL()   ! Seeds for Random Number Generator
+
+TYPE tSpecies                                                                ! Particle Data for each Species
+  !General Species Values
+  TYPE(tInit), ALLOCATABLE               :: Init(:)  !     =>NULL()          ! Particle Data for each Initialisation
+  CHARACTER(LEN=64)                      :: Name                             ! Species Name, required for SpeciesDatabase
+  REAL                                   :: ChargeIC                         ! Particle Charge (without MPF)
+  REAL                                   :: MassIC                           ! Particle Mass (without MPF)
+  INTEGER                                :: InterID                          ! Identification number (e.g. for DSMC_prob_calc), ini_2
+                                                                             !     1   : Atom
+                                                                             !     2   : Molecule
+                                                                             !     4   : Electron
+                                                                             !     10  : Atomic ion
+                                                                             !     20  : Molecular ion
+                                                                             !    100  : Granular species
+  REAL                                   :: MacroParticleFactor              ! Number of Microparticle per Macroparticle
+  REAL                                   :: TimeStepFactor                   ! Species-specific time step factor
+  INTEGER                                :: NumberOfInits                    ! Number of different initial particle placements
+  TYPE(tSurfaceFlux),POINTER             :: Surfaceflux(:) => NULL()         ! Particle Data for each SurfaceFlux emission
+  INTEGER                                :: nSurfacefluxBCs                  ! Number of SF emissions
+  LOGICAL                                :: DoOverwriteParameters            ! Flag to read in parameters manually
+END TYPE
+
+INTEGER                                  :: nSpecies                         ! number of species
+CHARACTER(LEN=256)                       :: SpeciesDatabase                  ! Name of the species database
+TYPE(tSpecies), ALLOCATABLE              :: Species(:)  !           => NULL() ! Species Data Vector
+
+LOGICAL                                  :: PartMeshHasPeriodicBCs
+TYPE tParticleElementMapping
+  INTEGER                , ALLOCATABLE   :: GlobalElemID(:)     ! =>NULL() ! Current global element number assigned to each Particle
+  INTEGER                , ALLOCATABLE   :: LastGlobalElemID(:) ! =>NULL() ! Global element number of the old particle position
+
+  PROCEDURE(ElemID_INTERFACE),POINTER,NOPASS :: LocalElemID !< pointer defining the mapping : global element ID -> local element ID
+                                                            !< the function simply returns  : PEM%GlobalElemID(iPart) - offsetElem
+
+  PROCEDURE(ElemID_INTERFACE),POINTER,NOPASS :: CNElemID    !< pointer defining the mapping : global element ID -> compute-node element ID
+                                                            !< the function simply returns  : GlobalElem2CNTotalElem(PEM%GlobalElemID(iPart))
+!----------------------------------------------------------------------------!----------------------------------
+                                                                             ! Following vectors are assigned in
+                                                                             ! SUBROUTINE UpdateNextFreePosition
+                                                                             ! IF (PIC%withDSMC .OR. PIC%withFP)
+  INTEGER                , ALLOCATABLE    :: pStart(:)         !     =>NULL()  ! Start of Linked List for Particles in Element
+                                                               !               ! pStart(1:PIC%nElem)
+  INTEGER                , ALLOCATABLE    :: pNumber(:)        !     =>NULL()  ! Number of Particles in Element
+                                                               !               ! pStart(1:PIC%nElem)
+  INTEGER                , ALLOCATABLE    :: pEnd(:)           !     =>NULL()  ! End of Linked List for Particles in Element
+                                                               !               ! pEnd(1:PIC%nElem)
+  INTEGER                , ALLOCATABLE    :: pNext(:)          !     =>NULL()  ! Next Particle in same Element (Linked List)
+                                                                               ! pStart(1:PIC%maxParticleNumber)
+END TYPE
+
+TYPE(tParticleElementMapping)            :: PEM
+
+ABSTRACT INTERFACE
+  PPURE INTEGER FUNCTION ElemID_INTERFACE(iPart)
+    INTEGER,INTENT(IN) :: iPart
+  END FUNCTION
+END INTERFACE
+
+TYPE tParticleDataManagement
+  INTEGER                                :: CurrentNextFreePosition           ! Index of nextfree index in nextFreePosition-Array
+  INTEGER                                :: maxParticleNumber                 ! Maximum Number of all Particles
+  INTEGER                                :: maxAllowedParticleNumber          ! Maximum allowed number of PDM%maxParticleNumber
+  LOGICAL                                :: RearrangePartIDs                  ! Rearrange PartIDs during shrinking maxPartNum
+#if USE_MPI
+  LOGICAL                                :: UNFPafterMPIPartSend              ! UpdateNextFreePosition after MPI Part Send
+#endif
+  INTEGER                                :: ParticleVecLength                 ! Vector Length for Particle Push Calculation
+  INTEGER                                :: ParticleVecLengthOld              ! Vector Length for Particle Push Calculation
+  REAL                                   :: MaxPartNumIncrease                ! How much shall the PDM%MaxParticleNumber be increased if it is full
+  INTEGER ,ALLOCATABLE                   :: nextFreePosition(:)  !  =>NULL()  ! next_free_Position(1:maxParticleNumber)
+                                                                              ! List of free Position
+  LOGICAL ,ALLOCATABLE                   :: ParticleInside(:)                 ! Particle_inside (1:maxParticleNumber)
+  LOGICAL ,ALLOCATABLE                   :: dtFracPush(:)                     ! Push random fraction only
+  LOGICAL ,ALLOCATABLE                   :: IsNewPart(:)                      ! Reconstruct RK-scheme in next stage
+END TYPE
+
+TYPE (tParticleDataManagement)           :: PDM
+
+REAL                                     :: DelayTime
+
+LOGICAL                                  :: ParticlesInitIsDone=.FALSE.
+
+LOGICAL                                  :: WRITEMacroValues = .FALSE.
+LOGICAL                                  :: WriteMacroVolumeValues =.FALSE.   ! Output of macroscopic values in volume
+LOGICAL                                  :: WriteMacroSurfaceValues=.FALSE.   ! Output of macroscopic values on surface
+INTEGER                                  :: MacroValSamplIterNum              ! Number of iterations for sampling
+                                                                              ! macroscopic values
+REAL                                     :: MacroValSampTime                  ! Sampling time for WriteMacroVal. (e.g., for td201)
+! Sampling of electronic excitation rates
+LOGICAL                                  :: SampleElecExcitation              ! Enable sampling the electronic excitation rate per level
+INTEGER                                  :: ExcitationLevelCounter            ! Counter of electronic levels to be sampled (for all species)
+REAL, ALLOCATABLE                        :: ExcitationSampleData(:,:)         ! Sampled rates [1:ExcitationLevelCounter,1:nElems]
+INTEGER, ALLOCATABLE                     :: ExcitationLevelMapping(:,:)       ! Mapping of collision case and level to the total electronic
+                                                                              ! number of levels [1:CollInf%NumCase,1:MAXVAL(SpecXSec(:)%NumElecLevel)]
+! Variable particle weighting (vMPF)
+LOGICAL                                  :: usevMPF                           ! use the vMPF per particle
+INTEGER, ALLOCATABLE                     :: vMPFMergeThreshold(:)             ! Max particle number per cell and (iSpec)
+INTEGER, ALLOCATABLE                     :: vMPFSplitThreshold(:)             ! Min particle number per cell and (iSpec)
+REAL                                     :: vMPFSplitLimit                    ! Do not split particles below this MPF threshold
+LOGICAL                                  :: UseSplitAndMerge                  ! Flag for particle merge
+REAL, ALLOCATABLE                        :: CellEelec_vMPF(:,:)
+REAL, ALLOCATABLE                        :: CellEvib_vMPF(:,:)
+INTEGER                                  :: vMPFSplitAndMergeStep             ! Perform split and merge every N iteration
+
+! Surface flux flags
+LOGICAL                                  :: DoSurfaceFlux                     ! Flag for emitting by SurfaceFluxBCs
+LOGICAL                                  :: DoPoissonRounding                 ! Perform Poisson sampling instead of random rounding
+LOGICAL                                  :: DoTimeDepInflow                   ! Insertion and SurfaceFlux w simple random rounding
+
+! Variable time step
+LOGICAL                                :: UseVarTimeStep
+TYPE tVariableTimeStep
+  LOGICAL                              :: UseLinearScaling
+  LOGICAL                              :: UseDistribution
+  LOGICAL                              :: UseSpeciesSpecific
+  LOGICAL                              :: OnlyDecreaseDt
+  LOGICAL                              :: DisableForMCC
+  REAL, ALLOCATABLE                    :: ElemFac(:)
+  REAL, ALLOCATABLE                    :: ElemWeight(:)
+  REAL                                 :: StartPoint(3)
+  REAL                                 :: EndPoint(3)
+  REAL                                 :: Direction(3)
+  REAL                                 :: ScaleFac
+  LOGICAL                              :: Use2DTimeFunc
+  REAL                                 :: StagnationPoint
+  REAL                                 :: TimeScaleFac2DFront
+  REAL                                 :: TimeScaleFac2DBack
+  REAL                                 :: DistributionMaxTimeFactor
+  REAL                                 :: DistributionMinTimeFactor
+  INTEGER                              :: DistributionMinPartNum
+  LOGICAL                              :: AdaptDistribution
+  REAL                                 :: TargetMCSoverMFP
+  REAL                                 :: TargetMaxCollProb
+  REAL                                 :: TargetMaxRelaxFactor
+END TYPE
+TYPE(tVariableTimeStep)                :: VarTimeStep
+
+! Virtual cell merge
+LOGICAL                                :: DoVirtualCellMerge
+INTEGER                                :: MinPartNumCellMerge
+INTEGER                                :: VirtualCellMergeSpread
+INTEGER                                :: MaxNumOfMergedCells
+TYPE tVirtualCellMerge
+  INTEGER, ALLOCATABLE                 :: MergedCellID(:)
+  INTEGER                              :: NumOfMergedCells
+  INTEGER                              :: MasterCell
+  LOGICAL                              :: isMerged
+  REAL                                 :: MergedVolume
+END TYPE
+TYPE (tVirtualCellMerge),ALLOCATABLE   :: VirtMergedCells(:)
+
+! Rotational frame of reference
+LOGICAL               :: UseRotRefFrame           ! flag for rotational frame of reference
+LOGICAL ,ALLOCATABLE  :: InRotRefFrame(:)         ! Check for RotRefFrame (1:maxParticleNumber)
+INTEGER               :: RotRefFrameAxis          ! axis of rotational frame of reference (x=1, y=2, z=3)
+REAL                  :: RotRefFrameFreq          ! frequency of rotational frame of reference
+REAL                  :: RotRefFrameOmega(3)      ! angular velocity of rotational frame of reference
+INTEGER               :: nRefFrameRegions         ! number of rotational frame of reference regions
+REAL, ALLOCATABLE     :: RotRefFrameRegion(:,:)   ! MIN/MAX defintion for multiple rotational frame of reference region
+                                                  ! (i,RegionNumber), MIN:i=1, MAX:i=2
+! Virtual Dielectric Layer (VDL)
+INTEGER,PARAMETER     :: SpeciesOffsetVDL=10000    ! Set specific VDL species ID for identification of particles after MPI communication
+
+! Rotational frame of reference: Subcycling
+LOGICAL               :: UseRotRefSubCycling             ! Flag if subcycling is active
+INTEGER               :: nSubCyclingSteps             ! Number of subcycling steps
+REAL                  :: LastPartPosSubCycling(3)     ! Last position before subcycling
+REAL                  :: NewPosSubCycling(3)          ! New particle position before subcycling
+REAL                  :: PartVeloRotRefSubCycling(3)  ! Velocity in the rotational reference frame before subcycling
+REAL                  :: LastVeloRotRefSubCycling(3)  ! Last Velocity in the rotational reference frame before subcycling
+INTEGER               :: GlobalElemIDSubCycling       ! Element ID before subcycling
+LOGICAL               :: InRotRefFrameSubCycling      ! Check for RotRefFrame before subcycling
+
+! Sampling of pressure tensor and heatflux
+LOGICAL               :: SamplePressTensHeatflux
+
+! Consideration of gravity for granular species
+LOGICAL               :: UseGranularSpecies ! Flag for the usage of granular species
+LOGICAL               :: UseGravitation     ! Flag for taking gravity into account for granular species
+REAL                  :: GravityDir(3)      ! Direction of gravity force
+LOGICAL               :: SkipGranularUpdate ! Flag to skip granular species position, velocity and temperature update
+                                            ! used only for benchmark TC
+REAL                  :: BGGValueForGranularSpec(5,100) ! Array for 100 virtual DSMC particles within a cell, when using BGG
+                                                        ! (1:3,:): v_x, v_y, v_z
+                                                        ! (4,:): e_rot
+                                                        ! (5,:): W_g
+REAL                  :: ForceAverage(5)
+REAL                  :: SumForceAverage(5)
+
+!===================================================================================================================================
+CONTAINS
+
+#if USE_HDG
+!==================================================================================================================================
+!> Convert the species index that has been changed in the VDL model back to the original state
+!==================================================================================================================================
+PPURE INTEGER FUNCTION ResetVDLSpecID(PartID) RESULT(SpecID)
+!===================================================================================================================================
+!===================================================================================================================================
+! MODULES
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN) :: PartID
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+!===================================================================================================================================
+! Check particle index for VDL particles
+IF(ABS(PartSpecies(PartID)).GT.SpeciesOffsetVDL)THEN
+  ! Reset to original species index
+  SpecID = ABS(PartSpecies(PartID)) - SpeciesOffsetVDL
+ELSE
+  ! Return the normal particle species index
+  SpecID = PartSpecies(PartID)
+END IF
+END FUNCTION ResetVDLSpecID
+
+
+!===================================================================================================================================
+!> Check if particle index for VDL particles and return .TRUE. if it is a VDL particle
+!===================================================================================================================================
+PPURE LOGICAL FUNCTION IsVDLSpecID(PartID) RESULT(L)
+! MODULES
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN) :: PartID
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+!===================================================================================================================================
+! Check particle index for VDL particles
+IF(ABS(PartSpecies(PartID)).GT.SpeciesOffsetVDL)THEN
+  L = .TRUE.
+ELSE
+  L = .FALSE.
+END IF
+END FUNCTION IsVDLSpecID
+#endif/*USE_HDG*/
+
+!===================================================================================================================================
+END MODULE MOD_Particle_Vars

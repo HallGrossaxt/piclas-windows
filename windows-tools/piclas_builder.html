@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PICLas Build Configurator</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
+header { background: #16213e; padding: 10px 20px; border-bottom: 2px solid #0f3460; display: flex; align-items: center; gap: 14px; }
+header h1 { font-size: 1.1rem; color: #e94560; }
+.note-bar { background: #1a2a1a; border-bottom: 1px solid #2a5a2a; padding: 7px 20px; font-size: 0.78rem; color: #7ec87e; }
+.note-bar b { color: #a8ffa8; }
+.main { display: flex; flex: 1; }
+.panel-left  { width: 430px; overflow-y: auto; padding: 14px; border-right: 1px solid #0f3460; flex-shrink: 0; }
+.panel-right { flex: 1; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.card { background: #16213e; border: 1px solid #0f3460; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.card h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 1px; color: #8892b0; margin-bottom: 10px; }
+.opt-group { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.opt-btn { background: #0f3460; border: 1px solid #1a4a80; color: #ccd6f6; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 0.82rem; }
+.opt-btn.active { background: #e94560; border-color: #e94560; color: #fff; }
+.opt-btn:hover { border-color: #64ffda; }
+.check-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.check-row label { font-size: 0.85rem; color: #ccd6f6; cursor: pointer; }
+.desc { font-size: 0.76rem; color: #8892b0; margin: 3px 0 8px 24px; line-height: 1.45; }
+.compat { font-size: 0.76rem; color: #ffb347; background: #2a1f00; border: 1px solid #5a3a00; border-radius: 4px; padding: 5px 9px; margin-top: 6px; display: none; }
+.field-label { font-size: 0.82rem; color: #ccd6f6; margin-bottom: 5px; display: block; }
+input[type=text] { width: 100%; background: #0a0a1a; border: 1px solid #0f3460; color: #e0e0e0; padding: 6px 9px; border-radius: 4px; font-size: 0.82rem; font-family: Consolas, monospace; }
+input[type=text]:focus { outline: none; border-color: #64ffda; }
+.cmd-wrap { position: relative; }
+.cmd-wrap pre { background: #0a0a1a; border: 1px solid #0f3460; border-radius: 4px; padding: 10px; font-size: 0.76rem; white-space: pre-wrap; word-break: break-all; color: #a8ff78; font-family: Consolas, monospace; max-height: 120px; overflow-y: auto; margin: 0; }
+.copy-btn { position: absolute; top: 6px; right: 6px; background: #0f3460; border: 1px solid #2a5a80; color: #8892b0; padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 0.72rem; }
+.copy-btn:hover { color: #64ffda; border-color: #64ffda; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn { padding: 9px 22px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+.btn-primary   { background: #e94560; color: #fff; }
+.btn-primary:hover { background: #c73652; }
+.btn-secondary { background: #0f3460; color: #ccd6f6; border: 1px solid #2a5a80; }
+.btn-secondary:hover { border-color: #64ffda; color: #64ffda; }
+.info-box { background: #0a1a0a; border: 1px solid #1a4a1a; border-radius: 8px; padding: 14px 16px; font-size: 0.82rem; line-height: 1.75; color: #ccd6f6; }
+.info-box h4 { color: #64ffda; margin-bottom: 10px; }
+.info-box ol  { margin-left: 18px; }
+.info-box li  { margin-bottom: 3px; }
+.info-box code { background: #0f2a0f; color: #a8ff78; padding: 1px 5px; border-radius: 3px; font-family: Consolas, monospace; font-size: 0.78rem; }
+.warn-box { background: #1a1a0a; border: 1px solid #4a4a00; border-radius: 6px; padding: 10px 14px; font-size: 0.8rem; color: #cccc88; }
+.warn-box b { color: #ffff88; }
+.browse-btn { background: #0f3460; border: 1px solid #2a5a80; color: #ccd6f6; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; flex-shrink: 0; }
+.browse-btn:hover { border-color: #64ffda; color: #64ffda; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PICLas Build Configurator</h1>
+  <span style="font-size:0.78rem;color:#8892b0;">Standalone HTML &mdash; works in any browser, no server needed</span>
+</header>
+<div class="note-bar">
+  <b>Workflow:</b> Select options &rarr; click <b>Download Build Script</b> &rarr; double-click the <b>.bat</b> file to build in a terminal window.
+</div>
+
+<div class="main">
+
+  <!-- ══════════════ LEFT: OPTIONS ══════════════ -->
+  <div class="panel-left">
+
+    <div class="card">
+      <h3>Equation System</h3>
+      <div class="opt-group" id="grp-eqnsys">
+        <button class="opt-btn active" data-val="maxwell"            onclick="sel('eqnsys',this)">maxwell</button>
+        <button class="opt-btn"        data-val="poisson"            onclick="sel('eqnsys',this)">poisson</button>
+        <button class="opt-btn"        data-val="electrostatic_pois" onclick="sel('eqnsys',this)">electrostatic_pois</button>
+        <button class="opt-btn"        data-val="hdg"                onclick="sel('eqnsys',this)">hdg</button>
+      </div>
+      <div class="desc">
+        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser simulations.<br>
+        <b>poisson</b>: electrostatic Poisson solver (HDGSEM) &mdash; PIC plasma without radiation.<br>
+        <b>electrostatic_pois</b>: PIC with Poisson, no magnetic self-field.<br>
+        <b>hdg</b>: Hybridized Discontinuous Galerkin Poisson solver.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Time Integration</h3>
+      <div class="opt-group" id="grp-timedisc">
+        <button class="opt-btn"        data-val="RK3"            onclick="sel('timedisc',this)">RK3</button>
+        <button class="opt-btn active" data-val="RK4"            onclick="sel('timedisc',this)">RK4</button>
+        <button class="opt-btn"        data-val="RK14"           onclick="sel('timedisc',this)">RK14</button>
+        <button class="opt-btn"        data-val="Boris-Leapfrog" onclick="sel('timedisc',this)">Boris-Leapfrog</button>
+        <button class="opt-btn"        data-val="Leapfrog"       onclick="sel('timedisc',this)">Leapfrog</button>
+        <button class="opt-btn"        data-val="RK4-implicit"   onclick="sel('timedisc',this)">RK4-implicit</button>
+      </div>
+      <div class="desc">
+        <b>RK3/RK4/RK14</b>: explicit Runge-Kutta &mdash; general purpose.<br>
+        <b>Boris-Leapfrog</b>: symplectic, ideal for PIC particle tracking.<br>
+        <b>Leapfrog</b>: 2nd-order, lightweight &mdash; recommended for electrostatic PIC.<br>
+        <b>RK4-implicit</b>: for stiff systems with disparate time scales.
+      </div>
+      <div class="compat" id="compat-timedisc"></div>
+    </div>
+
+    <div class="card">
+      <h3>Build Type</h3>
+      <div class="opt-group" id="grp-buildtype">
+        <button class="opt-btn"        data-val="Debug"          onclick="sel('buildtype',this)">Debug</button>
+        <button class="opt-btn active" data-val="Release"        onclick="sel('buildtype',this)">Release</button>
+        <button class="opt-btn"        data-val="RelWithDebInfo" onclick="sel('buildtype',this)">RelWithDebInfo</button>
+      </div>
+      <div class="desc">
+        <b>Release</b>: full optimisation, no debug symbols &mdash; use for production runs.<br>
+        <b>Debug</b>: no optimisation, full symbols &mdash; use when debugging crashes.<br>
+        <b>RelWithDebInfo</b>: optimised + symbols &mdash; good for profiling.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Features</h3>
+      <div class="check-row">
+        <input type="checkbox" id="chk-posti" checked onchange="updateAll()">
+        <label for="chk-posti">PICLAS_BUILD_POSTI</label>
+      </div>
+      <div class="desc">Build post-processing tools (piclas2vtk) for converting HDF5 output to VTK/ParaView format.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-readin" onchange="updateAll()">
+        <label for="chk-readin">PICLAS_READIN_CONSTANTS</label>
+      </div>
+      <div class="desc">Read physical constants from the parameter file instead of hard-coded values. Useful for code verification and sensitivity studies.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-unittests" onchange="updateAll()">
+        <label for="chk-unittests">PICLAS_UNITTESTS</label>
+      </div>
+      <div class="desc">Build unit tests. Disable for faster builds. Enable when making solver changes to verify correctness.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-mpi" onchange="onMpiChange()">
+        <label for="chk-mpi">LIBS_USE_MPI (MS-MPI)</label>
+      </div>
+      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. <b>Mutually exclusive with PETSc</b> — MSYS2 PETSc is a sequential build whose headers conflict with MS-MPI.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-petsc" onchange="onPetscChange()">
+        <label for="chk-petsc">LIBS_USE_PETSC</label>
+      </div>
+      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman.</div>
+    </div>
+
+    <div class="card">
+      <h3>Advanced</h3>
+      <div class="check-row">
+        <input type="checkbox" id="chk-perf" onchange="updateAll()">
+        <label for="chk-perf">PICLAS_PERFORMANCE</label>
+      </div>
+      <div class="desc">Enable performance counters and timing instrumentation. Adds small overhead; useful for benchmarking hot spots.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-analyze" onchange="updateAll()">
+        <label for="chk-analyze">PICLAS_CODE_ANALYZE</label>
+      </div>
+      <div class="desc">Enable runtime sanity checks and assertions. Significant performance hit &mdash; only for development/debugging.</div>
+      <div style="margin-top:12px;">
+        <span class="field-label">PICLAS_INSTRUCTION &mdash; target CPU instruction set</span>
+        <input type="text" id="inp-instruction" value="-march=x86-64-v2 -mtune=generic" oninput="updateAll()">
+        <div class="desc">
+          <b>-march=x86-64-v2</b>: AVX+SSE4.2, compatible with most CPUs since ~2012. Safe default.<br>
+          <b>-march=native</b>: maximum performance for the build machine only (binary not portable).<br>
+          <b>-march=x86-64-v3</b>: AVX2 for Haswell 2013+ CPUs.
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <span class="field-label">Build directory &mdash; relative to C:/Data/PRJ/Piclas/</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" id="inp-builddir" placeholder="(auto-generated from options above)" oninput="updateAll()" style="flex:1;">
+          <button class="browse-btn" onclick="browseBuildDir()" title="Browse for or create a build directory inside C:/Data/PRJ/Piclas/">&#128194; Browse</button>
+        </div>
+        <div id="browse-note" style="font-size:0.73rem;color:#8892b0;margin-top:4px;display:none;"></div>
+      </div>
+    </div>
+
+  </div><!-- /panel-left -->
+
+  <!-- ══════════════ RIGHT: COMMANDS + ACTIONS ══════════════ -->
+  <div class="panel-right">
+
+    <div class="card">
+      <h3>Configure Command</h3>
+      <div class="cmd-wrap">
+        <pre id="cmd-configure"></pre>
+        <button class="copy-btn" onclick="copyEl('cmd-configure', this)">Copy</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Build Command</h3>
+      <div class="cmd-wrap">
+        <pre id="cmd-build"></pre>
+        <button class="copy-btn" onclick="copyEl('cmd-build', this)">Copy</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-primary"   onclick="downloadBat()">&#11015; Download Build Script (.bat)</button>
+      <button class="btn btn-secondary" onclick="copyBoth()">&#128203; Copy Both Commands</button>
+    </div>
+
+    <div class="warn-box">
+      <b>Why a .bat file?</b> Browsers run in a security sandbox and cannot execute programs directly.
+      The downloaded script opens a CMD terminal where you can watch the full build output.
+      Alternatively, open <b>piclas_builder.hta</b> by double-clicking it in Windows Explorer
+      (not in a browser) for live streaming output inside the window.
+    </div>
+
+    <div class="info-box">
+      <h4>&#9654; Steps</h4>
+      <ol>
+        <li>Select equation system, time integration, build type, and features on the left.</li>
+        <li>The cmake commands update live in the boxes above.</li>
+        <li>Click <b>Download Build Script (.bat)</b> and save the file.</li>
+        <li>Double-click the downloaded <code>.bat</code> file &mdash; a terminal opens automatically.</li>
+        <li>Configure runs first, then build. Output is visible directly in the terminal.</li>
+        <li>On success the binary is in the build directory shown in the command preview above.</li>
+      </ol>
+      <br>
+      <b>Tip:</b> You can also click <b>Copy Both Commands</b> and paste them into an open MSYS2 terminal.
+    </div>
+
+  </div><!-- /panel-right -->
+</div><!-- /main -->
+
+<script>
+// ── Paths: edit here if you move files ────────────────────────────────────────
+var SOURCE_ROOT = 'C:/Data/PRJ/Piclas/piclas-master';
+var BUILD_ROOT  = 'C:/Data/PRJ/Piclas';
+var BASH_WIN    = 'C:\\msys64\\usr\\bin\\bash.exe';
+
+// ── Option buttons ────────────────────────────────────────────────────────────
+function sel(group, btn) {
+  var btns = document.getElementById('grp-' + group).getElementsByTagName('button');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].className = 'opt-btn';
+  }
+  btn.className = 'opt-btn active';
+  updateAll();
+}
+
+function getActive(grpId) {
+  var btns = document.getElementById(grpId).getElementsByTagName('button');
+  for (var i = 0; i < btns.length; i++) {
+    if (btns[i].className.indexOf('active') >= 0) {
+      return btns[i].getAttribute('data-val');
+    }
+  }
+  return '';
+}
+
+function getOpts() {
+  return {
+    eqnsys:      getActive('grp-eqnsys'),
+    timedisc:    getActive('grp-timedisc'),
+    buildtype:   getActive('grp-buildtype'),
+    posti:       document.getElementById('chk-posti').checked,
+    readin:      document.getElementById('chk-readin').checked,
+    unittests:   document.getElementById('chk-unittests').checked,
+    mpi:         document.getElementById('chk-mpi').checked,
+    petsc:       document.getElementById('chk-petsc').checked,
+    perf:        document.getElementById('chk-perf').checked,
+    analyze:     document.getElementById('chk-analyze').checked,
+    instruction: document.getElementById('inp-instruction').value,
+    builddir:    document.getElementById('inp-builddir').value.trim()
+  };
+}
+
+function onOff(b) { return b ? 'ON' : 'OFF'; }
+
+// MPI and PETSc are mutually exclusive on Windows (MSYS2 PETSc is serial-only)
+function onMpiChange() {
+  if (document.getElementById('chk-mpi').checked) {
+    document.getElementById('chk-petsc').checked = false;
+  }
+  updateAll();
+}
+function onPetscChange() {
+  if (document.getElementById('chk-petsc').checked) {
+    document.getElementById('chk-mpi').checked = false;
+  }
+  updateAll();
+}
+
+function getBuildDir(o) {
+  return o.builddir ||
+    ('build-' + o.eqnsys + '-' + o.timedisc.toLowerCase() + '-' + o.buildtype.toLowerCase() +
+     (o.mpi ? '-mpi' : ''));
+}
+
+function getPreset(o) {
+  return o.mpi ? 'windows-ucrt64-mpi' : 'windows-ucrt64';
+}
+
+// ── Live command preview ──────────────────────────────────────────────────────
+function updateAll() {
+  var o   = getOpts();
+  var dir = getBuildDir(o);
+  var bp  = BUILD_ROOT + '/' + dir;
+  var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
+
+  var defs = [
+    '-DPICLAS_EQNSYSNAME='       + o.eqnsys,
+    '-DPICLAS_TIMEDISCMETHOD='   + o.timedisc,
+    '-DCMAKE_BUILD_TYPE='        + o.buildtype,
+    '-DPICLAS_BUILD_POSTI='      + onOff(o.posti),
+    '-DPICLAS_UNITTESTS='        + onOff(o.unittests),
+    o.mpi ? null : '-DLIBS_USE_MPI=OFF',
+    '-DLIBS_USE_PETSC='          + onOff(o.petsc),
+    o.petsc ? '-DLIBS_BUILD_PETSC=OFF' : null,
+    o.petsc ? '-DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : null,
+    '-DPICLAS_READIN_CONSTANTS=' + onOff(o.readin),
+    '-DPICLAS_PERFORMANCE='      + onOff(o.perf),
+    '-DPICLAS_CODE_ANALYZE='     + onOff(o.analyze),
+    '"-DPICLAS_INSTRUCTION='     + o.instruction + '"'
+  ].filter(function(x) { return x !== null; }).join(' \\\n        ');
+
+  var petscEnv = o.petsc ? "export PETSC_DIR=/c/msys64/ucrt64 && " : "";
+  document.getElementById('cmd-configure').textContent =
+    petscEnv + "cd '" + SOURCE_ROOT + "' && cmake --preset " + getPreset(o) + " \\\n" +
+    "        -B " + bp + " \\\n        " + defs;
+
+  document.getElementById('cmd-build').textContent =
+    "cmake --build " + bp + " \\\n        --target " + tg;
+
+  // Compatibility hint
+  var el  = document.getElementById('compat-timedisc');
+  var msg = '';
+  var es  = o.eqnsys;
+  var td  = o.timedisc;
+  if ((es === 'poisson' || es === 'electrostatic_pois' || es === 'hdg') &&
+      (td === 'RK4' || td === 'RK14')) {
+    msg = '\u26A0 For Poisson/electrostatic solvers, Boris-Leapfrog or Leapfrog is recommended for PIC simulations.';
+  } else if (es === 'maxwell' && td === 'Leapfrog') {
+    msg = '\u26A0 Leapfrog is designed for electrostatic PIC, not Maxwell. Consider RK4 or Boris-Leapfrog.';
+  }
+  el.textContent   = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+// ── Clipboard helpers ─────────────────────────────────────────────────────────
+function copyEl(id, btn) {
+  var text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(function () {
+    var orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(function () { btn.textContent = orig; }, 1500);
+  });
+}
+
+function copyBoth() {
+  var cfg = document.getElementById('cmd-configure').textContent;
+  var bld = document.getElementById('cmd-build').textContent;
+  navigator.clipboard.writeText(cfg + '\n\n' + bld);
+}
+
+// ── Download .bat ─────────────────────────────────────────────────────────────
+function downloadBat() {
+  var o   = getOpts();
+  var dir = getBuildDir(o);
+  var bp  = BUILD_ROOT + '/' + dir;
+  var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
+
+  // Build configure arguments for bash -c (single-quote the instruction value)
+  var petscEnv = o.petsc ? "export PETSC_DIR=/c/msys64/ucrt64 && " : "";
+  var cfgCmd =
+    petscEnv + "cd '" + SOURCE_ROOT + "' && cmake --preset " + getPreset(o) +
+    " -B '" + bp + "'" +
+    " -DPICLAS_EQNSYSNAME=" + o.eqnsys +
+    " -DPICLAS_TIMEDISCMETHOD=" + o.timedisc +
+    " -DCMAKE_BUILD_TYPE=" + o.buildtype +
+    " -DPICLAS_BUILD_POSTI=" + onOff(o.posti) +
+    " -DPICLAS_UNITTESTS=" + onOff(o.unittests) +
+    (o.mpi ? "" : " -DLIBS_USE_MPI=OFF") +
+    " -DLIBS_USE_PETSC=" + onOff(o.petsc) +
+    (o.petsc ? " -DLIBS_BUILD_PETSC=OFF" : "") +
+    (o.petsc ? " -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a" : "") +
+    " -DPICLAS_READIN_CONSTANTS=" + onOff(o.readin) +
+    " -DPICLAS_PERFORMANCE=" + onOff(o.perf) +
+    " -DPICLAS_CODE_ANALYZE=" + onOff(o.analyze) +
+    " '-DPICLAS_INSTRUCTION=" + o.instruction + "'";
+
+  var buildCmd =
+    "export TEMP=/tmp && export TMP=/tmp &&" +
+    " cmake --build '" + bp + "' --target " + tg;
+
+  var bpWin = bp.replace(/\//g, '\\');
+
+  var bat =
+    '@echo off\r\n' +
+    'title PICLas Build: ' + dir + '\r\n' +
+    'set BASH=' + BASH_WIN + '\r\n' +
+    'if not exist "%BASH%" (\r\n' +
+    '  echo ERROR: MSYS2 bash not found at %BASH%\r\n' +
+    '  pause & exit /b 1\r\n' +
+    ')\r\n' +
+    'echo.\r\n' +
+    'echo  PICLas Build Configurator\r\n' +
+    'echo  Config: ' + dir + '\r\n' +
+    'echo.\r\n' +
+    'echo ======================================\r\n' +
+    'echo  CONFIGURE\r\n' +
+    'echo ======================================\r\n' +
+    '"%BASH%" -c "' + cfgCmd + '"\r\n' +
+    'if %ERRORLEVEL% neq 0 (\r\n' +
+    '  echo.\r\n' +
+    '  echo CONFIGURE FAILED\r\n' +
+    '  pause & exit /b 1\r\n' +
+    ')\r\n' +
+    'echo.\r\n' +
+    'echo ======================================\r\n' +
+    'echo  BUILD  ^(target: ' + tg + '^)\r\n' +
+    'echo ======================================\r\n' +
+    '"%BASH%" -c "' + buildCmd + '"\r\n' +
+    'if %ERRORLEVEL% neq 0 (\r\n' +
+    '  echo.\r\n' +
+    '  echo BUILD FAILED\r\n' +
+    '  pause & exit /b 1\r\n' +
+    ')\r\n' +
+    'echo.\r\n' +
+    'echo BUILD SUCCEEDED\r\n' +
+    'echo Binary in: ' + bpWin + '\r\n' +
+    'pause\r\n';
+
+  var blob = new Blob([bat], { type: 'text/plain' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'build_piclas_' + dir + '.bat';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Browse for build directory ────────────────────────────────────────────────
+function browseBuildDir() {
+  var note = document.getElementById('browse-note');
+  if (!window.showDirectoryPicker) {
+    note.textContent = 'Directory picker not supported in this browser. Please type the folder name manually.';
+    note.style.display = 'block';
+    return;
+  }
+  window.showDirectoryPicker({ mode: 'readwrite', startIn: 'desktop' })
+    .then(function(handle) {
+      document.getElementById('inp-builddir').value = handle.name;
+      note.textContent = 'Selected: ' + handle.name +
+        ' (navigate to C:/Data/PRJ/Piclas/ in the picker for a subfolder of the build root)';
+      note.style.display = 'block';
+      updateAll();
+    })
+    .catch(function(e) {
+      if (e.name !== 'AbortError') {
+        note.textContent = 'Could not open directory picker: ' + e.message;
+        note.style.display = 'block';
+      }
+    });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+updateAll();
+</script>
+</body>
+</html>

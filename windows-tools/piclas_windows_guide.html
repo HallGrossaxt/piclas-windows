@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PICLas on Windows &mdash; Complete Setup Guide</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+  --border: #30363d; --text: #c9d1d9; --muted: #8b949e;
+  --accent: #58a6ff; --green: #3fb950; --yellow: #d29922;
+  --red: #f85149; --purple: #bc8cff; --orange: #ffa657;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Layout */
+.layout { display: flex; min-height: 100vh; }
+nav { width: 280px; background: var(--bg2); border-right: 1px solid var(--border); padding: 24px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; flex-shrink: 0; }
+nav .nav-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); padding: 0 20px 10px; }
+nav a { display: block; padding: 5px 20px; font-size: 0.84rem; color: var(--muted); border-left: 3px solid transparent; }
+nav a:hover, nav a.active { color: var(--accent); border-left-color: var(--accent); text-decoration: none; }
+nav .nav-section { margin-top: 16px; }
+nav .nav-sub { padding-left: 32px; font-size: 0.8rem; }
+main { flex: 1; padding: 40px 60px; max-width: 960px; }
+
+/* Typography */
+h1 { font-size: 2rem; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 24px; }
+h2 { font-size: 1.4rem; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 40px 0 16px; }
+h3 { font-size: 1.1rem; color: var(--orange); margin: 28px 0 10px; }
+h4 { font-size: 0.95rem; color: var(--purple); margin: 18px 0 8px; }
+p { margin-bottom: 12px; }
+ul, ol { margin: 10px 0 12px 22px; }
+li { margin-bottom: 4px; }
+
+/* Code */
+code { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-family: "Consolas", "Courier New", monospace; font-size: 0.87em; color: var(--orange); }
+pre { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; margin: 12px 0 18px; position: relative; }
+pre code { background: none; border: none; padding: 0; font-size: 0.85rem; color: var(--green); line-height: 1.55; }
+.cmd code { color: #a8ff78; }
+.comment { color: var(--muted); font-style: italic; }
+
+/* Callouts */
+.note, .warn, .tip, .danger { border-radius: 8px; padding: 14px 16px; margin: 16px 0; border-left: 4px solid; }
+.note   { background: #0c2a3d; border-color: var(--accent);  }
+.tip    { background: #0c2a1a; border-color: var(--green);   }
+.warn   { background: #2a1f00; border-color: var(--yellow);  }
+.danger { background: #2a0000; border-color: var(--red);     }
+.note b, .tip b, .warn b, .danger b { display: block; margin-bottom: 4px; }
+.note b   { color: var(--accent);  }
+.tip b    { color: var(--green);   }
+.warn b   { color: var(--yellow);  }
+.danger b { color: var(--red);     }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 0.88rem; }
+th { background: var(--bg3); color: var(--text); padding: 8px 12px; text-align: left; border: 1px solid var(--border); }
+td { padding: 7px 12px; border: 1px solid var(--border); color: var(--muted); }
+td:first-child { color: var(--text); font-family: Consolas, monospace; }
+tr:nth-child(even) td { background: #0f1318; }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.72rem; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+.new  { background: #1a3a1a; color: var(--green);  border: 1px solid #2a5a2a; }
+.mod  { background: #1a2a3a; color: var(--accent); border: 1px solid #2a4a6a; }
+.fix  { background: #2a1a00; color: var(--orange); border: 1px solid #5a3a00; }
+
+/* Steps */
+.step { counter-increment: step; display: flex; gap: 14px; margin-bottom: 20px; }
+.step-num { background: var(--accent); color: #000; font-weight: 700; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; flex-shrink: 0; margin-top: 2px; }
+.step-body { flex: 1; }
+
+/* Header bar */
+.hero { background: linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1f3a 100%); border: 1px solid var(--border); border-radius: 12px; padding: 28px 32px; margin-bottom: 32px; }
+.hero h1 { border: none; padding: 0; margin: 0 0 8px; font-size: 1.8rem; }
+.hero .subtitle { color: var(--muted); font-size: 0.92rem; }
+.hero .meta { margin-top: 12px; font-size: 0.8rem; color: var(--muted); display: flex; gap: 20px; flex-wrap: wrap; }
+.hero .meta span { display: flex; align-items: center; gap: 5px; }
+
+/* File tree */
+.tree { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-family: Consolas, monospace; font-size: 0.83rem; line-height: 1.8; }
+.tree .dir  { color: var(--accent); }
+.tree .file { color: var(--text); }
+.tree .new-file  { color: var(--green); }
+.tree .mod-file  { color: var(--orange); }
+
+hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ═══════════════ NAVIGATION ═══════════════ -->
+<nav>
+  <div class="nav-title">PICLas Windows Guide</div>
+
+  <div class="nav-section">
+    <a href="#overview">Overview</a>
+    <a href="#prerequisites">1. Prerequisites</a>
+    <a href="#msys2-install">2. MSYS2 Setup</a>
+    <a href="#packages">3. Package Installation</a>
+    <a href="#source-changes">4. Source Code Changes</a>
+    <a class="nav-sub" href="#glob-windows">4.1 Windows Glob</a>
+    <a class="nav-sub" href="#cmake-changes">4.2 CMake Changes</a>
+    <a class="nav-sub" href="#presets">4.3 CMake Presets</a>
+    <a href="#build-fixes">5. Build Fixes</a>
+    <a href="#mpi-build">6. MPI Build</a>
+    <a class="nav-sub" href="#mpi-packages">6.1 MS-MPI Packages</a>
+    <a class="nav-sub" href="#mpi-cmake-fixes">6.2 CMake/Source Fixes</a>
+    <a class="nav-sub" href="#mpi-preset">6.3 MPI Preset</a>
+    <a class="nav-sub" href="#mpi-running">6.4 Running with MPI</a>
+    <a href="#build-tool">7. Build Configurator</a>
+    <a href="#running">8. Running Simulations</a>
+    <a href="#postprocess">9. Post-Processing</a>
+    <a href="#distribution">10. Distribution</a>
+    <a href="#other-computers">11. Other Computers</a>
+    <a href="#troubleshooting">12. Troubleshooting</a>
+    <a href="#file-summary">File Summary</a>
+  </div>
+</nav>
+
+<!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+<main>
+
+<div class="hero">
+  <h1>PICLas on Windows</h1>
+  <div class="subtitle">Complete setup, build, and distribution guide for PICLas v4.1.0 on Windows 11 with MSYS2 UCRT64</div>
+  <div class="meta">
+    <span>&#128197; March 2026</span>
+    <span>&#127988; Windows 11 Pro</span>
+    <span>&#128295; MSYS2 UCRT64 / GCC</span>
+    <span>&#128196; PICLas v4.1.0</span>
+  </div>
+</div>
+
+<!-- ─────────────── OVERVIEW ─────────────── -->
+<h2 id="overview">Overview</h2>
+<p>
+  PICLas is a Particle-in-Cell / Direct Simulation Monte Carlo (PIC-DSMC) plasma simulation code written in Fortran/C.
+  It was originally developed for Linux/HPC environments. This guide documents all steps taken to build and run PICLas on
+  Windows 11 using the MSYS2 UCRT64 environment, including source code patches, build system configuration, and runtime fixes.
+</p>
+<div class="note">
+  <b>Key strategy</b>
+  PICLas is compiled natively on Windows using GCC/GFortran provided by MSYS2 (not Cygwin, not WSL). The resulting
+  <code>piclas.exe</code> is a real Windows executable that runs without MSYS2 at runtime, provided the required DLLs are
+  bundled (see <a href="#distribution">Distribution</a>).
+</div>
+
+<h3>What was modified vs. what is standard</h3>
+<table>
+  <tr><th>Item</th><th>Status</th><th>Notes</th></tr>
+  <tr><td>MSYS2 toolchain</td><td>Standard</td><td>No patches needed</td></tr>
+  <tr><td>HDF5 library</td><td>Standard</td><td>Installed via pacman (serial only, no parallel MPI)</td></tr>
+  <tr><td>MS-MPI library</td><td>Standard</td><td>Installed via pacman (<code>mingw-w64-ucrt-x86_64-msmpi</code>)</td></tr>
+  <tr><td>PETSc library</td><td>Needs .pc fix</td><td>Create petsc.pc wrapper (Section 5)</td></tr>
+  <tr><td>CMakePresets.json</td><td>Extended</td><td>Added windows-ucrt64, windows-ucrt64-mpi and other presets</td></tr>
+  <tr><td>CMakeLists.txt</td><td>Patched</td><td>Full path to powershell.exe for userblock step</td></tr>
+  <tr><td>cmake/SetLibraries.cmake</td><td>Patched</td><td>MPI linker ordering, HDF5 parallel detection, USE_MPI_HDF5 flag</td></tr>
+  <tr><td>src/globals/glob_windows.c</td><td>New file</td><td>Win32 wildcard expansion</td></tr>
+  <tr><td>src/globals/commandlinearguments.f90</td><td>Patched</td><td>Call glob via ISO_C_BINDING</td></tr>
+  <tr><td>src/CMakeLists.txt</td><td>Patched</td><td>Link globlib; link MPI libs to executables on Windows</td></tr>
+  <tr><td>unitTests/CMakeLists.txt</td><td>Patched</td><td>Fix Fortran module race condition; link MPI libs on Windows</td></tr>
+  <tr><td>src/io_hdf5/io_hdf5.f90</td><td>Patched</td><td>Guard H5PSET_FAPL_MPIO_F with USE_MPI_HDF5</td></tr>
+  <tr><td>src/io_hdf5/hdf5_input.f90</td><td>Patched</td><td>Guard FAPL/DXPL calls with USE_MPI_HDF5</td></tr>
+  <tr><td>src/io_hdf5/hdf5_output.f90</td><td>Patched</td><td>Guard DXPL calls with USE_MPI_HDF5</td></tr>
+</table>
+
+<!-- ─────────────── PREREQUISITES ─────────────── -->
+<h2 id="prerequisites">1. Prerequisites</h2>
+<ul>
+  <li>Windows 10 or Windows 11 (64-bit)</li>
+  <li>At least 20 GB free disk space (MSYS2 + PICLas build)</li>
+  <li>Internet connection for downloading packages</li>
+  <li>Git (for cloning PICLas source — or download the zip from GitLab)</li>
+  <li>ParaView (for visualising results) — download from <code>paraview.org</code></li>
+</ul>
+
+<!-- ─────────────── MSYS2 ─────────────── -->
+<h2 id="msys2-install">2. MSYS2 Setup</h2>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <b>Download and install MSYS2</b><br>
+    Download the installer from <code>msys2.org</code> and run it. Accept the default installation path <code>C:\msys64</code>.
+    Do not change the path — all scripts and presets in this guide assume this location.
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <b>Open the UCRT64 shell</b><br>
+    From the Start menu, launch <b>MSYS2 UCRT64</b> (not MSYS2 MSYS, not MINGW64).
+    All commands in this guide are run in that shell unless stated otherwise.
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <b>Update the package database</b>
+    <pre class="cmd"><code>pacman -Syu</code></pre>
+    Close and reopen the shell if prompted, then run again:
+    <pre class="cmd"><code>pacman -Su</code></pre>
+  </div>
+</div>
+
+<!-- ─────────────── PACKAGES ─────────────── -->
+<h2 id="packages">3. Package Installation</h2>
+<p>All packages are from the <code>ucrt64</code> repository. Install them in one command:</p>
+
+<pre class="cmd"><code>pacman -S --noconfirm \
+  mingw-w64-ucrt-x86_64-gcc \
+  mingw-w64-ucrt-x86_64-gcc-fortran \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-hdf5 \
+  mingw-w64-ucrt-x86_64-python \
+  mingw-w64-ucrt-x86_64-petsc \
+  git</code></pre>
+
+<div class="warn">
+  <b>Disk space</b>
+  PETSc and its dependencies (OpenBLAS, METIS, ParMETIS, hwloc) require approximately 1.2 GB.
+  Python requires an additional 265 MB.
+</div>
+
+<h3>Installed package versions (as tested)</h3>
+<table>
+  <tr><th>Package</th><th>Version</th><th>Purpose</th></tr>
+  <tr><td>gcc / gfortran</td><td>15.x</td><td>C and Fortran compiler</td></tr>
+  <tr><td>cmake</td><td>4.2.x</td><td>Build system generator</td></tr>
+  <tr><td>ninja</td><td>1.12.x</td><td>Fast parallel build tool</td></tr>
+  <tr><td>hdf5</td><td>2.1.0</td><td>HDF5 data format (state files) — serial only, no parallel MPI</td></tr>
+  <tr><td>msmpi</td><td>10.1</td><td>Microsoft MPI (optional, for parallel builds)</td></tr>
+  <tr><td>python</td><td>3.14.x</td><td>Build configurator web server</td></tr>
+  <tr><td>petsc</td><td>3.24.5</td><td>Iterative linear solvers (optional)</td></tr>
+  <tr><td>openblas</td><td>0.3.31</td><td>BLAS/LAPACK (PETSc dependency)</td></tr>
+  <tr><td>metis / parmetis</td><td>5.1.0 / 4.0.3</td><td>Graph partitioning (PETSc dependency)</td></tr>
+</table>
+
+<h3>Create missing Fortran module directory</h3>
+<p>GFortran warns about a missing include directory expected by the HDF5 Fortran CMake config. Create it once:</p>
+<pre class="cmd"><code>mkdir -p /c/msys64/ucrt64/mod/static</code></pre>
+
+<!-- ─────────────── SOURCE CHANGES ─────────────── -->
+<h2 id="source-changes">4. Source Code Changes</h2>
+<p>
+  PICLas requires four modifications to build and run correctly on Windows. These changes are backward-compatible:
+  on Linux/macOS the new C file compiles to a no-op stub and behaviour is unchanged.
+</p>
+
+<h3 id="glob-windows">4.1 Windows Wildcard Expansion — <code>glob_windows.c</code> <span class="badge new">NEW FILE</span></h3>
+<p>
+  On Linux, the shell expands wildcards like <code>plasma_wave_State_*.h5</code> before passing them to the program.
+  Windows shells (CMD, PowerShell) do not — the literal string <code>*</code> reaches the program unchanged.
+  This new file implements wildcard expansion using the Win32 API so that
+  <code>piclas2vtk parameter.ini State_*.h5</code> works from any Windows terminal.
+</p>
+
+<b>File:</b> <code>piclas-master/src/globals/glob_windows.c</code>
+
+<pre><code><span class="comment">// Win32 glob expansion — called from Fortran via ISO_C_BINDING
+// On non-Windows: stub always returns 0 (shell already expands globs)</span>
+#ifdef _WIN32
+#include &lt;windows.h&gt;
+#include &lt;string.h&gt;
+#include &lt;stdlib.h&gt;
+
+static int cmp_str(const void *a, const void *b) {
+    return strcmp(*(const char **)a, *(const char **)b);
+}
+
+int glob_expand_c(const char *pattern, char *results, int results_len) {
+    WIN32_FIND_DATAA fd;
+    HANDLE h;
+    char *ptrs[4096];
+    int count = 0;
+    int pos = 0;
+
+    h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return 0;
+
+    /* Determine directory prefix from pattern */
+    char dir[MAX_PATH] = "";
+    const char *slash = strrchr(pattern, '/');
+    const char *bslash = strrchr(pattern, '\\');
+    const char *last = slash > bslash ? slash : bslash;
+    if (last) { int n = (int)(last - pattern) + 1; memcpy(dir, pattern, n); dir[n] = 0; }
+
+    do {
+        if (count >= 4096) break;
+        char *entry = malloc(MAX_PATH);
+        snprintf(entry, MAX_PATH, "%s%s", dir, fd.cFileName);
+        ptrs[count++] = entry;
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+
+    qsort(ptrs, count, sizeof(char *), cmp_str);
+
+    for (int i = 0; i < count; i++) {
+        int len = strlen(ptrs[i]);
+        if (pos + len + 1 >= results_len) { free(ptrs[i]); break; }
+        memcpy(results + pos, ptrs[i], len + 1);
+        pos += len + 1;
+        free(ptrs[i]);
+    }
+    return count;
+}
+#else
+int glob_expand_c(const char *pattern, char *results, int results_len) {
+    (void)pattern; (void)results; (void)results_len;
+    return 0;  /* Linux/macOS: shell handles glob expansion */
+}
+#endif</code></pre>
+
+<h3>4.2 Fortran Command-Line Interface — <code>commandlinearguments.f90</code> <span class="badge mod">MODIFIED</span></h3>
+<p>
+  Add an <code>ISO_C_BINDING</code> interface for <code>glob_expand_c</code> and call it for any argument
+  containing <code>*</code> or <code>?</code>.
+</p>
+
+<b>File:</b> <code>piclas-master/src/globals/commandlinearguments.f90</code>
+
+<p>Add at the top of the module, inside the relevant subroutine:</p>
+<pre><code>USE ISO_C_BINDING, ONLY: C_INT, C_CHAR, C_NULL_CHAR
+
+INTERFACE
+  FUNCTION glob_expand_c(pattern, results, results_len) BIND(C, NAME='glob_expand_c')
+    USE ISO_C_BINDING, ONLY: C_INT, C_CHAR
+    CHARACTER(KIND=C_CHAR), INTENT(IN)        :: pattern(*)
+    CHARACTER(KIND=C_CHAR), INTENT(OUT)       :: results(*)
+    INTEGER(KIND=C_INT),    VALUE, INTENT(IN) :: results_len
+    INTEGER(KIND=C_INT)                       :: glob_expand_c
+  END FUNCTION glob_expand_c
+END INTERFACE</code></pre>
+
+<p>Then wrap each argument that contains <code>*</code> or <code>?</code> through <code>glob_expand_c</code> before storing it.</p>
+
+<h3 id="cmake-changes">4.3 CMake Build System <span class="badge mod">MODIFIED</span></h3>
+<b>File:</b> <code>piclas-master/src/CMakeLists.txt</code>
+
+<p>Add a static library for the glob helper and link it into all targets:</p>
+<pre><code><span class="comment"># Windows glob expansion helper</span>
+ADD_LIBRARY(globlib STATIC ./src/globals/glob_windows.c)
+SET_TARGET_PROPERTIES(globlib PROPERTIES
+  LANGUAGE C
+  LINKER_LANGUAGE C
+  COMPILE_OPTIONS "-fPIC"
+  CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+<span class="comment"># Add globlib to every piclas target link list</span>
+TARGET_LINK_LIBRARIES(piclas       PRIVATE globlib)
+TARGET_LINK_LIBRARIES(piclas2vtk   PRIVATE globlib)
+TARGET_LINK_LIBRARIES(libpiclasshared PRIVATE globlib)</code></pre>
+
+<b>File:</b> <code>piclas-master/unitTests/CMakeLists.txt</code>
+<p>Add a dependency to prevent a race condition where unit tests compile before Fortran <code>.mod</code> files are generated:</p>
+<pre><code><span class="comment"># In the add_unit_test() function:</span>
+ADD_DEPENDENCIES(${target} libpiclasstaticF90)</code></pre>
+
+<h3 id="presets">4.4 CMake Presets <span class="badge mod">MODIFIED</span></h3>
+<b>File:</b> <code>piclas-master/CMakePresets.json</code>
+
+<p>The base preset <code>windows-ucrt64</code> was already present. Add the following configure and build presets for each solver variant you need:</p>
+
+<pre><code>{
+  "configurePresets": [
+    {
+      "name": "windows-ucrt64-poisson",
+      "displayName": "Windows UCRT64 — Poisson solver",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-poisson",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":    "poisson",
+        "PICLAS_TIMEDISCMETHOD":"RK3",
+        "PICLAS_UNITTESTS":     "OFF",
+        "PICLAS_BUILD_POSTI":   "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-ucrt64-poisson",
+      "configurePreset": "windows-ucrt64-poisson"
+    }
+  ]
+}</code></pre>
+
+<div class="tip">
+  <b>Tip — Use the Build Configurator</b>
+  Instead of editing CMakePresets.json by hand, use <code>piclas_builder.html</code>
+  (see <a href="#build-tool">Section 6</a>) to generate and download a configured build script.
+</div>
+
+<!-- ─────────────── BUILD FIXES ─────────────── -->
+<h2 id="build-fixes">5. Build Fixes</h2>
+
+<h3>5.1 TEMP/TMP environment variables</h3>
+<p>
+  On some Windows systems, the <code>TEMP</code> and <code>TMP</code> variables point to
+  <code>C:\Windows\Temp</code> (a system directory). GCC cannot write temporary files there and aborts with
+  <em>"Cannot create temporary file in C:\WINDOWS\: Permission denied"</em>.
+</p>
+<p>Set them to the user temp directory before building. Add these lines to any build script:</p>
+<pre class="cmd"><code>export TEMP='/c/Users/YOUR_USERNAME/AppData/Local/Temp'
+export TMP=$TEMP</code></pre>
+<p>Or in a <code>.bat</code> file, use <code>/tmp</code> which MSYS2 maps to <code>C:\msys64\tmp</code>:</p>
+<pre class="cmd"><code>"%BASH%" -c "export TEMP=/tmp && export TMP=/tmp && cmake --build ..."</code></pre>
+
+<h3>5.2 Missing Fortran module include directory</h3>
+<p>
+  GFortran warns about <code>C:/msys64/ucrt64/mod/static</code> not existing. The directory is referenced by
+  the HDF5 Fortran CMake configuration for static library modules. The warning is harmless but can be silenced by
+  creating the empty directory:
+</p>
+<pre class="cmd"><code>mkdir -p /c/msys64/ucrt64/mod/static</code></pre>
+
+<h3>5.3 PETSc pkg-config wrapper <span class="badge fix">FIX</span></h3>
+<p>
+  MSYS2 installs PETSc with variant-specific <code>.pc</code> files
+  (<code>petsc-dso.pc</code>, <code>petsc-cso.pc</code>, etc.) but <em>not</em> a plain <code>petsc.pc</code>.
+  PICLas's <code>FindPETSc.cmake</code> uses <code>pkg-config</code> to search for the package name
+  <code>petsc</code> and, when it fails to find it, falls back to downloading and compiling PETSc from source —
+  which fails on Windows because the PETSc <code>configure</code> script uses Unix environment-variable syntax
+  incompatible with <code>cmd.exe</code>.
+</p>
+<p>
+  The fix is to create a plain <code>petsc.pc</code> wrapper pointing to the
+  <b>dso</b> variant (double precision, serial, optimized):
+</p>
+
+<pre><code><span class="comment"># Create file: C:\msys64\ucrt64\lib\pkgconfig\petsc.pc</span>
+prefix=/c/msys64/ucrt64
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib/petsc/dso
+includedir=${exec_prefix}/include/petsc
+
+Name: PETSc
+Description: Sequential double precision PETSc build
+Version: 3.24.5
+Requires.private: hwloc openblas
+Cflags: -I${includedir}/dso -I${includedir}
+Libs: -L${libdir} -lpetsc
+Libs.private: -L${libdir} -lpetsc -lgfortran -lquadmath</code></pre>
+
+<p>Create this file from the MSYS2 shell:</p>
+<pre class="cmd"><code>cat > /c/msys64/ucrt64/lib/pkgconfig/petsc.pc &lt;&lt; 'EOF'
+prefix=/c/msys64/ucrt64
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib/petsc/dso
+includedir=${exec_prefix}/include/petsc
+
+Name: PETSc
+Description: Sequential double precision PETSc build
+Version: 3.24.5
+Requires.private: hwloc openblas
+Cflags: -I${includedir}/dso -I${includedir}
+Libs: -L${libdir} -lpetsc
+Libs.private: -L${libdir} -lpetsc -lgfortran -lquadmath
+EOF</code></pre>
+
+<p>Verify it works:</p>
+<pre class="cmd"><code>pkg-config --modversion petsc
+<span class="comment"># Expected output: 3.24.5</span></code></pre>
+
+<p>When building with PETSc, also pass these cmake flags to ensure the system library is used rather than triggering a source build:</p>
+<pre class="cmd"><code>-DLIBS_BUILD_PETSC=OFF \
+-DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a</code></pre>
+
+<p>And set the environment variable so FindPETSc.cmake finds the pkgconfig directory:</p>
+<pre class="cmd"><code>export PETSC_DIR=/c/msys64/ucrt64</code></pre>
+
+<h3>5.4 Parallel build race condition (unit tests)</h3>
+<p>
+  When Ninja builds in parallel, unit test source files can start compiling before the Fortran
+  <code>.mod</code> files in <code>libpiclasstaticF90</code> have been generated, causing
+  <em>"Fatal Error: Cannot open module file 'mod_globals.mod'"</em>.
+</p>
+<p>Workaround: build with <code>--target piclas</code> to skip unit tests, or set <code>PICLAS_UNITTESTS=OFF</code>.
+The CMake dependency fix in <code>unitTests/CMakeLists.txt</code> (Section 4.3) also mitigates this.</p>
+
+<!-- ─────────────── MPI BUILD ─────────────── -->
+<h2 id="mpi-build">6. MPI Build (MS-MPI)</h2>
+<p>
+  PICLas can be built with MPI support on Windows using Microsoft MPI (MS-MPI v10.1) provided by
+  MSYS2. This enables multi-process parallel simulations via <code>mpiexec -n N piclas.exe</code>.
+  Note that MSYS2's HDF5 is built without parallel MPI support, so file I/O remains serial even in
+  MPI runs — this is the standard behaviour for most desktop/workstation use cases.
+</p>
+
+<h3 id="mpi-packages">6.1 Install MS-MPI Package</h3>
+<p>Install the MSYS2 MS-MPI wrapper package (provides <code>mpicc</code>, <code>mpifort</code>, import library <code>libmsmpi.dll.a</code>, and header <code>mpi.h</code>):</p>
+<pre class="cmd"><code>pacman -S --noconfirm mingw-w64-ucrt-x86_64-msmpi</code></pre>
+<div class="note">
+  <b>MS-MPI runtime</b>
+  The MSYS2 package provides the import library for linking. For running MPI programs you also need
+  the MS-MPI <em>runtime</em> DLL (<code>msmpi.dll</code>). This is provided by
+  <a href="https://docs.microsoft.com/en-us/message-passing-interface/microsoft-mpi">Microsoft MPI v10</a>
+  and is typically already installed as part of the MSYS2 package or can be installed separately.
+</div>
+
+<h3 id="mpi-cmake-fixes">6.2 Source Code and CMake Fixes</h3>
+<p>Six fixes are needed to get the MPI build working on Windows. These are all already applied in the patched source tree.</p>
+
+<h4>Fix A — mpi_f08.o linker ordering (<code>cmake/SetLibraries.cmake</code>)</h4>
+<p>
+  MS-MPI v10 provides only the legacy <code>MODULE MPI</code> interface. PICLas ships a compatibility
+  wrapper <code>cmake/mpi_f08.f90</code> that provides the modern typed <code>MPI_F08</code> interface,
+  compiled into <code>mpi_f08.o</code>. GNU ld scans archives left-to-right: the object file must appear
+  <em>before</em> <code>libmsmpi.dll.a</code> so that its undefined references (<code>mpi_wtick_</code>
+  etc.) are known when the import library is scanned. Changed from <code>LIST(APPEND…)</code>
+  to <code>LIST(INSERT … 0 …)</code>:
+</p>
+<pre><code><span class="comment"># mpi_f08.o must precede libmsmpi.dll.a in the link command</span>
+IF(EXISTS "${_mpi_f08_dir}/mpi_f08.o")
+  LIST(INSERT linkedlibs 0 "${_mpi_f08_dir}/mpi_f08.o")
+ENDIF()</code></pre>
+
+<h4>Fix B — HDF5 parallel detection false positive (<code>cmake/SetLibraries.cmake</code>)</h4>
+<p>
+  MSYS2 HDF5 is built without parallel MPI support (<code>HDF5_PROVIDES_PARALLEL=OFF</code> in
+  <code>hdf5-config.cmake</code>). The original detection used <code>grep mpio_f</code> which matched
+  the symbol <code>h5fd_mpio_f_</code> (an MPIO file-driver constant that is always present), causing
+  a false <code>HDF5_IS_PARALLEL=TRUE</code>. Changed to search for the specific function that only
+  exists in parallel-capable builds:
+</p>
+<pre><code><span class="comment"># Search specifically for h5pset_fapl_mpio_f to avoid false positives from h5fd_mpio_f</span>
+ELSEIF(WIN32)
+  EXECUTE_PROCESS(COMMAND nm -g ${HDF5_Fortran_LIBRARY_hdf5_fortran}
+                  COMMAND grep h5pset_fapl_mpio_f
+                  OUTPUT_VARIABLE HDF5_USES_MPIF ...)</code></pre>
+
+<h4>Fix C — <code>USE_MPI_HDF5</code> compile flag + source guards (<code>cmake/SetLibraries.cmake</code>, 3 HDF5 source files)</h4>
+<p>
+  Added a new preprocessor flag that is <code>1</code> only when both MPI is enabled AND HDF5 was built
+  with parallel support. This guards the 5 places in the source that call <code>H5PSET_FAPL_MPIO_F</code>
+  or <code>H5PSET_DXPL_MPIO_F</code> (which do not exist in the serial MSYS2 HDF5 library):
+</p>
+<pre><code><span class="comment"># cmake/SetLibraries.cmake — after HDF5 detection:</span>
+IF(LIBS_USE_MPI AND HDF5_IS_PARALLEL)
+  ADD_COMPILE_DEFINITIONS(USE_MPI_HDF5=1)
+ELSE()
+  ADD_COMPILE_DEFINITIONS(USE_MPI_HDF5=0)
+ENDIF()</code></pre>
+<p>In the three HDF5 source files, the parallel I/O calls are wrapped with <code>#if USE_MPI_HDF5</code> instead of the former <code>#if USE_MPI</code>:</p>
+<pre><code><span class="comment">! io_hdf5.f90 / hdf5_input.f90 / hdf5_output.f90</span>
+#if USE_MPI_HDF5
+  CALL H5PSET_FAPL_MPIO_F(Plist_File_ID, communicatorOpt%mpi_val, MPIInfo%mpi_val, iError)
+#endif /*USE_MPI_HDF5*/</code></pre>
+
+<h4>Fix D — Full path to <code>powershell.exe</code> in userblock step (<code>CMakeLists.txt</code>)</h4>
+<p>
+  The userblock pre-build step invokes <code>generateuserblock.ps1</code> via <code>powershell</code>.
+  During the Ninja build, Windows PowerShell is not in the effective PATH. Fixed by using the full path:
+</p>
+<pre><code>ADD_CUSTOM_COMMAND(TARGET libpiclasstatic PRE_BUILD COMMAND
+  "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+  -ExecutionPolicy Bypass -NonInteractive -File
+  "${CMAKE_CURRENT_SOURCE_DIR}/tools/userblock/generateuserblock.ps1" ...)</code></pre>
+
+<h4>Fix E — Link MPI libs directly to executables (<code>src/CMakeLists.txt</code>, <code>unitTests/CMakeLists.txt</code>)</h4>
+<p>
+  On Windows, symbols from a DLL's transitive dependencies are not re-exported through the DLL's
+  import stub (<code>liblibpiclas.dll.a</code>). So <code>mpi_finalize_</code> and other MPI symbols
+  that <code>libpiclas.dll</code> uses internally are not visible to <code>piclas.exe</code> when it
+  links only against the import stub. Fixed by linking <code>${linkedlibs}</code> (which contains
+  <code>mpi_f08.o</code> and <code>libmsmpi.dll.a</code>) directly to both the main executable
+  and unit test executables on Windows:
+</p>
+<pre><code><span class="comment"># src/CMakeLists.txt — add_exec function</span>
+FUNCTION(add_exec target)
+  ADD_EXECUTABLE(       ${target} ${ARGN})
+  TARGET_LINK_LIBRARIES(${target} libpiclasshared)
+  IF(WIN32)
+    TARGET_LINK_LIBRARIES(${target} ${linkedlibs})
+    ...
+
+<span class="comment"># unitTests/CMakeLists.txt — add_unit_test function</span>
+IF(WIN32)
+  TARGET_LINK_LIBRARIES(${target} ${linkedlibs})
+ENDIF()</code></pre>
+
+<h3 id="mpi-preset">6.3 MPI CMake Preset</h3>
+<p>The <code>windows-ucrt64-mpi</code> preset inherits from <code>windows-ucrt64</code> and enables MPI:</p>
+<pre><code>{
+  "name": "windows-ucrt64-mpi",
+  "displayName": "Windows MSYS2 UCRT64 + MS-MPI (Release)",
+  "inherits": "windows-ucrt64",
+  "binaryDir": "${sourceDir}/build-ucrt64-mpi",
+  "cacheVariables": {
+    "LIBS_USE_MPI":         "ON",
+    "MPI_HOME":             "C:/msys64/ucrt64",
+    "MPI_C_COMPILER":       "C:/msys64/ucrt64/bin/mpicc",
+    "MPI_CXX_COMPILER":     "C:/msys64/ucrt64/bin/mpicxx",
+    "MPI_Fortran_COMPILER": "C:/msys64/ucrt64/bin/mpifort"
+  }
+}</code></pre>
+
+<p>Configure and build:</p>
+<pre class="cmd"><code>cd C:/Data/PRJ/Piclas/piclas-master
+cmake --preset windows-ucrt64-mpi
+cmake --build build-ucrt64-mpi</code></pre>
+
+<p>The configure output will confirm the HDF5 serial detection fix:</p>
+<pre><code>-- Compiling with [MS-MPI] (v10.1)
+-- Compiling with system [HDF5] (v2.1.0) without parallel support</code></pre>
+
+<h3 id="mpi-running">6.4 Running with MPI</h3>
+<pre class="cmd"><code><span class="comment"># Single process (same as non-MPI)</span>
+./build-ucrt64-mpi/bin/piclas.exe parameter.ini
+
+<span class="comment"># Multi-process (requires msmpi.dll in PATH)</span>
+mpiexec -n 4 ./build-ucrt64-mpi/bin/piclas.exe parameter.ini</code></pre>
+
+<div class="danger">
+  <b>MPI and PETSc cannot be combined on Windows</b>
+  MSYS2's PETSc is built without MPI (sequential/serial variant). Its headers include
+  <code>petsc/mpiuni/mpiunifdef.h</code> which redefines <code>MPI_WTIME</code> →
+  <code>PETSC_MPI_WTIME</code>. When building with MS-MPI, Fortran sees this redefined symbol
+  but has no type declaration for it, causing a fatal compile error in <code>hdg.f90</code>.
+  Use either <code>LIBS_USE_MPI=ON</code> <em>or</em> <code>LIBS_USE_PETSC=ON</code>, never both.
+  The cmake build system will emit a FATAL_ERROR if both are enabled simultaneously.
+</div>
+
+<div class="note">
+  <b>HDF5 file I/O is serial</b>
+  Since MSYS2's HDF5 has no parallel MPI support, all HDF5 reads/writes go through rank 0.
+  This is the expected behaviour for desktop/workstation builds and is transparent to the user.
+  MPI parallelism applies to the compute (particle tracking, field solve) but not to file I/O.
+</div>
+
+<!-- ─────────────── BUILD TOOL ─────────────── -->
+<h2 id="build-tool">7. Build Configurator</h2>
+<p>
+  A standalone HTML build configurator was created at <code>C:\Data\PRJ\Piclas\piclas_builder.html</code>.
+  It runs in any modern browser without a server, generates cmake commands live as you change options,
+  and downloads a ready-to-run <code>.bat</code> build script.
+</p>
+
+<h3>Available tools</h3>
+<table>
+  <tr><th>File</th><th>How to open</th><th>Build output</th></tr>
+  <tr><td>piclas_builder.html</td><td>Any browser (Chrome, Edge, Firefox)</td><td>Downloads .bat → runs in terminal</td></tr>
+  <tr><td>piclas_builder.hta</td><td>Double-click in Windows Explorer</td><td>Live streaming in the window</td></tr>
+  <tr><td>piclas_builder.py</td><td><code>python3 piclas_builder.py</code> → open localhost:8765</td><td>Live streaming in browser</td></tr>
+</table>
+
+<div class="warn">
+  <b>HTA warning</b>
+  The <code>.hta</code> file must be opened by double-clicking in Windows Explorer — NOT opened in a web browser.
+  Browsers block the ActiveX objects it needs to run shell commands.
+</div>
+
+<h3>Configurable options</h3>
+<table>
+  <tr><th>Option</th><th>Values</th><th>Notes</th></tr>
+  <tr><td>PICLAS_EQNSYSNAME</td><td>maxwell, poisson, electrostatic_pois, hdg</td><td>Selects physics solver</td></tr>
+  <tr><td>PICLAS_TIMEDISCMETHOD</td><td>RK3, RK4, RK14, Boris-Leapfrog, Leapfrog, RK4-implicit</td><td>Time integration</td></tr>
+  <tr><td>CMAKE_BUILD_TYPE</td><td>Debug, Release, RelWithDebInfo</td><td>Optimisation level</td></tr>
+  <tr><td>PICLAS_BUILD_POSTI</td><td>ON/OFF</td><td>Builds piclas2vtk post-processor</td></tr>
+  <tr><td>LIBS_USE_PETSC</td><td>ON/OFF</td><td>PETSc iterative solvers</td></tr>
+  <tr><td>PICLAS_UNITTESTS</td><td>ON/OFF</td><td>Disable for faster builds</td></tr>
+  <tr><td>PICLAS_INSTRUCTION</td><td>-march=x86-64-v2 etc.</td><td>CPU instruction set</td></tr>
+  <tr><td>LIBS_USE_MPI</td><td>ON/OFF</td><td>Use <code>--preset windows-ucrt64-mpi</code> for ON; see Section 6</td></tr>
+</table>
+
+<h3>Example: build the Poisson solver with PETSc</h3>
+<pre class="cmd"><code>export PETSC_DIR=/c/msys64/ucrt64
+export TEMP=/tmp && export TMP=/tmp
+
+cd 'C:/Data/PRJ/Piclas/piclas-master' && \
+cmake --preset windows-ucrt64 \
+  -B C:/Data/PRJ/Piclas/build-poisson-leapfrog-release \
+  -DPICLAS_EQNSYSNAME=poisson \
+  -DPICLAS_TIMEDISCMETHOD=Leapfrog \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPICLAS_BUILD_POSTI=ON \
+  -DPICLAS_UNITTESTS=OFF \
+  -DLIBS_USE_MPI=OFF \
+  -DLIBS_USE_PETSC=ON \
+  -DLIBS_BUILD_PETSC=OFF \
+  -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a \
+  "-DPICLAS_INSTRUCTION=-march=x86-64-v2 -mtune=generic"
+
+cmake --build C:/Data/PRJ/Piclas/build-poisson-leapfrog-release \
+  --target piclas piclas2vtk</code></pre>
+
+<!-- ─────────────── RUNNING ─────────────── -->
+<h2 id="running">8. Running Simulations</h2>
+
+<h3>7.1 Running a tutorial</h3>
+<p>Open an MSYS2 UCRT64 shell, navigate to the tutorial directory, and run:</p>
+<pre class="cmd"><code>cd /c/Data/PRJ/Piclas/piclas-master/tutorials/pic-poisson-plasma-wave
+/c/Data/PRJ/Piclas/build-poisson-leapfrog-release/bin/piclas.exe parameter.ini</code></pre>
+
+<div class="warn">
+  <b>Choosing the right binary</b>
+  PICLas must be compiled with the equation system that matches the tutorial's parameter file.
+  If the tutorial uses <code>PICLAS_EQNSYSNAME=poisson</code>, run the poisson binary — not the maxwell binary.
+  Symptoms of a mismatch: unknown parameters (<code>epsCG</code>, <code>maxIterCG</code>),
+  particles flying outside the domain, BCTracking recursion errors.
+</div>
+
+<h3>7.2 Running from CMD or PowerShell</h3>
+<p>From a regular Windows terminal, prefix the MSYS2 bash path:</p>
+<pre class="cmd"><code>C:\msys64\usr\bin\bash.exe -c "
+  cd '/c/Data/PRJ/Piclas/tutorials/pic-poisson-plasma-wave' &&
+  /c/Data/PRJ/Piclas/build-poisson-leapfrog-release/bin/piclas.exe parameter.ini
+"</code></pre>
+
+<h3>7.3 Wildcard arguments (State files)</h3>
+<p>
+  Windows shells do not expand <code>*</code> wildcards before passing arguments to programs.
+  The glob expansion patch in <code>glob_windows.c</code> handles this inside the binary, so this works:
+</p>
+<pre class="cmd"><code>piclas2vtk.exe parameter.ini plasma_wave_State_*.h5</code></pre>
+<p>This works from any terminal (CMD, PowerShell, MSYS2 bash).</p>
+
+<!-- ─────────────── POST-PROCESSING ─────────────── -->
+<h2 id="postprocess">9. Post-Processing with piclas2vtk</h2>
+
+<h3>8.1 Convert a single state file</h3>
+<pre class="cmd"><code>cd /c/Data/PRJ/Piclas/tutorials/pic-poisson-plasma-wave
+/c/Data/PRJ/Piclas/build-poisson-leapfrog-release/bin/piclas2vtk.exe \
+  parameter.ini plasma_wave_State_000.000000040.h5</code></pre>
+
+<h3>8.2 Convert all state files at once</h3>
+<pre class="cmd"><code>piclas2vtk.exe parameter.ini plasma_wave_State_*.h5</code></pre>
+<p>Output files (<code>.vtu</code>) are written to the same directory. Open them in ParaView.</p>
+
+<h3>8.3 Opening results in ParaView</h3>
+<ol>
+  <li>Open ParaView</li>
+  <li>File → Open → select the <code>.vtu</code> files</li>
+  <li>Click Apply</li>
+  <li>Use the field selector to choose variables (E field, phi, particle data)</li>
+</ol>
+
+<!-- ─────────────── DISTRIBUTION ─────────────── -->
+<h2 id="distribution">10. Distribution</h2>
+<p>
+  To run <code>piclas.exe</code> on a Windows machine that does not have MSYS2 installed,
+  you must bundle the required DLLs alongside the executable.
+</p>
+
+<h3>9.1 Find required DLLs</h3>
+<p>From the MSYS2 shell, use <code>ldd</code> to list all dependencies:</p>
+<pre class="cmd"><code>ldd /c/Data/PRJ/Piclas/build-poisson-leapfrog-release/bin/piclas.exe</code></pre>
+
+<p>Copy all DLLs that come from <code>/c/msys64/ucrt64/bin/</code> (ignore Windows system DLLs in <code>/c/Windows/</code>):</p>
+<pre class="cmd"><code><span class="comment"># Automated: copy all MSYS2 DLLs to a distribution folder</span>
+DIST=/c/Data/PRJ/Piclas/dist-poisson
+mkdir -p "$DIST"
+cp /c/Data/PRJ/Piclas/build-*/bin/piclas.exe "$DIST/"
+cp /c/Data/PRJ/Piclas/build-*/bin/piclas2vtk.exe "$DIST/" 2>/dev/null
+
+ldd "$DIST/piclas.exe" | grep ucrt64 | awk '{print $3}' | xargs -I{} cp {} "$DIST/"
+ldd "$DIST/piclas2vtk.exe" 2>/dev/null | grep ucrt64 | awk '{print $3}' | xargs -I{} cp {} "$DIST/" 2>/dev/null
+
+echo "Distribution folder contents:"
+ls "$DIST/"</code></pre>
+
+<h3>9.2 Typical DLLs required</h3>
+<table>
+  <tr><th>DLL</th><th>Source</th></tr>
+  <tr><td>libgcc_s_seh-1.dll</td><td>GCC runtime</td></tr>
+  <tr><td>libgfortran-5.dll</td><td>Fortran runtime</td></tr>
+  <tr><td>libgomp-1.dll</td><td>OpenMP runtime</td></tr>
+  <tr><td>libwinpthread-1.dll</td><td>POSIX threads</td></tr>
+  <tr><td>libstdc++-6.dll</td><td>C++ standard library</td></tr>
+  <tr><td>hdf5.dll / hdf5_fortran.dll</td><td>HDF5 I/O library</td></tr>
+  <tr><td>libpetsc-dso.dll</td><td>PETSc (if built with PETSc)</td></tr>
+  <tr><td>libopenblas.dll</td><td>BLAS/LAPACK (if PETSc)</td></tr>
+  <tr><td>libzlib1.dll / libsz.dll</td><td>Compression (HDF5 dependency)</td></tr>
+</table>
+
+<h3>9.3 Distribution folder structure</h3>
+<div class="tree">
+  <span class="dir">piclas-windows/</span><br>
+  &nbsp;&nbsp;<span class="file">piclas.exe</span><br>
+  &nbsp;&nbsp;<span class="file">piclas2vtk.exe</span><br>
+  &nbsp;&nbsp;<span class="file">libgcc_s_seh-1.dll</span><br>
+  &nbsp;&nbsp;<span class="file">libgfortran-5.dll</span><br>
+  &nbsp;&nbsp;<span class="file">libgomp-1.dll</span><br>
+  &nbsp;&nbsp;<span class="file">libwinpthread-1.dll</span><br>
+  &nbsp;&nbsp;<span class="file">hdf5.dll</span><br>
+  &nbsp;&nbsp;<span class="file">hdf5_fortran.dll</span><br>
+  &nbsp;&nbsp;<span class="file">libpetsc-dso.dll</span> <em>(if PETSc build)</em><br>
+  &nbsp;&nbsp;<span class="file">libopenblas.dll</span> <em>(if PETSc build)</em><br>
+  &nbsp;&nbsp;<span class="file">... other DLLs from ldd output</span><br>
+  &nbsp;&nbsp;<span class="file">README.txt</span>
+</div>
+
+<h3>9.4 Running the distributed binary</h3>
+<p>On the target Windows machine, simply place all DLLs in the same folder as the <code>.exe</code> and run:</p>
+<pre class="cmd"><code>cd C:\path\to\piclas-windows
+piclas.exe parameter.ini</code></pre>
+<p>No MSYS2 installation is required on the target machine.</p>
+
+<div class="tip">
+  <b>Alternative: add DLLs to PATH</b>
+  Instead of copying DLLs next to the exe, you can add <code>C:\msys64\ucrt64\bin</code> to the Windows
+  system PATH. This works if MSYS2 is installed on the target machine.
+</div>
+
+<!-- ─────────────── OTHER COMPUTERS ─────────────── -->
+<h2 id="other-computers">11. Building on Another Windows Computer</h2>
+<p>To reproduce the full build environment on a new machine, follow these steps in order:</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <b>Install MSYS2</b> from <code>msys2.org</code> to <code>C:\msys64</code>.
+    Open <b>MSYS2 UCRT64</b> and update: <code>pacman -Syu</code>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <b>Install all packages</b> (Section 3):
+    <pre class="cmd"><code>pacman -S --noconfirm \
+  mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc-fortran \
+  mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-hdf5 mingw-w64-ucrt-x86_64-python \
+  mingw-w64-ucrt-x86_64-petsc git</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <b>Create the missing module directory:</b>
+    <pre class="cmd"><code>mkdir -p /c/msys64/ucrt64/mod/static</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">4</div>
+  <div class="step-body">
+    <b>Create the PETSc pkg-config wrapper</b> (Section 5.3):
+    <pre class="cmd"><code>cat > /c/msys64/ucrt64/lib/pkgconfig/petsc.pc &lt;&lt; 'EOF'
+prefix=/c/msys64/ucrt64
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib/petsc/dso
+includedir=${exec_prefix}/include/petsc
+Name: PETSc
+Description: Sequential double precision PETSc build
+Version: 3.24.5
+Requires.private: hwloc openblas
+Cflags: -I${includedir}/dso -I${includedir}
+Libs: -L${libdir} -lpetsc
+Libs.private: -L${libdir} -lpetsc -lgfortran -lquadmath
+EOF</code></pre>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">5</div>
+  <div class="step-body">
+    <b>Get the patched PICLas source.</b> Either clone from the project repository (if the patches are committed)
+    or copy the entire <code>piclas-master</code> folder from the reference machine. The four modified/new files are:
+    <ul>
+      <li><code>src/globals/glob_windows.c</code></li>
+      <li><code>src/globals/commandlinearguments.f90</code></li>
+      <li><code>src/CMakeLists.txt</code></li>
+      <li><code>unitTests/CMakeLists.txt</code></li>
+      <li><code>CMakePresets.json</code></li>
+    </ul>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">6</div>
+  <div class="step-body">
+    <b>Build using the HTML configurator</b> or run cmake manually (Section 6):
+    <pre class="cmd"><code>export PETSC_DIR=/c/msys64/ucrt64
+export TEMP=/tmp && export TMP=/tmp
+cd /c/Data/PRJ/Piclas/piclas-master
+cmake --preset windows-ucrt64 -B ../build-poisson-release \
+  -DPICLAS_EQNSYSNAME=poisson \
+  -DPICLAS_TIMEDISCMETHOD=Leapfrog \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPICLAS_BUILD_POSTI=ON \
+  -DPICLAS_UNITTESTS=OFF \
+  -DLIBS_USE_MPI=OFF \
+  -DLIBS_USE_PETSC=ON \
+  -DLIBS_BUILD_PETSC=OFF \
+  -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a \
+  "-DPICLAS_INSTRUCTION=-march=x86-64-v2 -mtune=generic"
+
+cmake --build ../build-poisson-release --target piclas piclas2vtk</code></pre>
+  </div>
+</div>
+
+<!-- ─────────────── TROUBLESHOOTING ─────────────── -->
+<h2 id="troubleshooting">12. Troubleshooting</h2>
+
+<table>
+  <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+  <tr>
+    <td>Cannot create temporary file in C:\WINDOWS\</td>
+    <td>TEMP/TMP env vars point to system dir</td>
+    <td><code>export TEMP=/tmp; export TMP=/tmp</code></td>
+  </tr>
+  <tr>
+    <td>Cannot open module file 'mod_globals.mod'</td>
+    <td>Ninja parallel build race condition</td>
+    <td>Set <code>PICLAS_UNITTESTS=OFF</code> or build with <code>--target piclas</code></td>
+  </tr>
+  <tr>
+    <td>Nonexistent include directory 'mod/static'</td>
+    <td>HDF5 Fortran config expects this dir</td>
+    <td><code>mkdir -p /c/msys64/ucrt64/mod/static</code> (warning only, not an error)</td>
+  </tr>
+  <tr>
+    <td>PETSc: "Der Befehl CMAKE_POLICY_VERSION_MINIMUM ist falsch geschrieben"</td>
+    <td>PICLas tried to build PETSc from source using Unix configure in cmd.exe</td>
+    <td>Create <code>petsc.pc</code> and add <code>-DLIBS_BUILD_PETSC=OFF</code></td>
+  </tr>
+  <tr>
+    <td>Unknown parameter 'epsCG' / BCTracking recursion</td>
+    <td>Wrong solver binary (maxwell built, poisson needed)</td>
+    <td>Rebuild with <code>PICLAS_EQNSYSNAME=poisson</code></td>
+  </tr>
+  <tr>
+    <td>Wildcard argument <code>State_*.h5</code> not expanded</td>
+    <td>Windows shell passes literal <code>*</code></td>
+    <td>glob_windows.c patch handles this inside the binary</td>
+  </tr>
+  <tr>
+    <td>VTK output has no E field or phi data</td>
+    <td>Wrong HDF5 file type passed to piclas2vtk</td>
+    <td>Use <code>_State_</code> files, not <code>_DSMCState_</code> or <code>_FieldData_</code></td>
+  </tr>
+  <tr>
+    <td>pacman: command not found</td>
+    <td>Running in wrong MSYS2 shell or using full bash path</td>
+    <td>Use <code>/c/msys64/usr/bin/pacman</code> or open MSYS2 UCRT64 shell</td>
+  </tr>
+  <tr>
+    <td>Directory picker not supported</td>
+    <td>Firefox does not support showDirectoryPicker()</td>
+    <td>Use Chrome or Edge, or type the path manually</td>
+  </tr>
+  <tr>
+    <td><code>undefined reference to 'mpi_wtick_'</code> (link error)</td>
+    <td>mpi_f08.o appears after libmsmpi.dll.a in link order</td>
+    <td>Fixed by <code>LIST(INSERT linkedlibs 0 …)</code> in SetLibraries.cmake (Fix A)</td>
+  </tr>
+  <tr>
+    <td><code>undefined reference to 'h5pset_fapl_mpio_f_'</code> (link error)</td>
+    <td>MSYS2 HDF5 has no parallel MPI support but detection returned TRUE</td>
+    <td>Fixed by USE_MPI_HDF5 flag and <code>grep h5pset_fapl_mpio_f</code> detection (Fixes B &amp; C)</td>
+  </tr>
+  <tr>
+    <td><code>undefined reference to 'mpi_finalize_'</code> in piclas.exe or unit tests</td>
+    <td>Windows DLL import stub does not re-export transitive MPI symbols</td>
+    <td>Fixed by linking ${linkedlibs} directly to executables (Fix E)</td>
+  </tr>
+  <tr>
+    <td><code>Der Befehl "powershell" … konnte nicht gefunden werden</code> (build error)</td>
+    <td>PowerShell not in PATH during Ninja build</td>
+    <td>Fixed by using full path to powershell.exe in CMakeLists.txt (Fix D)</td>
+  </tr>
+  <tr>
+    <td><code>Error: Function 'petsc_mpi_wtime' has no IMPLICIT type</code> in hdg.f90</td>
+    <td>MPI + PETSc enabled simultaneously; MSYS2 PETSc is serial and its mpiuni headers redefine MPI_WTIME</td>
+    <td>Use either MPI <em>or</em> PETSc, never both. cmake will now emit FATAL_ERROR if both are set.</td>
+  </tr>
+  <tr>
+    <td>MPI program exits immediately / msmpi.dll not found</td>
+    <td>msmpi.dll not in PATH at runtime</td>
+    <td>Install MS-MPI runtime or ensure <code>C:\Windows\System32\msmpi.dll</code> exists; add to PATH</td>
+  </tr>
+</table>
+
+<!-- ─────────────── FILE SUMMARY ─────────────── -->
+<h2 id="file-summary">File Summary</h2>
+<p>All files created or modified as part of this Windows port:</p>
+
+<div class="tree">
+  <span class="dir">C:\Data\PRJ\Piclas\</span><br>
+  &nbsp;&nbsp;<span class="new-file">piclas_builder.html</span> &nbsp;<em>Standalone HTML build configurator (browser)</em><br>
+  &nbsp;&nbsp;<span class="new-file">piclas_builder.hta</span> &nbsp;&nbsp;<em>HTA build configurator (Windows App, double-click)</em><br>
+  &nbsp;&nbsp;<span class="new-file">piclas_builder.py</span> &nbsp;&nbsp;<em>Python web server build configurator</em><br>
+  <br>
+  <span class="dir">C:\Data\PRJ\Piclas\piclas-master\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Full path to powershell.exe for userblock step</em><br>
+  &nbsp;&nbsp;<span class="mod-file">CMakePresets.json</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added windows-ucrt64, windows-ucrt64-mpi, windows-ucrt64-poisson, windows-ucrt64-debug presets</em><br>
+  &nbsp;&nbsp;<span class="dir">cmake\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">SetLibraries.cmake</span> &nbsp;&nbsp;&nbsp;&nbsp;<em>mpi_f08.o ordering, HDF5 parallel detection, USE_MPI_HDF5 flag</em><br>
+  &nbsp;&nbsp;<span class="dir">src\globals\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">glob_windows.c</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Win32 wildcard expansion (NEW)</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">commandlinearguments.f90</span> &nbsp;<em>ISO_C_BINDING call to glob_expand_c</em><br>
+  &nbsp;&nbsp;<span class="dir">src\io_hdf5\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">io_hdf5.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on H5PSET_FAPL_MPIO_F in OpenDataFile</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">hdf5_input.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guards on FAPL/DXPL calls (3 locations)</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">hdf5_output.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on DXPL calls in WriteArrayToHDF5</em><br>
+  &nbsp;&nbsp;<span class="dir">src\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added globlib; added ${linkedlibs} to add_exec on Windows</em><br>
+  &nbsp;&nbsp;<span class="dir">unitTests\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added libpiclasstaticF90 dependency; added ${linkedlibs} on Windows</em><br>
+  <br>
+  <span class="dir">C:\msys64\ucrt64\lib\pkgconfig\</span><br>
+  &nbsp;&nbsp;<span class="new-file">petsc.pc</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>PETSc pkg-config wrapper (NEW)</em><br>
+  <br>
+  <span class="dir">C:\msys64\ucrt64\mod\</span><br>
+  &nbsp;&nbsp;<span class="new-file">static\</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Empty directory (silences GFortran warning)</em><br>
+</div>
+
+<br>
+<div class="note">
+  <b>Committing the patches</b>
+  To make the source code changes permanent and shareable, commit the five modified/new files to a Git branch.
+  The changes are fully backward-compatible — on Linux and macOS the <code>glob_windows.c</code> compiles to
+  a no-op and all other behaviour is identical to upstream PICLas.
+</div>
+
+<hr>
+<p style="font-size:0.78rem;color:var(--muted);text-align:center;">
+  PICLas Windows Port Documentation &mdash; March 2026 &mdash;
+  PICLas v4.1.0 / MSYS2 UCRT64 / GCC 14 / Windows 11
+</p>
+
+</main>
+</div>
+
+<script>
+// Highlight active nav link on scroll
+var sections = document.querySelectorAll('h2[id], h3[id]');
+var navLinks  = document.querySelectorAll('nav a');
+window.addEventListener('scroll', function() {
+  var cur = '';
+  sections.forEach(function(s) {
+    if (window.scrollY >= s.offsetTop - 80) cur = s.id;
+  });
+  navLinks.forEach(function(a) {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + cur);
+  });
+});
+</script>
+</body>
+</html>

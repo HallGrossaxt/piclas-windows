@@ -1,0 +1,98 @@
+*.s
+*.o
+*.i90
+*.mod
+*.swp
+*.optrpt
+*.pyc
+bin/*
+ini/*
+lib/*
+src/preprocflags.f90
+*~
+build*/
+!builds.ini
+share/*
+tmp*/
+piclas
+
+# latex
+*.aux
+*.log
+*.synctex.gz
+
+# user/dev guide
+userguide.pdf
+developerguide.pdf
+# when building the user/dev guide, a new template might be created
+template.tex
+# read the docs stuff
+_build/
+
+# Doxygen
+doxygen/
+
+# regression test
+regressioncheck/*
+output_dir_gitlab_tool/
+output_dir/
+reggie_run/
+
+# core dump files
+core
+
+# temporary files from programs in the tools directory
+.createCylinderHOPR.json
+
+# temporary files of the paraview plugin
+.flexi.ini
+
+# hopr debug files
+sfc.dat
+
+
+# visualization files
+*.vtu
+*.h5
+
+# paraview layouts
+*.pvsm
+
+# piclas debug files
+out.*.dat
+*.out
+
+# cmake temporary files
+userblock.tmp
+*f90.orig
+commit.h
+
+CMakeCache.txt
+ctags.txt
+CMakeFiles/
+tags
+.tags
+
+# comma separated files
+*.csv
+
+# doxygen build folder
+doxygen/
+
+# unit test
+unitTests/bin/
+
+# gitlab-ci-local temp files and folders
+.gitlab-ci-local/
+reggie/
+
+# pyenv project settings
+.python-version
+
+# Windows build artifacts
+*.exe
+*.dll
+*.dll.a
+*.pdb
+build-ucrt64*/
+windows-tools/*.bak
