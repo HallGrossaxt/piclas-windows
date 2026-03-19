@@ -874,13 +874,18 @@ ELSE()
 ENDIF()
 
 IF(LIBS_USE_PETSC)
-  # On Windows, MSYS2 PETSc is always built without MPI (sequential/dso variant).
-  # Its mpiuni headers redefine MPI_WTIME -> PETSC_MPI_WTIME, which conflicts with real MPI.
+  # On Windows, MSYS2 PETSc is always a sequential (no-MPI) build.
+  # Its mpiuni/mpiunifdef.h renames every MPI_xxx symbol to PETSC_MPI_xxx.
+  # PICLas resolves this via src/petsc_mpi_compat.h (included after each
+  # petsc/finclude/petsc.h) which #undefs all the renames.
+  # Consequence: PETSc runs in single-rank mode on each MPI process; MPI
+  # particle/field communication is unaffected.
   IF(WIN32 AND LIBS_USE_MPI)
-    MESSAGE(FATAL_ERROR
-      "LIBS_USE_PETSC=ON and LIBS_USE_MPI=ON cannot be combined on Windows.\n"
-      "MSYS2's PETSc is a sequential (no-MPI) build; its headers redefine MPI_WTIME\n"
-      "and conflict with MS-MPI. Use either MPI or PETSc, not both.")
+    MESSAGE(WARNING
+      "LIBS_USE_PETSC=ON + LIBS_USE_MPI=ON on Windows: "
+      "MSYS2 PETSc is sequential (no-MPI). "
+      "petsc_mpi_compat.h undoes mpiunifdef.h renames so compilation succeeds. "
+      "PETSc runs on each rank independently; no cross-rank PETSc parallel assembly.")
   ENDIF()
   IF (LIBS_BUILD_PETSC)
     SET(LIBS_BUILD_PETSC_VERSION "3.22.5" CACHE STRING "PETSc self-built version tag")

@@ -66,6 +66,18 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
+    },
+    {
+      "name": "windows-ucrt64-gpu",
+      "displayName": "Windows MSYS2 UCRT64 + CUDA GPU (Release)",
+      "description": "GPU-accelerated build: CUDA kernels compiled by nvcc, Fortran via ISO_C_BINDING. Requires NVIDIA GPU + CUDA Toolkit 12.x on PATH.",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-gpu",
+      "cacheVariables": {
+        "PICLAS_USE_GPU":            "ON",
+        "CMAKE_CUDA_ARCHITECTURES":  "86",
+        "CMAKE_CUDA_COMPILER":       "nvcc"
+      }
     }
   ],
   "buildPresets": [
@@ -87,6 +99,11 @@
     {
       "name": "windows-ucrt64-debug",
       "configurePreset": "windows-ucrt64-debug",
+      "jobs": 0
+    },
+    {
+      "name": "windows-ucrt64-gpu",
+      "configurePreset": "windows-ucrt64-gpu",
       "jobs": 0
     }
   ]

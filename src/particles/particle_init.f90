@@ -477,6 +477,15 @@ IF(DoVirtualDielectricLayer) CALL InitVirtualDielectricLayer()
 
 IF(.NOT. DoRestart) CALL CheckAndMayDeleteFIBGM()
 
+#if PICLAS_USE_GPU
+! Initialize GPU: locate device, allocate device buffers for all particles
+BLOCK
+  USE MOD_GPU_Interface, ONLY: GPU_Init
+  USE MOD_Particle_Vars, ONLY: PDM
+  CALL GPU_Init(PDM%maxParticleNumber)
+END BLOCK
+#endif /*PICLAS_USE_GPU*/
+
 ParticlesInitIsDone=.TRUE.
 LBWRITE(UNIT_stdOut,'(A)')' INIT PARTICLES DONE!'
 LBWRITE(UNIT_StdOut,'(132("-"))')
@@ -1343,6 +1352,15 @@ SDEALLOCATE(ExcitationSampleData)
 SNULLIFY(SingleParticleTriaTracking)
 SNULLIFY(ParticleInsideQuad)
 SNULLIFY(ParticleThroughSideCheck1D2D)
+
+#if PICLAS_USE_GPU
+! Finalize GPU: free device buffers and reset CUDA device
+BLOCK
+  USE MOD_GPU_Interface, ONLY: GPU_Finalize
+  USE MOD_GPU_Vars,      ONLY: GPUInitialized
+  IF (GPUInitialized) CALL GPU_Finalize()
+END BLOCK
+#endif /*PICLAS_USE_GPU*/
 
 END SUBROUTINE FinalizeParticles
 

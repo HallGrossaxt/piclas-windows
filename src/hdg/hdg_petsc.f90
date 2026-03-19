@@ -13,6 +13,7 @@
 #include "piclas.h"
 #if USE_PETSC && USE_HDG
 #include "petsc/finclude/petsc.h"
+#include "petsc_mpi_compat.h"
 #endif /*USE_PETSC && USE_HDG*/
 
 !===================================================================================================================================

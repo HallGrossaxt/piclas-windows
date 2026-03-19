@@ -24,6 +24,7 @@ header h1 { font-size: 1.1rem; color: #e94560; }
 .check-row label { font-size: 0.85rem; color: #ccd6f6; cursor: pointer; }
 .desc { font-size: 0.76rem; color: #8892b0; margin: 3px 0 8px 24px; line-height: 1.45; }
 .compat { font-size: 0.76rem; color: #ffb347; background: #2a1f00; border: 1px solid #5a3a00; border-radius: 4px; padding: 5px 9px; margin-top: 6px; display: none; }
+.compat.info { color: #7ec8e3; background: #001a2a; border-color: #0a5a80; }
 .field-label { font-size: 0.82rem; color: #ccd6f6; margin-bottom: 5px; display: block; }
 input[type=text] { width: 100%; background: #0a0a1a; border: 1px solid #0f3460; color: #e0e0e0; padding: 6px 9px; border-radius: 4px; font-size: 0.82rem; font-family: Consolas, monospace; }
 input[type=text]:focus { outline: none; border-color: #64ffda; }
@@ -88,12 +89,17 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <button class="opt-btn"        data-val="Boris-Leapfrog" onclick="sel('timedisc',this)">Boris-Leapfrog</button>
         <button class="opt-btn"        data-val="Leapfrog"       onclick="sel('timedisc',this)">Leapfrog</button>
         <button class="opt-btn"        data-val="RK4-implicit"   onclick="sel('timedisc',this)">RK4-implicit</button>
+        <button class="opt-btn"        data-val="DSMC"           onclick="sel('timedisc',this)">DSMC</button>
+        <button class="opt-btn"        data-val="FP-Flow"        onclick="sel('timedisc',this)">FP-Flow</button>
+        <button class="opt-btn"        data-val="BGK-Flow"       onclick="sel('timedisc',this)">BGK-Flow</button>
       </div>
       <div class="desc">
         <b>RK3/RK4/RK14</b>: explicit Runge-Kutta &mdash; general purpose.<br>
         <b>Boris-Leapfrog</b>: symplectic, ideal for PIC particle tracking.<br>
         <b>Leapfrog</b>: 2nd-order, lightweight &mdash; recommended for electrostatic PIC.<br>
-        <b>RK4-implicit</b>: for stiff systems with disparate time scales.
+        <b>RK4-implicit</b>: for stiff systems with disparate time scales.<br>
+        <b>DSMC</b>: Direct Simulation Monte Carlo &mdash; rarefied gas / particle collisions. Use with <b>maxwell</b>. Required for the <code>dsmc-cone-3D</code> tutorial.<br>
+        <b>FP-Flow / BGK-Flow</b>: stochastic particle methods for transitional flow regimes. Require particles (PICLAS_PARTICLES=ON, the default).
       </div>
       <div class="compat" id="compat-timedisc"></div>
     </div>
@@ -133,12 +139,37 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-mpi" onchange="onMpiChange()">
         <label for="chk-mpi">LIBS_USE_MPI (MS-MPI)</label>
       </div>
-      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. <b>Mutually exclusive with PETSc</b> — MSYS2 PETSc is a sequential build whose headers conflict with MS-MPI.</div>
+      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. Can be combined with PETSc — header conflict is resolved by <code>petsc_mpi_compat.h</code> (PETSc runs sequentially per rank).</div>
       <div class="check-row">
         <input type="checkbox" id="chk-petsc" onchange="onPetscChange()">
         <label for="chk-petsc">LIBS_USE_PETSC</label>
       </div>
-      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman.</div>
+      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman. Can now be combined with MPI — MSYS2 PETSc runs sequentially on each MPI rank (the HDG field solve is per-rank; particle MPI communication is fully parallel).</div>
+    </div>
+
+    <div class="card">
+      <h3>GPU Acceleration (CUDA)</h3>
+      <div class="check-row">
+        <input type="checkbox" id="chk-gpu" onchange="onGpuChange()">
+        <label for="chk-gpu">PICLAS_USE_GPU</label>
+      </div>
+      <div class="desc">
+        Enable GPU-accelerated particle kernels via CUDA. Requires:<br>
+        &bull; <b>NVIDIA GPU</b> (Turing/RTX 20xx or newer recommended)<br>
+        &bull; <b>CUDA Toolkit 12+</b> from <a href="https://developer.nvidia.com/cuda-downloads" style="color:#64ffda;" target="_blank">developer.nvidia.com</a> with <code>nvcc</code> on <code>PATH</code><br>
+        &bull; <b>VS Build Tools 2022</b> (free) from <a href="https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022" style="color:#64ffda;" target="_blank">visualstudio.microsoft.com</a> &mdash; nvcc on Windows requires <code>cl.exe</code> as host compiler; MinGW g++ is not supported by nvcc.<br>
+        Compatible with MPI. <b>Not compatible with PETSc.</b>
+      </div>
+      <div id="gpu-arch-row" style="margin-top:8px;display:none;">
+        <span class="field-label">CMAKE_CUDA_ARCHITECTURES &mdash; GPU compute capability</span>
+        <div class="opt-group" id="grp-cudaarch">
+          <button class="opt-btn"        data-val="75" onclick="sel('cudaarch',this)">75 (Turing / RTX 20xx)</button>
+          <button class="opt-btn active" data-val="86" onclick="sel('cudaarch',this)">86 (Ampere / RTX 30xx)</button>
+          <button class="opt-btn"        data-val="89" onclick="sel('cudaarch',this)">89 (Ada / RTX 40xx)</button>
+          <button class="opt-btn"        data-val="90" onclick="sel('cudaarch',this)">90 (Hopper / H100)</button>
+        </div>
+        <div class="desc">Match this to your GPU generation. Wrong arch still runs but recompiles at first launch (slower startup).</div>
+      </div>
     </div>
 
     <div class="card">
@@ -258,6 +289,8 @@ function getOpts() {
     unittests:   document.getElementById('chk-unittests').checked,
     mpi:         document.getElementById('chk-mpi').checked,
     petsc:       document.getElementById('chk-petsc').checked,
+    gpu:         document.getElementById('chk-gpu').checked,
+    cudaarch:    getActive('grp-cudaarch'),
     perf:        document.getElementById('chk-perf').checked,
     analyze:     document.getElementById('chk-analyze').checked,
     instruction: document.getElementById('inp-instruction').value,
@@ -267,16 +300,24 @@ function getOpts() {
 
 function onOff(b) { return b ? 'ON' : 'OFF'; }
 
-// MPI and PETSc are mutually exclusive on Windows (MSYS2 PETSc is serial-only)
+// MPI and PETSc can now be combined (petsc_mpi_compat.h resolves the header conflict)
 function onMpiChange() {
-  if (document.getElementById('chk-mpi').checked) {
-    document.getElementById('chk-petsc').checked = false;
-  }
   updateAll();
 }
 function onPetscChange() {
   if (document.getElementById('chk-petsc').checked) {
-    document.getElementById('chk-mpi').checked = false;
+    // GPU + PETSc: no technical reason to block, but PETSc is CPU-only anyway
+    document.getElementById('chk-gpu').checked = false;
+    document.getElementById('gpu-arch-row').style.display = 'none';
+  }
+  updateAll();
+}
+// GPU: show/hide arch selector; PETSc not compatible with GPU (PETSc is already CPU-only)
+function onGpuChange() {
+  var gpuOn = document.getElementById('chk-gpu').checked;
+  document.getElementById('gpu-arch-row').style.display = gpuOn ? 'block' : 'none';
+  if (gpuOn) {
+    document.getElementById('chk-petsc').checked = false;
   }
   updateAll();
 }
@@ -284,11 +325,16 @@ function onPetscChange() {
 function getBuildDir(o) {
   return o.builddir ||
     ('build-' + o.eqnsys + '-' + o.timedisc.toLowerCase() + '-' + o.buildtype.toLowerCase() +
-     (o.mpi ? '-mpi' : ''));
+     (o.mpi ? '-mpi' : '') + (o.gpu ? '-gpu' : ''));
 }
 
 function getPreset(o) {
-  return o.mpi ? 'windows-ucrt64-mpi' : 'windows-ucrt64';
+  // GPU + MPI → use MPI preset (GPU flags appended as explicit -D options)
+  // GPU only  → use dedicated GPU preset
+  // MPI only  → use MPI preset
+  if (o.mpi) return 'windows-ucrt64-mpi';
+  if (o.gpu) return 'windows-ucrt64-gpu';
+  return 'windows-ucrt64';
 }
 
 // ── Live command preview ──────────────────────────────────────────────────────
@@ -308,6 +354,12 @@ function updateAll() {
     '-DLIBS_USE_PETSC='          + onOff(o.petsc),
     o.petsc ? '-DLIBS_BUILD_PETSC=OFF' : null,
     o.petsc ? '-DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : null,
+    // GPU: when using gpu preset the defaults are already set; but explicit flags are
+    // needed when combining GPU with MPI (which uses windows-ucrt64-mpi as base preset)
+    (o.gpu && o.mpi) ? '-DPICLAS_USE_GPU=ON' : null,
+    (o.gpu && o.mpi) ? '-DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : null,
+    // When GPU preset is chosen but a non-default arch is requested, pass it explicitly
+    (o.gpu && !o.mpi && o.cudaarch !== '86') ? '-DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : null,
     '-DPICLAS_READIN_CONSTANTS=' + onOff(o.readin),
     '-DPICLAS_PERFORMANCE='      + onOff(o.perf),
     '-DPICLAS_CODE_ANALYZE='     + onOff(o.analyze),
@@ -332,9 +384,17 @@ function updateAll() {
     msg = '\u26A0 For Poisson/electrostatic solvers, Boris-Leapfrog or Leapfrog is recommended for PIC simulations.';
   } else if (es === 'maxwell' && td === 'Leapfrog') {
     msg = '\u26A0 Leapfrog is designed for electrostatic PIC, not Maxwell. Consider RK4 or Boris-Leapfrog.';
+  } else if ((td === 'DSMC' || td === 'FP-Flow' || td === 'BGK-Flow') &&
+             (es === 'poisson' || es === 'electrostatic_pois' || es === 'hdg')) {
+    msg = '\u26A0 ' + td + ' is a particle-based method typically used with the maxwell equation system. Using with ' + es + ' is unusual.';
+  } else if (td === 'DSMC') {
+    msg = '\u2139 DSMC: particle collisions via Direct Simulation Monte Carlo. Requires particles (PICLAS_PARTICLES=ON, the default). Correct setting for the dsmc-cone-3D tutorial.';
+  } else if (td === 'FP-Flow' || td === 'BGK-Flow') {
+    msg = '\u2139 ' + td + ': stochastic particle method for transitional flow. Requires particles (PICLAS_PARTICLES=ON, the default).';
   }
   el.textContent   = msg;
   el.style.display = msg ? 'block' : 'none';
+  el.className     = msg.charAt(0) === '\u2139' ? 'compat info' : 'compat';
 }
 
 // ── Clipboard helpers ─────────────────────────────────────────────────────────
@@ -374,6 +434,9 @@ function downloadBat() {
     " -DLIBS_USE_PETSC=" + onOff(o.petsc) +
     (o.petsc ? " -DLIBS_BUILD_PETSC=OFF" : "") +
     (o.petsc ? " -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a" : "") +
+    (o.gpu && o.mpi ? " -DPICLAS_USE_GPU=ON" : "") +
+    (o.gpu && o.mpi ? " -DCMAKE_CUDA_ARCHITECTURES=" + o.cudaarch : "") +
+    (o.gpu && !o.mpi && o.cudaarch !== '86' ? " -DCMAKE_CUDA_ARCHITECTURES=" + o.cudaarch : "") +
     " -DPICLAS_READIN_CONSTANTS=" + onOff(o.readin) +
     " -DPICLAS_PERFORMANCE=" + onOff(o.perf) +
     " -DPICLAS_CODE_ANALYZE=" + onOff(o.analyze) +

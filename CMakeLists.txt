@@ -223,6 +223,12 @@ OPTION(LIBS_DOWNLOAD_HOPR "Download HOPR pre-processor AppImage executable from 
 INCLUDE(SetLibraries)
 
 # =========================================================================
+# GPU acceleration (CUDA) — must be included after SetLibraries and before
+# src/CMakeLists.txt so ENABLE_LANGUAGE(CUDA) is in effect for all targets.
+# =========================================================================
+INCLUDE(SetGPU)
+
+# =========================================================================
 # PICLas
 # =========================================================================
 INCLUDE(${CMAKE_CURRENT_SOURCE_DIR}/src/CMakeLists.txt)
