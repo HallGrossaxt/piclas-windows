@@ -193,6 +193,12 @@ MARK_AS_ADVANCED(FORCE LIBS_EXTERNAL_LIB_DIR)
 # =========================================================================
 # HDF5 library
 # =========================================================================
+# Set type of library to look up (STATIC/SHARED) before the first FIND_PACKAGE
+# so that the static component is requested from the start and HDF5_C_STATIC_LIBRARY
+# / HDF5_FORTRAN_STATIC_LIBRARY are correctly set by the cmake config.
+SET(LIB_TYPE STATIC)
+STRING(TOLOWER ${LIB_TYPE} SEARCH_TYPE)
+
 # Try to find system HDF5 using CMake
 SET(LIBS_HDF5_CMAKE TRUE)
 
@@ -221,10 +227,6 @@ ELSE()
   MESSAGE (STATUS "[HDF5] not found in system libraries")
   SET(LIBS_BUILD_HDF5 ON  CACHE BOOL "Compile and build HDF5 library")
 ENDIF()
-
-# Set type of library to look up, STATIC/SHARED
-SET(LIB_TYPE STATIC)
-STRING(TOLOWER ${LIB_TYPE} SEARCH_TYPE)
 
 # We support two methods for finding HDF5:
 # a) the version built using configure scripts and b) using CMake
@@ -399,11 +401,9 @@ ELSE()
 
     IF(WIN32)
       # On Windows, use the CMake-based HDF5 build (configure script requires a POSIX shell)
-      IF(LIBS_USE_MPI)
-        SET(LIBS_HDF5_MPI_ARGS -DHDF5_ENABLE_PARALLEL=ON -DMPI_C_COMPILER=${LIBS_HDF5CC} -DMPI_Fortran_COMPILER=${LIBS_HDF5FC})
-      ELSE()
-        SET(LIBS_HDF5_MPI_ARGS -DHDF5_ENABLE_PARALLEL=OFF)
-      ENDIF()
+      # Use the underlying real compilers (gcc/gfortran), not MPI wrapper scripts (mpicc/mpifort).
+      # MS-MPI wrapper scripts are bash scripts that CMake cannot invoke as compiler tools.
+      # Parallel HDF5 is not needed: PICLas uses gathered I/O on Windows (root-only HDF5 writes).
       EXTERNALPROJECT_ADD(HDF5
         GIT_REPOSITORY ${HDF5_DOWNLOAD}
         GIT_TAG ${HDF5_TAG}
@@ -413,8 +413,12 @@ ELSE()
         UPDATE_COMMAND ""
         CMAKE_ARGS
           -DCMAKE_INSTALL_PREFIX=${LIBS_HDF5_DIR}
-          -DCMAKE_C_COMPILER=${LIBS_HDF5CC}
-          -DCMAKE_Fortran_COMPILER=${LIBS_HDF5FC}
+          -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+          -DCMAKE_Fortran_COMPILER=${CMAKE_Fortran_COMPILER}
+          "-DCMAKE_C_FLAGS=-std=gnu99 -D__USE_MINGW_ANSI_STDIO=1 -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=discarded-qualifiers"
+          -DHDF5_ENABLE_PARALLEL=OFF
+          -DH5_SIZEOF__FLOAT16=0
+          -DH5_HAVE__FLOAT16=0
           -DBUILD_TESTING=OFF
           -DHDF5_BUILD_EXAMPLES=OFF
           -DHDF5_BUILD_TOOLS=ON
@@ -498,7 +502,16 @@ ELSE()
   FIND_LIBRARY(HDF5_z_LIBRARY_RELEASE z)
   # -ldl is Linux-specific (dynamic linker); not required on Windows or macOS
   IF(WIN32 OR APPLE)
-    LIST(APPEND HDF5_LIBRARIES ${HDF5_hdf5_LIBRARY_hdf5} ${HDF5_Fortran_LIBRARY_hdf5_fortran_RELEASE} ${HDF5_Fortran_LIBRARY_hdf5_fortran} ${HDF5_hdf5_LIBRARY_RELEASE} ${HDF5_z_LIBRARY_RELEASE})
+    # Link order: fortran → f90cstub (C bridge) → hdf5 core. Both stub libs must follow their Fortran counterpart.
+    LIST(APPEND HDF5_LIBRARIES
+      ${HDF5_hdf5_LIBRARY_hdf5}
+      ${HDF5_Fortran_LIBRARY_hdf5_fortran_RELEASE}
+      ${LIBS_HDF5_DIR}/lib/libhdf5_f90cstub.a
+      ${HDF5_Fortran_LIBRARY_hdf5_fortran}
+      ${LIBS_HDF5_DIR}/lib/libhdf5_hl_fortran.a
+      ${LIBS_HDF5_DIR}/lib/libhdf5_hl_f90cstub.a
+      ${HDF5_hdf5_LIBRARY_RELEASE}
+      ${HDF5_z_LIBRARY_RELEASE})
   ELSE()
     LIST(APPEND HDF5_LIBRARIES ${HDF5_hdf5_LIBRARY_hdf5} ${HDF5_Fortran_LIBRARY_hdf5_fortran_RELEASE} ${HDF5_Fortran_LIBRARY_hdf5_fortran} ${HDF5_hdf5_LIBRARY_RELEASE} ${HDF5_z_LIBRARY_RELEASE} -ldl)
   ENDIF()
@@ -529,7 +542,22 @@ IF(LIBS_HDF5_CMAKE)
   ELSE()
     MESSAGE(STATUS "Compiling with ${HDF5_BUILD_STATUS} [HDF5] (v${HDF5_VERSION}) without parallel support")
   ENDIF()
-  LIST(APPEND linkedlibs ${HDF5_C_${LIB_TYPE}_LIBRARY} ${HDF5_FORTRAN_${LIB_TYPE}_LIBRARY} )
+  IF(WIN32)
+    # On Windows with MSYS2: use HDF5 DLL import libraries (.dll.a) to avoid linking the
+    # full static dependency chain (AWS SDK, zlib-ng, libaec) required by libhdf5.a.
+    # HDF5 cmake imported targets (hdf5-static etc.) are created without GLOBAL scope in
+    # hdf5-targets.cmake, causing them to be silently dropped from the linker command.
+    LIST(GET HDF5_INCLUDE_DIR 0 _hdf5_include_first)
+    CMAKE_PATH(GET _hdf5_include_first PARENT_PATH _hdf5_prefix)
+    SET(_hdf5_libdir "${_hdf5_prefix}/lib")
+    FOREACH(_hdf5_imp libhdf5_fortran libhdf5_f90cstub libhdf5)
+      IF(EXISTS "${_hdf5_libdir}/${_hdf5_imp}.dll.a")
+        LIST(APPEND linkedlibs "${_hdf5_libdir}/${_hdf5_imp}.dll.a")
+      ENDIF()
+    ENDFOREACH()
+  ELSE()
+    LIST(APPEND linkedlibs ${HDF5_C_${LIB_TYPE}_LIBRARY} ${HDF5_FORTRAN_${LIB_TYPE}_LIBRARY})
+  ENDIF()
 # HDF5 build with configure
 ELSE()
   INCLUDE_DIRECTORIES(BEFORE ${HDF5_INCLUDE_DIR_FORTRAN} ${HDF5_INCLUDE_DIR})
@@ -538,7 +566,7 @@ ELSE()
   ELSE()
     MESSAGE(STATUS "Compiling with ${HDF5_BUILD_STATUS} [HDF5] (v${HDF5_VERSION}) without parallel support")
   ENDIF()
-  LIST(APPEND linkedlibs ${HDF5_LIBRARIES} )
+  LIST(APPEND linkedlibs ${HDF5_LIBRARIES})
 ENDIF()
 
 # Set USE_MPI_HDF5 compile flag: 1 if MPI enabled AND HDF5 was built with parallel MPI support, else 0

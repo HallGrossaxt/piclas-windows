@@ -717,10 +717,13 @@ IF(PICLAS_USE_GPU)
       MESSAGE(STATUS "  MinGW cudart import lib: ${_CUDA_CUDART_IMP}")
     ENDIF()
     TARGET_LINK_LIBRARIES(piclasGPU PRIVATE "${_CUDA_CUDART_IMP}")
-    LIST(APPEND linkedlibs piclasGPUStubs piclasGPU "${_CUDA_CUDART_IMP}")
+    # Do NOT add GPU libs to the global linkedlibs variable — linkedlibs is applied to
+    # every executable (incl. post-processing tools like piclas2vtk) by the ADD_EXEC macro.
+    # GPU libraries are instead linked explicitly into only the targets that need them
+    # (libpiclasshared and piclas) via TARGET_LINK_LIBRARIES below.
   ELSE()
     TARGET_LINK_LIBRARIES(piclasGPU PRIVATE CUDA::cudart_static)
-    LIST(APPEND linkedlibs piclasGPU CUDA::cudart_static)
+    # Same rationale: add GPU to specific targets only, not the global linkedlibs.
   ENDIF()
 ENDIF()
 
@@ -740,6 +743,7 @@ IF(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND PICLAS_USE_GPU)
   # of library scan order.  libcudart.dll.a may be seen twice (full path + -lcudart
   # from .drectve), so --allow-multiple-definition prevents duplicate-symbol errors.
   ADD_DEPENDENCIES(libpiclasshared piclasGPUStubs)
+  TARGET_LINK_LIBRARIES(libpiclasshared PRIVATE piclasGPUStubs piclasGPU "${_CUDA_CUDART_IMP}")
   TARGET_LINK_OPTIONS(libpiclasshared PRIVATE
     "-L${CMAKE_BINARY_DIR}"
     "-L${CUDAToolkit_LIBRARY_DIR}"
@@ -764,6 +768,9 @@ IF(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND PICLAS_USE_GPU)
     COMMAND C:/msys64/ucrt64/bin/objcopy.exe --remove-section=.voltbl
             $<TARGET_FILE:libpiclasshared>
     COMMENT "Remove .voltbl MSVC guard section from libpiclas.dll")
+ELSEIF(PICLAS_USE_GPU)
+  # Non-Windows GPU: link piclasGPU and CUDA runtime directly into libpiclasshared.
+  TARGET_LINK_LIBRARIES(libpiclasshared PRIVATE piclasGPU CUDA::cudart_static)
 ENDIF()
 ADD_EXEC(piclas ./src/piclas.f90)
 ADD_DEPENDENCIES(piclas libpiclasstatic userblocklib stacksizelib globlib memusagelib ${INTERNALLIBS})
@@ -771,12 +778,16 @@ IF(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND PICLAS_USE_GPU)
   # piclas.exe on Windows links the GPU archives directly (MPI transitive-export workaround).
   # CMAKE_BINARY_DIR first so -lcudart resolves to libcudart.dll.a (MinGW import lib)
   # rather than cudart.lib (MSVC static loader).
+  TARGET_LINK_LIBRARIES(piclas piclasGPUStubs piclasGPU "${_CUDA_CUDART_IMP}")
   TARGET_LINK_OPTIONS(piclas PRIVATE
     "-L${CMAKE_BINARY_DIR}"
     "-L${CUDAToolkit_LIBRARY_DIR}"
     "-Wl,--whole-archive,$<TARGET_FILE:piclasGPUStubs>,--no-whole-archive"
     "-Wl,--allow-multiple-definition"
     "-Wl,--exclude-libs=libpiclasGPU.a:libcudart.dll.a:cudadevrt.lib")
+ELSEIF(PICLAS_USE_GPU)
+  # Non-Windows GPU: link piclasGPU and CUDA runtime directly into piclas.
+  TARGET_LINK_LIBRARIES(piclas piclasGPU CUDA::cudart_static)
 ENDIF()
 
 # special compiler flags to avoid warnings for empty functions of testcase.f90 and overwrite of intrinsic abort in globals.f90

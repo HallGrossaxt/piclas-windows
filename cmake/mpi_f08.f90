@@ -146,27 +146,28 @@ MODULE mpi_f08
   !---------------------------------------------------------------------------
   ! Datatype constants
   !---------------------------------------------------------------------------
+  ! All constants taken directly from the MS-MPI SDK mpi.f90 (mpi.f90 PARAMETER values).
   TYPE(MPI_Datatype), PARAMETER :: MPI_DATATYPE_NULL    = MPI_Datatype(0)
   TYPE(MPI_Datatype), PARAMETER :: MPI_BYTE             = MPI_Datatype(1275068685)
   TYPE(MPI_Datatype), PARAMETER :: MPI_PACKED           = MPI_Datatype(1275068687)
   TYPE(MPI_Datatype), PARAMETER :: MPI_CHARACTER        = MPI_Datatype(1275068698)
   TYPE(MPI_Datatype), PARAMETER :: MPI_LOGICAL          = MPI_Datatype(1275069469)
   TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER          = MPI_Datatype(1275069467)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER1         = MPI_Datatype(1275068673)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER2         = MPI_Datatype(1275068930)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER4         = MPI_Datatype(1275069467)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER8         = MPI_Datatype(1275070488)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER1         = MPI_Datatype(1275068717)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER2         = MPI_Datatype(1275068975)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER4         = MPI_Datatype(1275069488)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER8         = MPI_Datatype(1275070513)
   TYPE(MPI_Datatype), PARAMETER :: MPI_REAL             = MPI_Datatype(1275069468)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL4            = MPI_Datatype(1275069468)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL8            = MPI_Datatype(1275070489)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_DOUBLE_PRECISION = MPI_Datatype(1275070489)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_COMPLEX          = MPI_Datatype(1275070504)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL4            = MPI_Datatype(1275069479)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL8            = MPI_Datatype(1275070505)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_DOUBLE_PRECISION = MPI_Datatype(1275070495)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_COMPLEX          = MPI_Datatype(1275070494)
   TYPE(MPI_Datatype), PARAMETER :: MPI_DOUBLE_COMPLEX   = MPI_Datatype(1275072546)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_2INTEGER         = MPI_Datatype(1275070486)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_2REAL            = MPI_Datatype(1275070487)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_2DOUBLE_PRECISION= MPI_Datatype(1275072520)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_UB               = MPI_Datatype(2)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_LB               = MPI_Datatype(3)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_2INTEGER         = MPI_Datatype(1275070496)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_2REAL            = MPI_Datatype(1275070497)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_2DOUBLE_PRECISION= MPI_Datatype(1275072547)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_UB               = MPI_Datatype(1275068433)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_LB               = MPI_Datatype(1275068432)
 
   !---------------------------------------------------------------------------
   ! Reduction operator constants
