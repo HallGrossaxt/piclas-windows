@@ -392,7 +392,11 @@ END DO
 !>>> MPI-surface (local proc MPI sides)
 
 ! if running on one node, halo_eps is meaningless. Get a representative MPI_halo_eps for MPI proc identification
-IF (halo_eps.LE.0.) THEN
+! Use the compute-node/global-proc count to detect single-node runs. The old check (halo_eps.LE.0.) fails when
+! shape_function deposition is active, because particle_bgm.f90 sets halo_eps>0 even on a single node to cover
+! the shape-function radius and the transverse element extents. With halo_eps>0 the ELSE (multi-node) branch was
+! wrongly entered, giving MPI_halo_eps=halo_eps~1 which is too small to include non-adjacent procs (Windows fix).
+IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN
   ! reconstruct halo_eps_velo
   IF (halo_eps_velo.LE.0.) THEN
     MPI_halo_eps_velo = c

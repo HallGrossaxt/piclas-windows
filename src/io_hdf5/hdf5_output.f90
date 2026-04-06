@@ -900,6 +900,47 @@ IF(.NOT.DoNotSplit)THEN
                                                    offset      , collective=.FALSE. , StrArray =StrArray)
       CALL CloseDataFile()
     ELSE
+#if !USE_MPI_HDF5
+      ! Serial HDF5 + split communicator with multiple writers: gather to comm rank 0 of OutputCOMM, then root writes.
+      dseqNPerFront  = MERGE(PRODUCT(nVal(1:rank-1)), 1_IK, rank.GT.1)
+      dseqLocalCount = INT(PRODUCT(nVal))
+      dseqLocalDisp  = INT(offset(rank) * dseqNPerFront)
+      ALLOCATE(dseqAllCounts(nOutPutProcs), dseqAllDisps(nOutPutProcs))
+      CALL MPI_ALLGATHER(dseqLocalCount, 1, MPI_INTEGER, dseqAllCounts, 1, MPI_INTEGER, OutputCOMM, iError)
+      CALL MPI_ALLGATHER(dseqLocalDisp,  1, MPI_INTEGER, dseqAllDisps,  1, MPI_INTEGER, OutputCOMM, iError)
+      CALL MPI_COMM_RANK(OutputCOMM, dseqMyCommRank, iError)
+      IF(dseqMyCommRank.EQ.0)THEN
+        IF(PRESENT(RealArray))       ALLOCATE(dseqGatheredReal(PRODUCT(nValGlobal)))
+        IF(PRESENT(IntegerArray))    ALLOCATE(dseqGatheredInt( PRODUCT(nValGlobal)))
+        IF(PRESENT(IntegerArray_i4)) ALLOCATE(dseqGatheredInt4(PRODUCT(nValGlobal)))
+      ELSE
+        IF(PRESENT(RealArray))       ALLOCATE(dseqGatheredReal(1))
+        IF(PRESENT(IntegerArray))    ALLOCATE(dseqGatheredInt(1))
+        IF(PRESENT(IntegerArray_i4)) ALLOCATE(dseqGatheredInt4(1))
+      END IF
+      IF(PRESENT(RealArray))       CALL MPI_GATHERV(RealArray,       dseqLocalCount, MPI_DOUBLE_PRECISION, &
+                                                    dseqGatheredReal, dseqAllCounts, dseqAllDisps, MPI_DOUBLE_PRECISION, &
+                                                    0, OutputCOMM, iError)
+      IF(PRESENT(IntegerArray))    CALL MPI_GATHERV(IntegerArray,    dseqLocalCount, MPI_INTEGER_INT_KIND, &
+                                                    dseqGatheredInt,  dseqAllCounts, dseqAllDisps, MPI_INTEGER_INT_KIND, &
+                                                    0, OutputCOMM, iError)
+      IF(PRESENT(IntegerArray_i4)) CALL MPI_GATHERV(IntegerArray_i4, dseqLocalCount, MPI_INTEGER, &
+                                                    dseqGatheredInt4, dseqAllCounts, dseqAllDisps, MPI_INTEGER, &
+                                                    0, OutputCOMM, iError)
+      ALLOCATE(dseqZeroOffset(rank))
+      dseqZeroOffset = 0_IK
+      IF(dseqMyCommRank.EQ.0)THEN
+        CALL OpenDataFile(FileName, create=.FALSE., single=.TRUE., readOnly=.FALSE.)
+        IF(PRESENT(RealArray))       CALL WriteArrayToHDF5(DataSetName, rank, nValGlobal, nValGlobal, dseqZeroOffset, collective, RealArray=dseqGatheredReal)
+        IF(PRESENT(IntegerArray))    CALL WriteArrayToHDF5(DataSetName, rank, nValGlobal, nValGlobal, dseqZeroOffset, collective, IntegerArray=dseqGatheredInt)
+        IF(PRESENT(IntegerArray_i4)) CALL WriteArrayToHDF5(DataSetName, rank, nValGlobal, nValGlobal, dseqZeroOffset, collective, IntegerArray_i4=dseqGatheredInt4)
+        CALL CloseDataFile()
+      END IF
+      DEALLOCATE(dseqAllCounts, dseqAllDisps, dseqZeroOffset)
+      IF(ALLOCATED(dseqGatheredReal))  DEALLOCATE(dseqGatheredReal)
+      IF(ALLOCATED(dseqGatheredInt))   DEALLOCATE(dseqGatheredInt)
+      IF(ALLOCATED(dseqGatheredInt4))  DEALLOCATE(dseqGatheredInt4)
+#else
       CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=OutputCOMM)
       IF(PRESENT(RealArray)) CALL WriteArrayToHDF5(DataSetName , rank       , nValGlobal           , nVal , &
                                                    offset      , collective , RealArray=RealArray)
@@ -910,6 +951,7 @@ IF(.NOT.DoNotSplit)THEN
       IF(PRESENT(StrArray))  CALL WriteArrayToHDF5(DataSetName , rank       , nValGlobal          , nVal , &
                                                    offset      , collective , StrArray =StrArray)
       CALL CloseDataFile()
+#endif
     END IF
     CALL MPI_BARRIER(OutputCOMM,IERROR)
     CALL MPI_COMM_FREE(OutputCOMM,iERROR)

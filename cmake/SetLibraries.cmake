@@ -152,6 +152,8 @@ IF(WIN32 AND LIBS_USE_MPI)
               -J "${_mpi_f08_dir}"
               -fallow-argument-mismatch
               -ffree-line-length-0
+              -fdefault-real-8
+              -fdefault-double-8
       WORKING_DIRECTORY "${_mpi_f08_dir}"
       RESULT_VARIABLE _result
       ERROR_VARIABLE  _err
@@ -903,17 +905,18 @@ ENDIF()
 
 IF(LIBS_USE_PETSC)
   # On Windows, MSYS2 PETSc is always a sequential (no-MPI) build.
-  # Its mpiuni/mpiunifdef.h renames every MPI_xxx symbol to PETSC_MPI_xxx.
-  # PICLas resolves this via src/petsc_mpi_compat.h (included after each
-  # petsc/finclude/petsc.h) which #undefs all the renames.
-  # Consequence: PETSc runs in single-rank mode on each MPI process; MPI
-  # particle/field communication is unaffected.
+  # (1) Compile-time: Its mpiuni/mpiunifdef.h renames MPI_xxx symbols to PETSC_MPI_xxx,
+  #     causing fatal Fortran errors when MS-MPI headers are also included.
+  # (2) Runtime: PetscInitialize() checks MPI_COMM_WORLD size; if >1 it aborts with
+  #     "You are using an MPI-uni (sequential) install of PETSc but trying to launch
+  #     parallel jobs". This cannot be worked around without recompiling PETSc with MPI.
+  # Use either LIBS_USE_MPI=ON or LIBS_USE_PETSC=ON, never both.
   IF(WIN32 AND LIBS_USE_MPI)
-    MESSAGE(WARNING
-      "LIBS_USE_PETSC=ON + LIBS_USE_MPI=ON on Windows: "
-      "MSYS2 PETSc is sequential (no-MPI). "
-      "petsc_mpi_compat.h undoes mpiunifdef.h renames so compilation succeeds. "
-      "PETSc runs on each rank independently; no cross-rank PETSc parallel assembly.")
+    MESSAGE(FATAL_ERROR
+      "LIBS_USE_PETSC=ON + LIBS_USE_MPI=ON on Windows is not supported. "
+      "MSYS2 PETSc is a sequential (no-MPI) build. Enabling both causes a "
+      "runtime abort from PetscInitialize() when launched with more than one MPI rank. "
+      "Use either LIBS_USE_MPI=ON or LIBS_USE_PETSC=ON, never both.")
   ENDIF()
   IF (LIBS_BUILD_PETSC)
     SET(LIBS_BUILD_PETSC_VERSION "3.22.5" CACHE STRING "PETSc self-built version tag")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PICLas Build Configurator</title>
+<title>piclas-win 0.9 Build Configurator</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
@@ -52,11 +52,12 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 <body>
 
 <header>
-  <h1>PICLas Build Configurator</h1>
-  <span style="font-size:0.78rem;color:#8892b0;">Standalone HTML &mdash; works in any browser, no server needed</span>
+  <h1>piclas-win 0.9 Build Configurator</h1>
+  <span style="font-size:0.78rem;color:#8892b0;">Unofficial Windows port of PICLas 4.1.0 &mdash; standalone HTML, works in any browser, no server needed</span>
 </header>
 <div class="note-bar">
-  <b>Workflow:</b> Select options &rarr; click <b>Download Build Script</b> &rarr; double-click the <b>.bat</b> file to build in a terminal window.
+  <b>Workflow:</b> Select options &rarr; click <b>Download Build Script</b> &rarr; double-click the <b>.bat</b> file to build.
+  The script calls <code>C:\msys64\ucrt64\bin\cmake.exe</code> <b>directly from CMD</b> &mdash; no bash, no MSYSTEM tricks needed. All compilers (gfortran, mpifort, ninja) are referenced by absolute path inside the cmake preset, so the correct UCRT64 toolchain is always used.
 </div>
 
 <div class="main">
@@ -139,12 +140,12 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-mpi" onchange="onMpiChange()">
         <label for="chk-mpi">LIBS_USE_MPI (MS-MPI)</label>
       </div>
-      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. Can be combined with PETSc — header conflict is resolved by <code>petsc_mpi_compat.h</code> (PETSc runs sequentially per rank).</div>
+      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. <b>Not compatible with PETSc</b> — the MSYS2 PETSc package is sequential-only and will crash at runtime when launched with more than one MPI rank.</div>
       <div class="check-row">
         <input type="checkbox" id="chk-petsc" onchange="onPetscChange()">
         <label for="chk-petsc">LIBS_USE_PETSC</label>
       </div>
-      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman. Can now be combined with MPI — MSYS2 PETSc runs sequentially on each MPI rank (the HDG field solve is per-rank; particle MPI communication is fully parallel).</div>
+      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman. <b>Not compatible with MPI</b> — the MSYS2 PETSc package is built without MPI support; enabling both causes a runtime abort ("MPI-uni install") when launched with more than one process.</div>
     </div>
 
     <div class="card">
@@ -231,23 +232,34 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 
     <div class="warn-box">
       <b>Why a .bat file?</b> Browsers run in a security sandbox and cannot execute programs directly.
-      The downloaded script opens a CMD terminal where you can watch the full build output.
-      Alternatively, open <b>piclas_builder.hta</b> by double-clicking it in Windows Explorer
-      (not in a browser) for live streaming output inside the window.
+      The downloaded script opens a CMD terminal where you can watch the full build output.<br><br>
+      <b>Why not bash?</b> Previous versions launched <code>bash --login</code> and set <code>MSYSTEM=UCRT64</code>, but that is fragile &mdash; the MPI compiler wrappers sometimes weren't picked up. The current approach calls <code>C:\msys64\ucrt64\bin\cmake.exe</code> directly from CMD. Because the cmake preset hardcodes every compiler path (gfortran, mpifort, ninja), no shell environment setup is required.
     </div>
 
     <div class="info-box">
       <h4>&#9654; Steps</h4>
       <ol>
         <li>Select equation system, time integration, build type, and features on the left.</li>
-        <li>The cmake commands update live in the boxes above.</li>
+        <li>The cmake commands update live in the boxes above (bash syntax, for pasting into an MSYS2 UCRT64 terminal).</li>
         <li>Click <b>Download Build Script (.bat)</b> and save the file.</li>
-        <li>Double-click the downloaded <code>.bat</code> file &mdash; a terminal opens automatically.</li>
+        <li>Double-click the downloaded <code>.bat</code> file &mdash; a CMD terminal opens and runs the build.</li>
+        <li>The script calls <code>C:\msys64\ucrt64\bin\cmake.exe</code> directly. No bash or MSYS2 shell is needed &mdash; all compilers and tools are referenced by their absolute UCRT64 paths inside the cmake preset, so the correct gfortran, mpifort, and ninja are always used.</li>
         <li>Configure runs first, then build. Output is visible directly in the terminal.</li>
         <li>On success the binary is in the build directory shown in the command preview above.</li>
       </ol>
       <br>
-      <b>Tip:</b> You can also click <b>Copy Both Commands</b> and paste them into an open MSYS2 terminal.
+      <b>Tip:</b> You can also click <b>Copy Both Commands</b> and paste them into an open MSYS2 UCRT64 terminal (the preview shows bash syntax).
+    </div>
+
+    <div class="warn-box" id="mpi-runtime-note" style="display:none;">
+      <b>&#9888; Required before running MPI simulations:</b><br>
+      Set <code>HDF5_USE_FILE_LOCKING=FALSE</code> before calling <code>mpiexec</code> on Windows,
+      otherwise PICLas will abort when it first tries to write an HDF5 output file.<br><br>
+      <code style="display:block;margin-top:6px;">
+        export HDF5_USE_FILE_LOCKING=FALSE<br>
+        export PATH=/c/msys64/ucrt64/bin:$PATH<br>
+        mpiexec -n 4 bin/piclas.exe parameter.ini DSMC.ini
+      </code>
     </div>
 
   </div><!-- /panel-right -->
@@ -257,7 +269,8 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 // ── Paths: edit here if you move files ────────────────────────────────────────
 var SOURCE_ROOT = 'C:/Data/PRJ/Piclas/piclas-master';
 var BUILD_ROOT  = 'C:/Data/PRJ/Piclas';
-var BASH_WIN    = 'C:\\msys64\\usr\\bin\\bash.exe';
+var CMAKE_WIN   = 'C:\\msys64\\ucrt64\\bin\\cmake.exe';  // UCRT64 cmake - used directly in .bat (no bash needed)
+var BASH_WIN    = 'C:\\msys64\\usr\\bin\\bash.exe';       // kept for "Copy Both Commands" (bash/MSYS2 terminal use)
 
 // ── Option buttons ────────────────────────────────────────────────────────────
 function sel(group, btn) {
@@ -300,13 +313,18 @@ function getOpts() {
 
 function onOff(b) { return b ? 'ON' : 'OFF'; }
 
-// MPI and PETSc can now be combined (petsc_mpi_compat.h resolves the header conflict)
+// MPI and PETSc are mutually exclusive: MSYS2 PETSc is sequential-only and crashes with >1 MPI rank
 function onMpiChange() {
+  if (document.getElementById('chk-mpi').checked) {
+    document.getElementById('chk-petsc').checked = false;
+  }
   updateAll();
 }
 function onPetscChange() {
   if (document.getElementById('chk-petsc').checked) {
-    // GPU + PETSc: no technical reason to block, but PETSc is CPU-only anyway
+    // PETSc is incompatible with MPI (sequential-only MSYS2 package)
+    document.getElementById('chk-mpi').checked = false;
+    // GPU + PETSc: PETSc is CPU-only anyway
     document.getElementById('chk-gpu').checked = false;
     document.getElementById('gpu-arch-row').style.display = 'none';
   }
@@ -374,6 +392,9 @@ function updateAll() {
   document.getElementById('cmd-build').textContent =
     "cmake --build " + bp + " \\\n        --target " + tg;
 
+  // MPI runtime note
+  document.getElementById('mpi-runtime-note').style.display = o.mpi ? 'block' : 'none';
+
   // Compatibility hint
   var el  = document.getElementById('compat-timedisc');
   var msg = '';
@@ -418,66 +439,67 @@ function downloadBat() {
   var o   = getOpts();
   var dir = getBuildDir(o);
   var bp  = BUILD_ROOT + '/' + dir;
+  var bpWin = bp.replace(/\//g, '\\');
+  var srcWin = SOURCE_ROOT.replace(/\//g, '\\');
   var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
 
-  // Build configure arguments for bash -c (single-quote the instruction value)
-  var petscEnv = o.petsc ? "export PETSC_DIR=/c/msys64/ucrt64 && " : "";
-  var cfgCmd =
-    petscEnv + "cd '" + SOURCE_ROOT + "' && cmake --preset " + getPreset(o) +
-    " -B '" + bp + "'" +
-    " -DPICLAS_EQNSYSNAME=" + o.eqnsys +
-    " -DPICLAS_TIMEDISCMETHOD=" + o.timedisc +
-    " -DCMAKE_BUILD_TYPE=" + o.buildtype +
-    " -DPICLAS_BUILD_POSTI=" + onOff(o.posti) +
-    " -DPICLAS_UNITTESTS=" + onOff(o.unittests) +
-    (o.mpi ? "" : " -DLIBS_USE_MPI=OFF") +
-    " -DLIBS_USE_PETSC=" + onOff(o.petsc) +
-    (o.petsc ? " -DLIBS_BUILD_PETSC=OFF" : "") +
-    (o.petsc ? " -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a" : "") +
-    (o.gpu && o.mpi ? " -DPICLAS_USE_GPU=ON" : "") +
-    (o.gpu && o.mpi ? " -DCMAKE_CUDA_ARCHITECTURES=" + o.cudaarch : "") +
-    (o.gpu && !o.mpi && o.cudaarch !== '86' ? " -DCMAKE_CUDA_ARCHITECTURES=" + o.cudaarch : "") +
-    " -DPICLAS_READIN_CONSTANTS=" + onOff(o.readin) +
-    " -DPICLAS_PERFORMANCE=" + onOff(o.perf) +
-    " -DPICLAS_CODE_ANALYZE=" + onOff(o.analyze) +
-    " '-DPICLAS_INSTRUCTION=" + o.instruction + "'";
-
-  var buildCmd =
-    "export TEMP=/tmp && export TMP=/tmp &&" +
-    " cmake --build '" + bp + "' --target " + tg;
-
-  var bpWin = bp.replace(/\//g, '\\');
+  // ── cmake -D flags (CMD-style quoting: double-quote the INSTRUCTION value) ──
+  var defs =
+    ' -DPICLAS_EQNSYSNAME=' + o.eqnsys +
+    ' -DPICLAS_TIMEDISCMETHOD=' + o.timedisc +
+    ' -DCMAKE_BUILD_TYPE=' + o.buildtype +
+    ' -DPICLAS_BUILD_POSTI=' + onOff(o.posti) +
+    ' -DPICLAS_UNITTESTS=' + onOff(o.unittests) +
+    (o.mpi ? '' : ' -DLIBS_USE_MPI=OFF') +
+    ' -DLIBS_USE_PETSC=' + onOff(o.petsc) +
+    (o.petsc ? ' -DLIBS_BUILD_PETSC=OFF' : '') +
+    (o.petsc ? ' -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : '') +
+    (o.gpu && o.mpi  ? ' -DPICLAS_USE_GPU=ON' : '') +
+    (o.gpu && o.mpi  ? ' -DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : '') +
+    (o.gpu && !o.mpi && o.cudaarch !== '86' ? ' -DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : '') +
+    ' -DPICLAS_READIN_CONSTANTS=' + onOff(o.readin) +
+    ' -DPICLAS_PERFORMANCE=' + onOff(o.perf) +
+    ' -DPICLAS_CODE_ANALYZE=' + onOff(o.analyze) +
+    ' "-DPICLAS_INSTRUCTION=' + o.instruction + '"';
 
   var bat =
     '@echo off\r\n' +
     'title PICLas Build: ' + dir + '\r\n' +
-    'set BASH=' + BASH_WIN + '\r\n' +
-    'if not exist "%BASH%" (\r\n' +
-    '  echo ERROR: MSYS2 bash not found at %BASH%\r\n' +
-    '  pause & exit /b 1\r\n' +
+    'set CMAKE=' + CMAKE_WIN + '\r\n' +
+    'if not exist "%CMAKE%" (\r\n' +
+    '  echo ERROR: cmake not found at %CMAKE%\r\n' +
+    '  echo Install MSYS2 UCRT64 and run: pacman -S mingw-w64-ucrt-x86_64-cmake\r\n' +
+    '  pause ^& exit /b 1\r\n' +
     ')\r\n' +
+    // PETSC_DIR is needed by the cmake find scripts when PETSc is enabled
+    (o.petsc ? 'set PETSC_DIR=C:\\msys64\\ucrt64\r\n' : '') +
     'echo.\r\n' +
-    'echo  PICLas Build Configurator\r\n' +
-    'echo  Config: ' + dir + '\r\n' +
+    'echo  piclas-win 0.9 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
+    'echo  Config : ' + dir + '\r\n' +
+    'echo  Source : ' + srcWin + '\r\n' +
+    'echo  Binary : ' + bpWin + '\r\n' +
     'echo.\r\n' +
     'echo ======================================\r\n' +
     'echo  CONFIGURE\r\n' +
     'echo ======================================\r\n' +
-    '"%BASH%" -c "' + cfgCmd + '"\r\n' +
+    '"%CMAKE%" --preset ' + getPreset(o) +
+       ' -S "' + srcWin + '"' +
+       ' -B "' + bpWin + '"' +
+       defs + '\r\n' +
     'if %ERRORLEVEL% neq 0 (\r\n' +
     '  echo.\r\n' +
     '  echo CONFIGURE FAILED\r\n' +
-    '  pause & exit /b 1\r\n' +
+    '  pause ^& exit /b 1\r\n' +
     ')\r\n' +
     'echo.\r\n' +
     'echo ======================================\r\n' +
     'echo  BUILD  ^(target: ' + tg + '^)\r\n' +
     'echo ======================================\r\n' +
-    '"%BASH%" -c "' + buildCmd + '"\r\n' +
+    '"%CMAKE%" --build "' + bpWin + '" --target ' + tg + '\r\n' +
     'if %ERRORLEVEL% neq 0 (\r\n' +
     '  echo.\r\n' +
     '  echo BUILD FAILED\r\n' +
-    '  pause & exit /b 1\r\n' +
+    '  pause ^& exit /b 1\r\n' +
     ')\r\n' +
     'echo.\r\n' +
     'echo BUILD SUCCEEDED\r\n' +

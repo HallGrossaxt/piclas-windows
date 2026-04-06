@@ -50,7 +50,29 @@
       "Bash(PATH=/c/msys64/ucrt64/bin:$PATH /c/msys64/ucrt64/bin/gfortran -c /c/Temp/test_trivial1.f90 -J/c/Temp 2>/c/Temp/tt1path_err.txt; echo $? > /c/Temp/tt1path_rc.txt)",
       "Bash(/c/msys64/ucrt64/bin/nm.exe C:/msys64/ucrt64/lib/libmsmpi.dll.a)",
       "Read(//tmp/**)",
-      "Bash(/c/msys64/ucrt64/bin/objdump.exe -p C:/Windows/System32/msmpi.dll > C:/Temp/objdump_out.txt 2>&1)"
+      "Bash(/c/msys64/ucrt64/bin/objdump.exe -p C:/Windows/System32/msmpi.dll > C:/Temp/objdump_out.txt 2>&1)",
+      "Bash(wc:*)",
+      "Bash(cmd //c \"dir C:\\\\Data\\\\PRJ\\\\Piclas\\\\piclas-master\\\\src\\\\gpu\")",
+      "Bash(tee /tmp/build_gpu.log)",
+      "Bash(\"C:/Data/PRJ/Piclas/dsmc-cone-3D/reconfigure_and_build.ps1\":*)",
+      "Bash(C:\\\\msys64\\\\ucrt64\\\\bin\\\\bash.exe /c/Data/PRJ/Piclas/dsmc-cone-3D/run_configure.sh)",
+      "Bash(C:/msys64/ucrt64/bin/cmake.exe --build . --target libpiclasshared -j4)",
+      "Bash(PATH=\"/c/msys64/ucrt64/bin:$PATH\")",
+      "Bash(tee /tmp/build_test.txt)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH cmake --build . --target piclas --config Release)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH cmake --build . --target piclas)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH cmake*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH x86_64*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH objdump*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH nm *)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH ninja*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH make*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH ls*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH pwd*)",
+      "Bash(PATH=/c/msys64/ucrt64/bin:$PATH echo*)",
+      "Bash(dir:*)",
+      "Bash(*)",
+      "Skill(update-config)"
     ]
   }
 }

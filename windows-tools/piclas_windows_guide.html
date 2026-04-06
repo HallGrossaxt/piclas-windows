@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PICLas on Windows &mdash; Complete Setup Guide</title>
+<title>piclas-win 0.9 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -94,7 +94,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 
 <!-- ═══════════════ NAVIGATION ═══════════════ -->
 <nav>
-  <div class="nav-title">PICLas Windows Guide</div>
+  <div class="nav-title">piclas-win 0.9 Guide</div>
 
   <div class="nav-section">
     <a href="#overview">Overview</a>
@@ -117,6 +117,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     <a href="#distribution">10. Distribution</a>
     <a href="#other-computers">11. Other Computers</a>
     <a href="#troubleshooting">12. Troubleshooting</a>
+    <a href="#runtime-bugs">13. Runtime Bugs</a>
+    <a class="nav-sub" href="#bug-allgatherv">13.1 MS-MPI ALLGATHERV</a>
+    <a class="nav-sub" href="#bug-periodic">13.2 Periodic Tracking</a>
+    <a class="nav-sub" href="#bug-halo">13.3 Shape-Fn Halo</a>
     <a href="#file-summary">File Summary</a>
   </div>
 </nav>
@@ -125,13 +129,18 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <main>
 
 <div class="hero">
-  <h1>PICLas on Windows</h1>
-  <div class="subtitle">Complete setup, build, and distribution guide for PICLas v4.1.0 on Windows 11 with MSYS2 UCRT64</div>
+  <h1>piclas-win 0.9</h1>
+  <div class="subtitle">Unofficial Windows port of PICLas 4.1.0 &mdash; complete setup, build, and distribution guide for Windows 11 with MSYS2 UCRT64</div>
+  <p style="margin-top:10px;font-size:0.85rem;color:var(--yellow);">
+    &#9888; This is an <strong>unofficial</strong> Windows port. It is not affiliated with or endorsed by the PICLas development team.
+    It is based on <strong>PICLas 4.1.0</strong> (commit d63756ee) with Windows-specific patches applied on top.
+    For the official Linux version, see <a href="https://github.com/piclas-framework/piclas" style="color:var(--accent);">github.com/piclas-framework/piclas</a>.
+  </p>
   <div class="meta">
-    <span>&#128197; March 2026</span>
+    <span>&#128197; April 2026</span>
     <span>&#127988; Windows 11 Pro</span>
     <span>&#128295; MSYS2 UCRT64 / GCC</span>
-    <span>&#128196; PICLas v4.1.0</span>
+    <span>&#128196; Based on PICLas v4.1.0</span>
   </div>
 </div>
 
@@ -163,9 +172,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
   <tr><td>src/globals/commandlinearguments.f90</td><td>Patched</td><td>Call glob via ISO_C_BINDING</td></tr>
   <tr><td>src/CMakeLists.txt</td><td>Patched</td><td>Link globlib; link MPI libs to executables on Windows</td></tr>
   <tr><td>unitTests/CMakeLists.txt</td><td>Patched</td><td>Fix Fortran module race condition; link MPI libs on Windows</td></tr>
-  <tr><td>src/io_hdf5/io_hdf5.f90</td><td>Patched</td><td>Guard H5PSET_FAPL_MPIO_F with USE_MPI_HDF5</td></tr>
+  <tr><td>src/io_hdf5/io_hdf5.f90</td><td>Patched</td><td>Guard H5PSET_FAPL_MPIO_F with USE_MPI_HDF5; H5PSET_USERBLOCK_F fix to prevent superblock corruption</td></tr>
   <tr><td>src/io_hdf5/hdf5_input.f90</td><td>Patched</td><td>Guard FAPL/DXPL calls with USE_MPI_HDF5</td></tr>
-  <tr><td>src/io_hdf5/hdf5_output.f90</td><td>Patched</td><td>Guard DXPL calls with USE_MPI_HDF5</td></tr>
+  <tr><td>src/io_hdf5/hdf5_output.f90</td><td>Patched</td><td>Guard DXPL calls with USE_MPI_HDF5; gather-write pattern for GatheredWriteArray/DistributedWriteArray with sequential HDF5</td></tr>
+  <tr><td>src/particles/dsmc/dsmc_analyze.f90</td><td>Patched</td><td>WriteDSMCToHDF5: use GatheredWriteArray instead of direct WriteArrayToHDF5 so non-root MPI ranks do not attempt HDF5 writes with File_ID=0</td></tr>
 </table>
 
 <!-- ─────────────── PREREQUISITES ─────────────── -->
@@ -505,7 +515,7 @@ The CMake dependency fix in <code>unitTests/CMakeLists.txt</code> (Section 4.3) 
 </div>
 
 <h3 id="mpi-cmake-fixes">6.2 Source Code and CMake Fixes</h3>
-<p>Six fixes are needed to get the MPI build working on Windows. These are all already applied in the patched source tree.</p>
+<p>Eight fixes are needed to get the MPI build working correctly on Windows. These are all already applied in the patched source tree.</p>
 
 <h4>Fix A — mpi_f08.o linker ordering (<code>cmake/SetLibraries.cmake</code>)</h4>
 <p>
@@ -585,6 +595,81 @@ IF(WIN32)
   TARGET_LINK_LIBRARIES(${target} ${linkedlibs})
 ENDIF()</code></pre>
 
+<h4>Fix F — Userblock / HDF5 superblock corruption (<code>src/io_hdf5/io_hdf5.f90</code>)</h4>
+<p>
+  When <code>copy_userblock</code> copies the Fortran-generated userblock to the front of an HDF5 file,
+  it must reserve space <em>before</em> the HDF5 superblock. Without this fix the userblock overwrites
+  the superblock, corrupting the file. The fix calls <code>H5PSET_USERBLOCK_F</code> on the property
+  list before <code>H5FCREATE_F</code>, and passes <code>creation_prp=Plist_File_ID</code> so HDF5
+  reserves the correctly rounded-up 512-byte-aligned block:
+</p>
+<pre><code><span class="comment">! io_hdf5.f90 — OpenDataFile, inside the MPIRoot / create-new-file path</span>
+IF(userblockSize_loc.GT.0)THEN
+  tmp = userblockSize_512
+  DO WHILE(tmp.LT.userblockSize_loc)
+    tmp = tmp * 2
+  END DO
+  CALL H5PSET_USERBLOCK_F(Plist_File_ID, tmp, iError)
+END IF
+CALL H5FCREATE_F(TRIM(FileString), H5F_ACC_TRUNC_F, File_ID, iError, creation_prp=Plist_File_ID)</code></pre>
+
+<h4>Fix G — Sequential HDF5 gather-write pattern (<code>src/io_hdf5/hdf5_output.f90</code>)</h4>
+<p>
+  With <code>USE_MPI=1, USE_MPI_HDF5=0</code> (MPI compute, serial HDF5), only MPIRoot opens the HDF5
+  file — non-root ranks have <code>File_ID=0</code>. Calling <code>WriteArrayToHDF5</code> directly on
+  all ranks would cause <code>H5DCREATE_F(File_ID=0)</code> to fail on ranks 1…N with
+  <em>"Dataset could not be created"</em>.
+</p>
+<p>
+  <code>GatheredWriteArray</code> and <code>DistributedWriteArray</code> handle this correctly: each
+  non-root rank sends its local slice to MPIRoot via <code>MPI_GATHERV</code>, and only MPIRoot calls
+  the HDF5 write. The key guard in these routines is:
+</p>
+<pre><code><span class="comment">! hdf5_output.f90 — GatheredWriteArray</span>
+#if USE_MPI &amp;&amp; !USE_MPI_HDF5
+  <span class="comment">! Gather data from all ranks to MPIRoot, then only MPIRoot writes</span>
+  CALL MPI_GATHERV(SendBuf, SendCount, MPI_DOUBLE_PRECISION, &amp;
+                   RecvBuf, RecvCounts, Displs, MPI_DOUBLE_PRECISION, &amp;
+                   0, MPI_COMM_PICLAS, iError)
+  IF(MPIRoot) CALL WriteArrayToHDF5(...)
+#else
+  CALL WriteArrayToHDF5(...)
+#endif</code></pre>
+
+<h4>Fix H — WriteDSMCToHDF5 uses GatheredWriteArray (<code>src/particles/dsmc/dsmc_analyze.f90</code>)</h4>
+<p>
+  <code>WriteDSMCToHDF5</code> previously opened the DSMCState file with
+  <code>OpenDataFile(single=.FALSE., communicatorOpt=MPI_COMM_PICLAS)</code> and then called
+  <code>WriteArrayToHDF5</code> directly on <em>all</em> ranks. This bypassed the gather-write pattern
+  and caused <em>"ERROR in WriteArrayToHDF5: Dataset ElemData could not be created"</em> on ranks 1–3.
+</p>
+<p>
+  Fix: removed the <code>OpenDataFile</code> / <code>CloseDataFile</code> wrapper and replaced the
+  direct <code>WriteArrayToHDF5</code> calls with <code>GatheredWriteArray</code>. Added
+  <code>GatheredWriteArray</code> to the <code>USE MOD_HDF5_Output</code> list:
+</p>
+<pre><code><span class="comment">! dsmc_analyze.f90 — WriteDSMCToHDF5 (replaces OpenDataFile + WriteArrayToHDF5 + CloseDataFile)</span>
+USE MOD_HDF5_Output ,ONLY: WriteAttributeToHDF5, WriteHDF5Header, WriteArrayToHDF5, GatheredWriteArray
+
+ASSOCIATE (&amp;
+  nVarX        =&gt; INT(nVar+nVar_quality+nVar_HeatPress+nVarMPF,IK) ,&amp;
+  PP_nElems    =&gt; INT(PP_nElems,IK)                                 ,&amp;
+  offsetElem   =&gt; INT(offsetElem,IK)                                ,&amp;
+  nGlobalElems =&gt; INT(nGlobalElems,IK)                           )
+  CALL GatheredWriteArray(FileName,create=.FALSE.,DataSetName='ElemData', rank=2,  &amp;
+                          nValGlobal=(/nVarX,nGlobalElems/),                        &amp;
+                          nVal      =(/nVarX,PP_nElems/),                           &amp;
+                          offset    =(/0_IK ,offsetElem/),                          &amp;
+                          collective=.false., RealArray=DSMC_MacroVal(:,:))
+  IF(SampleElecExcitation) THEN
+    CALL GatheredWriteArray(FileName,create=.FALSE.,DataSetName='ExcitationData', rank=2, &amp;
+                            nValGlobal=(/nVarExci,nGlobalElems/),                          &amp;
+                            nVal      =(/nVarExci,PP_nElems/),                             &amp;
+                            offset    =(/0_IK    ,offsetElem/),                            &amp;
+                            collective=.false., RealArray=MacroElecExcitation(:,:))
+  END IF
+END ASSOCIATE</code></pre>
+
 <h3 id="mpi-preset">6.3 MPI CMake Preset</h3>
 <p>The <code>windows-ucrt64-mpi</code> preset inherits from <code>windows-ucrt64</code> and enables MPI:</p>
 <pre><code>{
@@ -617,21 +702,59 @@ cmake --build build-ucrt64-mpi</code></pre>
 <span class="comment"># Multi-process (requires msmpi.dll in PATH)</span>
 mpiexec -n 4 ./build-ucrt64-mpi/bin/piclas.exe parameter.ini</code></pre>
 
+<div class="warn">
+  <b>Required: disable HDF5 file locking before mpiexec</b>
+  On Windows, HDF5's file-locking mechanism conflicts with how Windows manages file handles across
+  multiple processes. Set this environment variable <em>before</em> running any MPI simulation,
+  otherwise PICLas will abort during the first HDF5 write:
+<pre class="cmd"><code><span class="comment"># MSYS2 / bash</span>
+export HDF5_USE_FILE_LOCKING=FALSE
+mpiexec -n 4 bin/piclas.exe parameter.ini DSMC.ini
+
+<span class="comment"># Windows CMD (.bat file)</span>
+set HDF5_USE_FILE_LOCKING=FALSE
+mpiexec -n 4 bin\piclas.exe parameter.ini DSMC.ini</code></pre>
+  This variable is required for all MPI runs (DSMC, PIC, etc.) on Windows.
+  It is <em>not</em> needed for single-process runs.
+</div>
+
+<div class="tip">
+  <b>DSMC cone example (dsmc-cone-3D tutorial)</b>
+<pre class="cmd"><code>export HDF5_USE_FILE_LOCKING=FALSE
+export PATH=/c/msys64/ucrt64/bin:$PATH
+cd /c/Data/PRJ/Piclas/dsmc-cone-3D
+mpiexec -n 4 bin/piclas.exe parameter.ini DSMC.ini</code></pre>
+  Run time: ~3 minutes for 10 000 iterations on a desktop CPU. Output: DSMCState, DSMCSurfState,
+  and State HDF5 files at each analysis interval.
+</div>
+
 <div class="danger">
   <b>MPI and PETSc cannot be combined on Windows</b>
-  MSYS2's PETSc is built without MPI (sequential/serial variant). Its headers include
-  <code>petsc/mpiuni/mpiunifdef.h</code> which redefines <code>MPI_WTIME</code> →
-  <code>PETSC_MPI_WTIME</code>. When building with MS-MPI, Fortran sees this redefined symbol
-  but has no type declaration for it, causing a fatal compile error in <code>hdg.f90</code>.
+  MSYS2's PETSc is built without MPI (sequential/serial variant). Two separate failures occur:
+  <ul style="margin-top:8px;">
+    <li><b>Compile-time:</b> Its headers include <code>petsc/mpiuni/mpiunifdef.h</code> which
+    redefines <code>MPI_WTIME</code> → <code>PETSC_MPI_WTIME</code>. Fortran sees this redefined
+    symbol with no type declaration, causing a fatal compile error in <code>hdg.f90</code>.
+    cmake emits a <code>FATAL_ERROR</code> if both flags are set.</li>
+    <li><b>Runtime:</b> Even if the header conflict is patched around, PETSc's runtime library
+    calls <code>PetscInitialize()</code> which checks <code>MPI_COMM_WORLD</code> size and aborts
+    with <em>"You are using an MPI-uni (sequential) install of PETSc but trying to launch parallel
+    jobs"</em> when launched with more than one MPI rank. All processes crash with SIGABRT.</li>
+  </ul>
   Use either <code>LIBS_USE_MPI=ON</code> <em>or</em> <code>LIBS_USE_PETSC=ON</code>, never both.
-  The cmake build system will emit a FATAL_ERROR if both are enabled simultaneously.
 </div>
 
 <div class="note">
-  <b>HDF5 file I/O is serial</b>
-  Since MSYS2's HDF5 has no parallel MPI support, all HDF5 reads/writes go through rank 0.
-  This is the expected behaviour for desktop/workstation builds and is transparent to the user.
-  MPI parallelism applies to the compute (particle tracking, field solve) but not to file I/O.
+  <b>HDF5 file I/O is serial — gather-write pattern</b>
+  Since MSYS2's HDF5 has no parallel MPI support (<code>USE_MPI_HDF5=0</code>), only MPIRoot (rank 0)
+  opens HDF5 files. Non-root ranks have <code>File_ID=0</code> and must <em>not</em> call any HDF5
+  write routines directly. PICLas handles this transparently via the <em>gather-write pattern</em>:
+  <ul>
+    <li>Each rank sends its local data slice to MPIRoot via <code>MPI_GATHERV</code></li>
+    <li>MPIRoot assembles the full array and writes it to HDF5</li>
+    <li>This is done inside <code>GatheredWriteArray</code> and <code>DistributedWriteArray</code></li>
+  </ul>
+  Any call to <code>WriteArrayToHDF5</code> directly on all ranks (bypassing the gather-write) will fail on ranks 1–N with <em>"Dataset could not be created"</em>. See Fix G and Fix H above.
 </div>
 
 <!-- ─────────────── BUILD TOOL ─────────────── -->
@@ -864,13 +987,19 @@ EOF</code></pre>
   <div class="step-num">5</div>
   <div class="step-body">
     <b>Get the patched PICLas source.</b> Either clone from the project repository (if the patches are committed)
-    or copy the entire <code>piclas-master</code> folder from the reference machine. The four modified/new files are:
+    or copy the entire <code>piclas-master</code> folder from the reference machine. The modified/new files are:
     <ul>
-      <li><code>src/globals/glob_windows.c</code></li>
+      <li><code>src/globals/glob_windows.c</code> (new)</li>
       <li><code>src/globals/commandlinearguments.f90</code></li>
       <li><code>src/CMakeLists.txt</code></li>
       <li><code>unitTests/CMakeLists.txt</code></li>
       <li><code>CMakePresets.json</code></li>
+      <li><code>cmake/SetLibraries.cmake</code></li>
+      <li><code>cmake/mpi_f08.f90</code></li>
+      <li><code>src/io_hdf5/io_hdf5.f90</code></li>
+      <li><code>src/io_hdf5/hdf5_input.f90</code></li>
+      <li><code>src/io_hdf5/hdf5_output.f90</code></li>
+      <li><code>src/particles/dsmc/dsmc_analyze.f90</code></li>
     </ul>
   </div>
 </div>
@@ -971,14 +1100,259 @@ cmake --build ../build-poisson-release --target piclas piclas2vtk</code></pre>
   <tr>
     <td><code>Error: Function 'petsc_mpi_wtime' has no IMPLICIT type</code> in hdg.f90</td>
     <td>MPI + PETSc enabled simultaneously; MSYS2 PETSc is serial and its mpiuni headers redefine MPI_WTIME</td>
-    <td>Use either MPI <em>or</em> PETSc, never both. cmake will now emit FATAL_ERROR if both are set.</td>
+    <td>Use either MPI <em>or</em> PETSc, never both. cmake emits FATAL_ERROR if both are set.</td>
+  </tr>
+  <tr>
+    <td><code>PETSC ERROR: You are using an MPI-uni (sequential) install of PETSc but trying to launch parallel jobs</code> — all 4 MPI ranks crash with SIGABRT at <code>PetscInitialize()</code></td>
+    <td>Binary was built with <code>LIBS_USE_PETSC=ON</code> and <code>LIBS_USE_MPI=ON</code>. Even if the compile-time header conflict is patched around, the MSYS2 PETSc <em>runtime library</em> checks <code>MPI_COMM_WORLD</code> size in <code>PetscInitialize()</code> and aborts when it detects more than one rank.</td>
+    <td>Rebuild with <code>LIBS_USE_PETSC=OFF</code> (use the built-in CG solver). The <code>build-ucrt64-mpi</code> directory already has PETSc disabled — just run <code>ninja -j4</code> there and copy the resulting exe.</td>
   </tr>
   <tr>
     <td>MPI program exits immediately / msmpi.dll not found</td>
     <td>msmpi.dll not in PATH at runtime</td>
     <td>Install MS-MPI runtime or ensure <code>C:\Windows\System32\msmpi.dll</code> exists; add to PATH</td>
   </tr>
+  <tr>
+    <td><code>ERROR in WriteArrayToHDF5: Dataset ElemData could not be created</code> (MPI ranks 1–3)</td>
+    <td><code>WriteDSMCToHDF5</code> called <code>WriteArrayToHDF5</code> on all ranks; with <code>USE_MPI_HDF5=0</code> non-root ranks have <code>File_ID=0</code> and HDF5 creation fails</td>
+    <td>Fixed in <code>dsmc_analyze.f90</code> Fix H: use <code>GatheredWriteArray</code> instead of direct <code>WriteArrayToHDF5</code> (gather data to MPIRoot, only root writes)</td>
+  </tr>
+  <tr>
+    <td>HDF5 file is corrupt / <code>copy_userblock</code> overwrites HDF5 data</td>
+    <td>HDF5 file was created without reserving space for the userblock; <code>copy_userblock</code> then overwrites the HDF5 superblock</td>
+    <td>Fixed in <code>io_hdf5.f90</code> Fix F: call <code>H5PSET_USERBLOCK_F</code> before <code>H5FCREATE_F</code> and pass <code>creation_prp=Plist_File_ID</code></td>
+  </tr>
+  <tr>
+    <td>Simulation aborts / <code>HDF5 error</code> during first file write in MPI run</td>
+    <td>HDF5 file locking conflicts with Windows multi-process file handling</td>
+    <td>Set <code>export HDF5_USE_FILE_LOCKING=FALSE</code> (bash) or <code>set HDF5_USE_FILE_LOCKING=FALSE</code> (CMD) before <code>mpiexec</code></td>
+  </tr>
+  <tr>
+    <td><code>FATAL ERROR: GlobalSideID not found for Elem</code> (MPI run, Landau damping)</td>
+    <td>MS-MPI <code>MPI_ALLGATHERV(MPI_IN_PLACE,…)</code> on a 1-process communicator zeroes the receive buffer before filling it, corrupting <code>SideInfo_Shared</code></td>
+    <td>Code fix in <code>particle_mesh_readin.f90</code>: guard the call with <code>IF (nLeaderGroupProcs.GT.1)</code>. See <a href="#bug-allgatherv">§13.1</a></td>
+  </tr>
+  <tr>
+    <td><code>ERROR: Particle not inside of Element, ipart</code> (Landau damping)</td>
+    <td>Intersection-based periodic BC tracking fails on Windows for particles crossing the periodic x=0 face</td>
+    <td>Add <code>CartesianPeriodic = T</code> to <code>parameter.ini</code>. See <a href="#bug-periodic">§13.2</a></td>
+  </tr>
+  <tr>
+    <td><code>GlobalProcToExchangeProc(EXCHANGE_PROC_RANK,ProcID) is negative</code> (MPI run, Landau damping)</td>
+    <td>On a single compute node with shape_function deposition, <code>halo_eps&gt;0</code> causes <code>particle_mpi_halo.f90</code> to enter the multi-node branch, giving <code>MPI_halo_eps=1.0</code> — too small to include non-adjacent procs in each other's exchange lists</td>
+    <td>Code fix in <code>particle_mpi_halo.f90</code>: replace <code>IF (halo_eps.LE.0.)</code> with <code>IF (nComputeNodeProcessors.EQ.nProcessors_Global)</code>. See <a href="#bug-halo">§13.3</a></td>
+  </tr>
 </table>
+
+<!-- ─────────────── RUNTIME BUGS ─────────────── -->
+<h2 id="runtime-bugs">13. Runtime Bugs (Landau Damping PIC-Poisson Tutorial)</h2>
+<p>
+  Three Windows-specific runtime bugs were found and fixed while verifying the
+  <code>pic-poisson-landau-damping</code> tutorial with <code>mpiexec -n 4</code>.
+  All three are caused by differences between MS-MPI and the Linux MPI implementations
+  (OpenMPI/MPICH) that PIClas was primarily developed and tested against.
+  None affect single-process runs or Linux.
+</p>
+
+<!-- ── Bug #1 ── -->
+<h3 id="bug-allgatherv">13.1 MS-MPI MPI_ALLGATHERV(MPI_IN_PLACE) corrupts SideInfo_Shared</h3>
+
+<h4>Symptom</h4>
+<pre><code>FATAL ERROR: GlobalSideID not found for Elem …</code></pre>
+<p>Occurs immediately during mesh initialisation on every MPI rank.</p>
+
+<h4>Root cause</h4>
+<p>
+  In <code>particle_mesh_readin.f90</code> a blocking <code>MPI_ALLGATHERV(MPI_IN_PLACE, …)</code>
+  is called on <code>MPI_COMM_LEADERS_SHARED</code> — the communicator that contains only one
+  rank per compute node (the "leader").  On a single compute node this communicator has exactly
+  <em>one</em> member.  MS-MPI's implementation of <code>MPI_IN_PLACE</code> on a 1-process
+  communicator <strong>zeroes the entire receive buffer</strong> before copying from the
+  in-place source — but because the source <em>is</em> the buffer, the source has already been
+  wiped.  The result is that <code>SideInfo_Shared</code> columns 1–9 (including
+  <code>SIDE_LOCALID</code>) are all set to zero.  A subsequent call to
+  <code>GetGlobalNonUniqueSideID</code> then finds no side with a matching
+  <code>SIDE_LOCALID</code> and aborts.
+</p>
+<div class="note">
+  <b>Why this only affects single-node runs on Windows</b>
+  On a multi-node cluster <code>MPI_COMM_LEADERS_SHARED</code> has more than one member and the
+  <code>MPI_IN_PLACE</code> gather works correctly.  On Linux with a 1-process communicator the
+  data is simply left in place (a no-op). MS-MPI is unique in zeroing the buffer first.
+</div>
+<p>
+  The four <code>MPI_IALLGATHERV(MPI_IN_PLACE, …)</code> calls that precede this one (for
+  <code>ElemInfo_Shared</code>, <code>SideInfo_Shared</code>, <code>NodeInfo_Shared</code>,
+  <code>NodeCoords_Shared</code> on <code>MPI_COMM_SHARED</code> with all 4 procs) are
+  <strong>not</strong> affected: they run on a 4-process communicator where
+  <code>MPI_IN_PLACE</code> works correctly.
+</p>
+
+<h4>Fix — <code>particle_mesh_readin.f90</code></h4>
+<p>Guard the blocking gather with a process-count check so it is skipped when there is only one
+leader (single compute node):</p>
+<pre><code>CALL BARRIER_AND_SYNC(SideInfo_Shared_Win,MPI_COMM_SHARED)
+IF (myComputeNodeRank.EQ.0) THEN
+  ! Only gather across node leaders when there are multiple compute nodes.
+  ! MS-MPI MPI_ALLGATHERV(MPI_IN_PLACE,...) on a 1-process communicator corrupts
+  ! the receive buffer by zeroing it before filling from the (now-zero) in-place
+  ! buffer. With a single node all data is already in shared memory -- skip.
+  IF (nLeaderGroupProcs.GT.1) THEN
+    CALL MPI_ALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,SideInfo_Shared,recvcountSide &
+        ,displsSide,MPI_STRUCT_SIDE,MPI_COMM_LEADERS_SHARED,IERROR)
+  END IF
+  CALL MPI_TYPE_FREE(MPI_STRUCT_ELEM,iError)
+  CALL MPI_TYPE_FREE(MPI_STRUCT_SIDE,iError)
+  CALL MPI_TYPE_FREE(MPI_STRUCT_NODE,iError)
+END IF</code></pre>
+<p><b>File:</b> <code>src/particles/particle_mesh/particle_mesh_readin.f90</code> (around the
+<code>MPI_ALLGATHERV … MPI_COMM_LEADERS_SHARED</code> block).</p>
+
+<!-- ── Bug #2 ── -->
+<h3 id="bug-periodic">13.2 Intersection-based periodic boundary tracking fails</h3>
+
+<h4>Symptom</h4>
+<pre><code>ERROR: Particle not inside of Element, ipart …</code></pre>
+<p>Occurs during the first time step; particles near <code>x=0</code> moving in −x direction
+are removed from the simulation.</p>
+
+<h4>Root cause</h4>
+<p>
+  The default <code>TrackingMethod = refmapping</code> uses intersection-based tracking at
+  periodic boundaries (<code>ParticleBCTracking</code>).  On Windows this routine fails to
+  detect when a particle crosses the periodic <code>x=0</code> face.  After the Boris push,
+  particles near <code>x=0</code> with negative <em>v<sub>x</sub></em> end up at
+  <code>x &lt; 0</code> (outside the domain).  <code>SinglePointToElement</code> correctly
+  returns −1, <code>LocateParticleInElement</code> calls <code>RemoveParticle</code>, and the
+  abort fires.
+</p>
+<div class="note">
+  <b>Root cause is likely a floating-point edge case in the intersection test</b>
+  The Linux build with OpenMPI passes this test. The Windows/MS-MPI build triggers a
+  different code path in the intersection geometry, probably due to slightly different
+  floating-point rounding in MSVC-compatible math routines vs. glibc.
+</div>
+
+<h4>Fix — <code>parameter.ini</code></h4>
+<p>
+  Add <code>CartesianPeriodic = T</code> immediately after <code>TrackingMethod</code>:
+</p>
+<pre><code>TrackingMethod              = refmapping
+CartesianPeriodic           = T</code></pre>
+<p>
+  This activates <code>PeriodicMovement</code>: instead of computing intersection points at
+  periodic faces, it directly wraps the particle position
+  (<code>if pos &gt; xmax: pos = pos − L</code>, <code>if pos &lt; 0: pos = pos + L</code>).
+  PIClas documents this as <em>"Simplified treatment for periodic box with Refmapping. No
+  computation of intersection points at periodic BCs."</em>  It is physically equivalent for a
+  Cartesian periodic domain.
+</p>
+<p>
+  With <code>CartesianPeriodic=T</code> and <code>nPeriodicVectors=3</code>,
+  <code>ParticleBCTracking</code> calls <code>PeriodicMovement</code> which wraps positions in
+  all three directions and immediately cycles/returns, bypassing the problematic intersection
+  calculations.
+</p>
+
+<!-- ── Bug #3 ── -->
+<h3 id="bug-halo">13.3 Single-node shape_function run: MPI exchange halo too small</h3>
+
+<h4>Symptom</h4>
+<pre><code>GlobalProcToExchangeProc(EXCHANGE_PROC_RANK,ProcID) is negative.
+The halo region might be too small. Try increasing Particles-HaloEpsVelo!</code></pre>
+<p>
+  Abort occurs during the particle MPI exchange at the end of the first time step,
+  on a proc that needs to send a particle to a non-adjacent proc.
+</p>
+
+<h4>Root cause — step by step</h4>
+<p>
+  <code>GlobalProcToExchangeProc</code> maps global proc IDs to local exchange-proc indices.
+  It is built in <code>particle_mpi_halo.f90:IdentifyPartExchangeProcs</code> using
+  <code>MPI_halo_eps</code> as the distance threshold.  A proc can only send particles to
+  procs that appear in its exchange list.
+</p>
+<p>
+  With 4 procs on one node and a domain length of 12.566 (proc width ≈ 3.14), the exchange
+  list for each proc is:
+</p>
+<table>
+  <tr><th>Proc</th><th>x range</th><th>Exchange list</th><th>NOT included</th></tr>
+  <tr><td>0</td><td>0 – 3.14</td><td>Proc 1 (right), Proc 3 (left via periodic)</td><td>Proc 2</td></tr>
+  <tr><td>1</td><td>3.14 – 6.28</td><td>Proc 0 (left), Proc 2 (right)</td><td>Proc 3</td></tr>
+  <tr><td>2</td><td>6.28 – 9.42</td><td>Proc 1 (left), Proc 3 (right)</td><td>Proc 0</td></tr>
+  <tr><td>3</td><td>9.42 – 12.57</td><td>Proc 2 (left), Proc 0 (right via periodic)</td><td>Proc 1</td></tr>
+</table>
+<p>
+  The <strong>intended</strong> behaviour for single-node runs is:
+  <code>MPI_halo_eps = c × dt × SafetyFactor = 1×10<sup>8</sup> × 0.1 × 1.2 = 1.2×10<sup>7</sup></code> — much larger than
+  the domain, so all four procs are in each other's exchange lists.
+</p>
+<p>
+  The code achieves this through the branch in <code>particle_mpi_halo.f90</code>:
+</p>
+<pre><code>IF (halo_eps.LE.0.) THEN
+  ! single-node path: MPI_halo_eps = c * dt * SafetyFactor  (~1.2e7)
+ELSE
+  ! multi-node path: MPI_halo_eps = halo_eps                (~1.0)
+END IF</code></pre>
+<p>
+  For single-node runs <strong>without</strong> shape_function deposition,
+  <code>particle_bgm.f90</code> leaves <code>halo_eps = 0</code>, and the correct
+  single-node branch is taken.
+</p>
+<p>
+  For single-node runs <strong>with</strong> <code>PIC-Deposition-Type = shape_function</code>
+  and <code>PIC-shapefunction-dimension = 1</code>, <code>particle_bgm.f90</code> sets:
+</p>
+<pre><code>halo_eps = MAX(r_sf, MAX(y_extent, z_extent))
+         = MAX(0.5,  MAX(1.0,     1.0     ))
+         = 1.0   &gt; 0</code></pre>
+<p>
+  Because <code>halo_eps = 1.0 &gt; 0</code> the code <strong>wrongly</strong> enters the
+  multi-node branch and sets <code>MPI_halo_eps = 1.0</code>.  With a proc width of 3.14 and
+  halo of only 1.0, procs 1 and 3 (and procs 0 and 2) are not in each other's exchange
+  lists.  A particle that acquires a large velocity from a corrupted field interpolation can
+  jump across two proc-widths in one time step and then cannot be sent to the target proc →
+  abort.
+</p>
+<div class="warn">
+  <b>Why the field interpolation can be corrupted</b>
+  <code>PEM%LocalElemID(iPart) = PEM%GlobalElemID(iPart) − offsetElem</code>.  If a misplaced
+  particle carries a <code>GlobalElemID</code> belonging to a different proc, the resulting
+  <code>LocalElemID</code> exceeds <code>nElems</code> and accesses out-of-bounds memory in
+  <code>U_N(LocalElemID)%E</code>, producing a garbage electric field (~10<sup>24</sup>),
+  a garbage velocity (~−2.7×10<sup>23</sup>), and a position that wraps incorrectly
+  (integer overflow in <code>CEILING</code> inside <code>PeriodicMovement</code>).
+</div>
+
+<h4>Fix — <code>particle_mpi_halo.f90</code></h4>
+<p>
+  Replace the <code>halo_eps</code>-based test with an explicit single-node test.
+  <code>nComputeNodeProcessors</code> and <code>nProcessors_Global</code> are both available
+  in <code>MOD_MPI_Shared_Vars</code>, which is already <code>USE</code>d without an
+  <code>ONLY</code> clause in this subroutine.
+</p>
+<pre><code>! OLD (incorrect when shape_function sets halo_eps &gt; 0 on a single node):
+IF (halo_eps.LE.0.) THEN
+
+! NEW (correctly detects single-node regardless of halo_eps):
+IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN</code></pre>
+<p>
+  <b>File:</b> <code>src/particles/particle_mpi/particle_mpi_halo.f90</code>,
+  subroutine <code>IdentifyPartExchangeProcs</code>, the comment block starting
+  <em>"if running on one node, halo_eps is meaningless"</em>.
+</p>
+<p>
+  After this fix, single-node runs with shape_function use the single-node path and obtain
+  <code>MPI_halo_eps ≈ 1.2×10<sup>7</sup></code>, which covers the entire domain and
+  ensures all procs are in each other's exchange lists.
+</p>
+<div class="tip">
+  <b>Rebuild required</b>
+  After applying this fix, rebuild PIClas (see <a href="#mpi-build">Section 6</a>) and
+  copy the new <code>piclas.exe</code> to the simulation directory before re-running.
+</div>
 
 <!-- ─────────────── FILE SUMMARY ─────────────── -->
 <h2 id="file-summary">File Summary</h2>
@@ -999,13 +1373,22 @@ cmake --build ../build-poisson-release --target piclas piclas2vtk</code></pre>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">glob_windows.c</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Win32 wildcard expansion (NEW)</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">commandlinearguments.f90</span> &nbsp;<em>ISO_C_BINDING call to glob_expand_c</em><br>
   &nbsp;&nbsp;<span class="dir">src\io_hdf5\</span><br>
-  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">io_hdf5.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on H5PSET_FAPL_MPIO_F in OpenDataFile</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">io_hdf5.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on H5PSET_FAPL_MPIO_F; H5PSET_USERBLOCK_F fix (Fix F)</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">hdf5_input.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guards on FAPL/DXPL calls (3 locations)</em><br>
-  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">hdf5_output.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on DXPL calls in WriteArrayToHDF5</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">hdf5_output.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on DXPL; gather-write pattern in GatheredWriteArray/DistributedWriteArray (Fix G)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\particles\dsmc\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">dsmc_analyze.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>WriteDSMCToHDF5 uses GatheredWriteArray instead of direct WriteArrayToHDF5 (Fix H)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\particles\particle_mesh\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_mesh_readin.f90</span> &nbsp;<em>Guard MPI_ALLGATHERV(MPI_IN_PLACE) on MPI_COMM_LEADERS_SHARED with IF(nLeaderGroupProcs.GT.1) — fixes MS-MPI buffer-zeroing bug (§13.1)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\particles\particle_mpi\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_mpi_halo.f90</span> &nbsp;&nbsp;&nbsp;<em>Replace IF(halo_eps.LE.0.) with IF(nComputeNodeProcessors.EQ.nProcessors_Global) — fixes single-node+shape_function halo detection (§13.3)</em><br>
   &nbsp;&nbsp;<span class="dir">src\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added globlib; added ${linkedlibs} to add_exec on Windows</em><br>
   &nbsp;&nbsp;<span class="dir">unitTests\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added libpiclasstaticF90 dependency; added ${linkedlibs} on Windows</em><br>
+  <br>
+  <span class="dir">C:\Data\PRJ\Piclas\pic-poisson-landau-damping\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">parameter.ini</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added <code>CartesianPeriodic = T</code> to fix periodic boundary tracking on Windows (§13.2)</em><br>
   <br>
   <span class="dir">C:\msys64\ucrt64\lib\pkgconfig\</span><br>
   &nbsp;&nbsp;<span class="new-file">petsc.pc</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>PETSc pkg-config wrapper (NEW)</em><br>
@@ -1024,7 +1407,7 @@ cmake --build ../build-poisson-release --target piclas piclas2vtk</code></pre>
 
 <hr>
 <p style="font-size:0.78rem;color:var(--muted);text-align:center;">
-  PICLas Windows Port Documentation &mdash; March 2026 &mdash;
+  PICLas Windows Port Documentation &mdash; April 2026 &mdash;
   PICLas v4.1.0 / MSYS2 UCRT64 / GCC 14 / Windows 11
 </p>
 

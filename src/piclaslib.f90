@@ -86,6 +86,7 @@ SWRITE(UNIT_stdOut,'(132(" "))')
 SWRITE(UNIT_stdOut,'(A)')"piclas version "&
     //TRIM(int2strf(MajorVersion))//"."//TRIM(int2strf(MinorVersion))//"."//TRIM(int2strf(PatchVersion))&
     //" with commit "//TRIM(GIT_CURRENT_COMMIT)
+SWRITE(UNIT_stdOut,'(A)')"piclas-win 0.9 -- unofficial Windows port, based on PICLas 4.1.0 (https://github.com/piclas-framework/piclas)"
 SWRITE(UNIT_stdOut,'(132("="))')
 
 CALL ParseCommandlineArguments()
