@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 0.9 Build Configurator</title>
+<title>piclas-win 0.9.2 Build Configurator</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
@@ -52,7 +52,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 <body>
 
 <header>
-  <h1>piclas-win 0.9 Build Configurator</h1>
+  <h1>piclas-win 0.9.2 Build Configurator</h1>
   <span style="font-size:0.78rem;color:#8892b0;">Unofficial Windows port of PICLas 4.1.0 &mdash; standalone HTML, works in any browser, no server needed</span>
 </header>
 <div class="note-bar">
@@ -66,19 +66,35 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
   <div class="panel-left">
 
     <div class="card">
+      <h3>Paths</h3>
+      <div style="margin-bottom:10px;">
+        <span class="field-label">Source directory &mdash; piclas-win-master folder</span>
+        <input type="text" id="inp-srcroot" value="C:/Data/PRJ/piclas-win/piclas-win-master" oninput="updateAll()">
+        <div class="desc">Full path to the checked-out source. Use forward slashes or backslashes.</div>
+      </div>
+      <div style="margin-bottom:10px;">
+        <span class="field-label">Build base directory &mdash; where build subfolders are created</span>
+        <input type="text" id="inp-buildroot" value="C:/Data/PRJ/piclas-win" oninput="updateAll()">
+        <div class="desc">The build subdirectory name (see Advanced below) is appended to this path.</div>
+      </div>
+      <div>
+        <span class="field-label">Output executable destination &mdash; copy target after build (optional)</span>
+        <input type="text" id="inp-outfile" placeholder="e.g. C:/Users/myuser/bin/piclas.exe" oninput="updateAll()">
+        <div class="desc">If set, <code>piclas.exe</code> is copied here after a successful build. Leave blank to skip the copy step.</div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Equation System</h3>
       <div class="opt-group" id="grp-eqnsys">
-        <button class="opt-btn active" data-val="maxwell"            onclick="sel('eqnsys',this)">maxwell</button>
-        <button class="opt-btn"        data-val="poisson"            onclick="sel('eqnsys',this)">poisson</button>
-        <button class="opt-btn"        data-val="electrostatic_pois" onclick="sel('eqnsys',this)">electrostatic_pois</button>
-        <button class="opt-btn"        data-val="hdg"                onclick="sel('eqnsys',this)">hdg</button>
+        <button class="opt-btn active" data-val="maxwell" onclick="sel('eqnsys',this)">maxwell</button>
+        <button class="opt-btn"        data-val="poisson" onclick="sel('eqnsys',this)">poisson</button>
       </div>
       <div class="desc">
-        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser simulations.<br>
-        <b>poisson</b>: electrostatic Poisson solver (HDGSEM) &mdash; PIC plasma without radiation.<br>
-        <b>electrostatic_pois</b>: PIC with Poisson, no magnetic self-field.<br>
-        <b>hdg</b>: Hybridized Discontinuous Galerkin Poisson solver.
+        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser / PIC-DSMC simulations. Compatible with all time methods.<br>
+        <b>poisson</b>: electrostatic Poisson solver (HDG) &mdash; PIC plasma without radiation. Internally enables HDG; only <b>Boris-Leapfrog, Leapfrog, RK3, RK4, RK14</b> are supported. DSMC, FP-Flow, BGK-Flow and RK4-implicit will fail at configure time with this solver.
       </div>
+      <div class="compat" id="compat-eqnsys"></div>
     </div>
 
     <div class="card">
@@ -155,22 +171,30 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <label for="chk-gpu">PICLAS_USE_GPU</label>
       </div>
       <div class="desc">
-        Enable GPU-accelerated particle kernels via CUDA. Requires:<br>
-        &bull; <b>NVIDIA GPU</b> (Turing/RTX 20xx or newer recommended)<br>
-        &bull; <b>CUDA Toolkit 12+</b> from <a href="https://developer.nvidia.com/cuda-downloads" style="color:#64ffda;" target="_blank">developer.nvidia.com</a> with <code>nvcc</code> on <code>PATH</code><br>
-        &bull; <b>VS Build Tools 2022</b> (free) from <a href="https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022" style="color:#64ffda;" target="_blank">visualstudio.microsoft.com</a> &mdash; nvcc on Windows requires <code>cl.exe</code> as host compiler; MinGW g++ is not supported by nvcc.<br>
-        Compatible with MPI. <b>Not compatible with PETSc.</b>
+        Enable GPU-accelerated particle position push via CUDA.<br><br>
+        <b>What is accelerated (v0.9.2):</b><br>
+        &bull; <b>DSMC position push</b> &mdash; batch <code>pos += vel &times; dt</code> for all active particles, replacing the per-particle CPU loop. Active when <code>DSMC</code> time method is selected and none of the following are enabled: variable time step, rotating reference frame, granular species, surface flux, axisymmetric geometry.<br>
+        &bull; Other time methods (Boris-Leapfrog, RK4, etc.): GPU is present but the push is not yet wired in &mdash; they still run on CPU.<br><br>
+        <b>Requirements:</b><br>
+        &bull; <b>NVIDIA GPU</b> (Ampere / RTX 30xx or newer recommended, CC&nbsp;&ge;&nbsp;8.6)<br>
+        &bull; <b>CUDA Toolkit 12+</b> &mdash; install from <a href="https://developer.nvidia.com/cuda-downloads" style="color:#64ffda;" target="_blank">developer.nvidia.com</a>; ensure <code>nvcc.exe</code> is on <code>PATH</code> or <code>CUDA_PATH</code> is set<br>
+        &bull; <b>VS Build Tools 2022</b> (free) &mdash; nvcc on Windows requires <code>cl.exe</code> as host compiler (MinGW g++ unsupported); install from <a href="https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022" style="color:#64ffda;" target="_blank">visualstudio.microsoft.com</a> with the <em>Desktop development with C++</em> workload; CMake finds <code>cl.exe</code> automatically<br>
+        &bull; <b>Python 3</b> &mdash; used at link time to patch CUDA object files. Any real Python 3 installation works (python.org, Conda, MSYS2). CMake locates it automatically at configure time. The Windows Store <code>python3.exe</code> stub does <em>not</em> work &mdash; disable it under <em>Settings &rarr; Apps &rarr; Advanced App Settings &rarr; App Execution Aliases</em> if you have a real Python installed and still see a Store redirect error.<br>
+        &bull; <b>cudart64_13.dll</b> must be bundled with the executable for distribution (see §14.7 of the setup guide)<br><br>
+        <b>Not compatible with PETSc.</b> GPU + MPI is untested in v0.9.2.
       </div>
       <div id="gpu-arch-row" style="margin-top:8px;display:none;">
         <span class="field-label">CMAKE_CUDA_ARCHITECTURES &mdash; GPU compute capability</span>
         <div class="opt-group" id="grp-cudaarch">
-          <button class="opt-btn"        data-val="75" onclick="sel('cudaarch',this)">75 (Turing / RTX 20xx)</button>
-          <button class="opt-btn active" data-val="86" onclick="sel('cudaarch',this)">86 (Ampere / RTX 30xx)</button>
-          <button class="opt-btn"        data-val="89" onclick="sel('cudaarch',this)">89 (Ada / RTX 40xx)</button>
-          <button class="opt-btn"        data-val="90" onclick="sel('cudaarch',this)">90 (Hopper / H100)</button>
+          <button class="opt-btn"        data-val="75"  onclick="sel('cudaarch',this)">75 — Turing (RTX 20xx)</button>
+          <button class="opt-btn active" data-val="86"  onclick="sel('cudaarch',this)">86 — Ampere (RTX 30xx)</button>
+          <button class="opt-btn"        data-val="89"  onclick="sel('cudaarch',this)">89 — Ada (RTX 40xx)</button>
+          <button class="opt-btn"        data-val="90"  onclick="sel('cudaarch',this)">90 — Hopper (H100)</button>
+          <button class="opt-btn"        data-val="120" onclick="sel('cudaarch',this)">120 — Blackwell (RTX 50xx)</button>
         </div>
-        <div class="desc">Match this to your GPU generation. Wrong arch still runs but recompiles at first launch (slower startup).</div>
+        <div class="desc">Match to your GPU generation. A mismatched arch still runs via JIT recompilation but adds a one-time delay at first launch. Requires CUDA Toolkit &ge;&nbsp;12.8 for CC&nbsp;120.</div>
       </div>
+      <div class="compat info" id="compat-gpu" style="display:none;"></div>
     </div>
 
     <div class="card">
@@ -195,10 +219,10 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         </div>
       </div>
       <div style="margin-top:12px;">
-        <span class="field-label">Build directory &mdash; relative to C:/Data/PRJ/Piclas/</span>
+        <span class="field-label">Build subdirectory name &mdash; appended to build base directory above</span>
         <div style="display:flex;gap:6px;align-items:center;">
           <input type="text" id="inp-builddir" placeholder="(auto-generated from options above)" oninput="updateAll()" style="flex:1;">
-          <button class="browse-btn" onclick="browseBuildDir()" title="Browse for or create a build directory inside C:/Data/PRJ/Piclas/">&#128194; Browse</button>
+          <button class="browse-btn" onclick="browseBuildDir()" title="Browse for or create a build directory inside the build base directory">&#128194; Browse</button>
         </div>
         <div id="browse-note" style="font-size:0.73rem;color:#8892b0;margin-top:4px;display:none;"></div>
       </div>
@@ -262,13 +286,33 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
       </code>
     </div>
 
+    <div class="warn-box" id="gpu-runtime-note" style="display:none;border-color:#1a4a6a;background:#001a2a;color:#7ec8e3;">
+      <b style="color:#a8e0ff;">&#9654; GPU build notes:</b><br>
+      <b>Startup confirmation</b> &mdash; when the simulation starts you will see:<br>
+      <code style="display:block;margin:6px 0;color:#a8ff78;">
+        [GPU] CUDA device 0 : NVIDIA GeForce RTX 30xx<br>
+        [GPU] PICLas GPU acceleration ENABLED.
+      </code>
+      <b>Active push conditions</b> &mdash; the GPU position push fires when <em>all</em> of the following are true:
+      <ul style="margin:5px 0 8px 18px;line-height:1.7;">
+        <li>Time method = <b>DSMC</b></li>
+        <li>Constant time step (no <code>UseVarTimeStep</code>)</li>
+        <li>No rotating reference frame</li>
+        <li>No granular species</li>
+        <li>No surface flux</li>
+        <li>Not axisymmetric</li>
+      </ul>
+      <b>Distribution</b> &mdash; copy <code>cudart64_13.dll</code> from
+      <code>%CUDA_PATH%\bin\x64\</code> into the same folder as <code>piclas.exe</code> for deployment on machines without the CUDA Toolkit installed.
+    </div>
+
   </div><!-- /panel-right -->
 </div><!-- /main -->
 
 <script>
-// ── Paths: edit here if you move files ────────────────────────────────────────
-var SOURCE_ROOT = 'C:/Data/PRJ/Piclas/piclas-master';
-var BUILD_ROOT  = 'C:/Data/PRJ/Piclas';
+// ── Paths: defaults match the Paths card inputs ────────────────────────────────
+var SOURCE_ROOT = 'C:/Data/PRJ/piclas-win/piclas-win-master';
+var BUILD_ROOT  = 'C:/Data/PRJ/piclas-win';
 var CMAKE_WIN   = 'C:\\msys64\\ucrt64\\bin\\cmake.exe';  // UCRT64 cmake - used directly in .bat (no bash needed)
 var BASH_WIN    = 'C:\\msys64\\usr\\bin\\bash.exe';       // kept for "Copy Both Commands" (bash/MSYS2 terminal use)
 
@@ -307,7 +351,10 @@ function getOpts() {
     perf:        document.getElementById('chk-perf').checked,
     analyze:     document.getElementById('chk-analyze').checked,
     instruction: document.getElementById('inp-instruction').value,
-    builddir:    document.getElementById('inp-builddir').value.trim()
+    builddir:    document.getElementById('inp-builddir').value.trim(),
+    srcroot:     document.getElementById('inp-srcroot').value.trim()   || SOURCE_ROOT,
+    buildroot:   document.getElementById('inp-buildroot').value.trim() || BUILD_ROOT,
+    outfile:     document.getElementById('inp-outfile').value.trim()
   };
 }
 
@@ -340,6 +387,18 @@ function onGpuChange() {
   updateAll();
 }
 
+function getGpuCompatMsg(o) {
+  if (!o.gpu) return '';
+  if (o.petsc) return '\u26A0 GPU is not compatible with PETSc. PETSc has been deselected.';
+  if (o.eqnsys !== 'maxwell') {
+    return '\u26A0 GPU position push requires equation system \u201Cmaxwell\u201D + time method \u201CDSMC\u201D. The \u201C' + o.eqnsys + '\u201D solver does not support GPU acceleration in v0.9.2.';
+  }
+  if (o.timedisc === 'DSMC') {
+    return '\u2139 GPU position push active: maxwell + DSMC + constant dt + no surface flux = batch pos\u2009+=\u2009vel\u2009\u00D7\u2009dt on GPU.';
+  }
+  return '\u26A0 GPU build selected but \u201C' + o.timedisc + '\u201D time method: the GPU position push is only wired for DSMC in v0.9.2. Particle pushing will still run on CPU. Switch to DSMC to activate the GPU kernel.';
+}
+
 function getBuildDir(o) {
   return o.builddir ||
     ('build-' + o.eqnsys + '-' + o.timedisc.toLowerCase() + '-' + o.buildtype.toLowerCase() +
@@ -359,7 +418,7 @@ function getPreset(o) {
 function updateAll() {
   var o   = getOpts();
   var dir = getBuildDir(o);
-  var bp  = BUILD_ROOT + '/' + dir;
+  var bp  = o.buildroot + '/' + dir;
   var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
 
   var defs = [
@@ -386,7 +445,7 @@ function updateAll() {
 
   var petscEnv = o.petsc ? "export PETSC_DIR=/c/msys64/ucrt64 && " : "";
   document.getElementById('cmd-configure').textContent =
-    petscEnv + "cd '" + SOURCE_ROOT + "' && cmake --preset " + getPreset(o) + " \\\n" +
+    petscEnv + "cd '" + o.srcroot + "' && cmake --preset " + getPreset(o) + " \\\n" +
     "        -B " + bp + " \\\n        " + defs;
 
   document.getElementById('cmd-build').textContent =
@@ -395,19 +454,35 @@ function updateAll() {
   // MPI runtime note
   document.getElementById('mpi-runtime-note').style.display = o.mpi ? 'block' : 'none';
 
-  // Compatibility hint
+  // GPU runtime note
+  document.getElementById('gpu-runtime-note').style.display = o.gpu ? 'block' : 'none';
+
+  // GPU compatibility hint
+  var gpuEl  = document.getElementById('compat-gpu');
+  var gpuMsg = getGpuCompatMsg(o);
+  gpuEl.textContent   = gpuMsg;
+  gpuEl.style.display = gpuMsg ? 'block' : 'none';
+  gpuEl.className     = gpuMsg.charAt(0) === '\u2139' ? 'compat info' : 'compat';
+
+  // Equation-system compatibility hint
+  var eqEl  = document.getElementById('compat-eqnsys');
+  var eqMsg = '';
+  var es    = o.eqnsys;
+  var td    = o.timedisc;
+  var HDG_INCOMPATIBLE = ['DSMC', 'FP-Flow', 'BGK-Flow', 'RK4-implicit'];
+  if (es === 'poisson' && HDG_INCOMPATIBLE.indexOf(td) >= 0) {
+    eqMsg = '\u274C Configure will FAIL: \u201C' + td + '\u201D is not supported with the Poisson (HDG) solver. '
+          + 'Switch to maxwell for DSMC/FP-Flow/BGK-Flow, or use Boris-Leapfrog / Leapfrog / RK3 / RK4 / RK14 with poisson.';
+  }
+  eqEl.textContent   = eqMsg;
+  eqEl.style.display = eqMsg ? 'block' : 'none';
+  eqEl.className     = 'compat';
+
+  // Time-disc compatibility hint
   var el  = document.getElementById('compat-timedisc');
   var msg = '';
-  var es  = o.eqnsys;
-  var td  = o.timedisc;
-  if ((es === 'poisson' || es === 'electrostatic_pois' || es === 'hdg') &&
-      (td === 'RK4' || td === 'RK14')) {
-    msg = '\u26A0 For Poisson/electrostatic solvers, Boris-Leapfrog or Leapfrog is recommended for PIC simulations.';
-  } else if (es === 'maxwell' && td === 'Leapfrog') {
+  if (es === 'maxwell' && td === 'Leapfrog') {
     msg = '\u26A0 Leapfrog is designed for electrostatic PIC, not Maxwell. Consider RK4 or Boris-Leapfrog.';
-  } else if ((td === 'DSMC' || td === 'FP-Flow' || td === 'BGK-Flow') &&
-             (es === 'poisson' || es === 'electrostatic_pois' || es === 'hdg')) {
-    msg = '\u26A0 ' + td + ' is a particle-based method typically used with the maxwell equation system. Using with ' + es + ' is unusual.';
   } else if (td === 'DSMC') {
     msg = '\u2139 DSMC: particle collisions via Direct Simulation Monte Carlo. Requires particles (PICLAS_PARTICLES=ON, the default). Correct setting for the dsmc-cone-3D tutorial.';
   } else if (td === 'FP-Flow' || td === 'BGK-Flow') {
@@ -438,9 +513,9 @@ function copyBoth() {
 function downloadBat() {
   var o   = getOpts();
   var dir = getBuildDir(o);
-  var bp  = BUILD_ROOT + '/' + dir;
+  var bp  = o.buildroot + '/' + dir;
   var bpWin = bp.replace(/\//g, '\\');
-  var srcWin = SOURCE_ROOT.replace(/\//g, '\\');
+  var srcWin = o.srcroot.replace(/\//g, '\\');
   var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
 
   // ── cmake -D flags (CMD-style quoting: double-quote the INSTRUCTION value) ──
@@ -474,11 +549,21 @@ function downloadBat() {
     // PETSC_DIR is needed by the cmake find scripts when PETSc is enabled
     (o.petsc ? 'set PETSC_DIR=C:\\msys64\\ucrt64\r\n' : '') +
     'echo.\r\n' +
-    'echo  piclas-win 0.9 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
+    'echo  piclas-win 0.9.2 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
     'echo  Config : ' + dir + '\r\n' +
     'echo  Source : ' + srcWin + '\r\n' +
     'echo  Binary : ' + bpWin + '\r\n' +
     'echo.\r\n' +
+    // Warn if a stale CMakeCache.txt exists — leftover GPU/non-GPU settings cause wrong builds
+    'if exist "' + bpWin + '\\CMakeCache.txt" (\r\n' +
+    '  echo WARNING: existing CMakeCache.txt found in the build directory.\r\n' +
+    '  echo          Stale cache entries ^(e.g. GPU=ON from a previous build^) may override\r\n' +
+    '  echo          the options selected here.  Delete the build folder to start clean:\r\n' +
+    '  echo            rmdir /S /Q "' + bpWin + '"\r\n' +
+    '  echo.\r\n' +
+    '  choice /M "Continue anyway (Y) or abort (N)?" /C YN /T 15 /D N\r\n' +
+    '  if %ERRORLEVEL% neq 1 exit /b 1\r\n' +
+    ')\r\n' +
     'echo ======================================\r\n' +
     'echo  CONFIGURE\r\n' +
     'echo ======================================\r\n' +
@@ -503,7 +588,15 @@ function downloadBat() {
     ')\r\n' +
     'echo.\r\n' +
     'echo BUILD SUCCEEDED\r\n' +
-    'echo Binary in: ' + bpWin + '\r\n' +
+    'echo Binary in: ' + bpWin + '\\bin\\piclas.exe\r\n' +
+    (o.outfile ?
+      'echo.\r\n' +
+      'echo Copying piclas.exe to ' + o.outfile + '\r\n' +
+      'copy /Y "' + bpWin + '\\bin\\piclas.exe" "' + o.outfile.replace(/\//g, '\\') + '"\r\n' +
+      'if %ERRORLEVEL% neq 0 (\r\n' +
+      '  echo WARNING: copy to output destination failed\r\n' +
+      ')\r\n'
+    : '') +
     'pause\r\n';
 
   var blob = new Blob([bat], { type: 'text/plain' });
@@ -528,8 +621,9 @@ function browseBuildDir() {
   window.showDirectoryPicker({ mode: 'readwrite', startIn: 'desktop' })
     .then(function(handle) {
       document.getElementById('inp-builddir').value = handle.name;
+      var buildRoot = document.getElementById('inp-buildroot').value.trim() || BUILD_ROOT;
       note.textContent = 'Selected: ' + handle.name +
-        ' (navigate to C:/Data/PRJ/Piclas/ in the picker for a subfolder of the build root)';
+        ' (full path: ' + buildRoot + '/' + handle.name + ')';
       note.style.display = 'block';
       updateAll();
     })

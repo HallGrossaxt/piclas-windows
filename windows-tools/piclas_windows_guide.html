@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 0.9 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
+<title>piclas-win 0.9.2 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -94,9 +94,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 
 <!-- ═══════════════ NAVIGATION ═══════════════ -->
 <nav>
-  <div class="nav-title">piclas-win 0.9 Guide</div>
+  <div class="nav-title">piclas-win 0.9.2 Guide</div>
 
   <div class="nav-section">
+    <a href="#changelog">Release History</a>
     <a href="#overview">Overview</a>
     <a href="#prerequisites">1. Prerequisites</a>
     <a href="#msys2-install">2. MSYS2 Setup</a>
@@ -121,6 +122,16 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     <a class="nav-sub" href="#bug-allgatherv">13.1 MS-MPI ALLGATHERV</a>
     <a class="nav-sub" href="#bug-periodic">13.2 Periodic Tracking</a>
     <a class="nav-sub" href="#bug-halo">13.3 Shape-Fn Halo</a>
+    <a href="#gpu-accel">14. GPU Acceleration</a>
+    <a class="nav-sub" href="#gpu-prereqs">14.1 Prerequisites</a>
+    <a class="nav-sub" href="#gpu-architecture">14.2 Architecture</a>
+    <a class="nav-sub" href="#gpu-files">14.3 Source Files</a>
+    <a class="nav-sub" href="#gpu-cmake">14.4 CMake Integration</a>
+    <a class="nav-sub" href="#gpu-challenges">14.5 Windows/CUDA Challenges</a>
+    <a class="nav-sub" href="#gpu-build">14.6 Building</a>
+    <a class="nav-sub" href="#gpu-distribution">14.7 Distribution</a>
+    <a class="nav-sub" href="#gpu-callsites">14.8 Init/Finalize Sites</a>
+    <a class="nav-sub" href="#gpu-timestep">14.9 Time-Step Integration</a>
     <a href="#file-summary">File Summary</a>
   </div>
 </nav>
@@ -129,7 +140,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <main>
 
 <div class="hero">
-  <h1>piclas-win 0.9</h1>
+  <h1>piclas-win 0.9.2</h1>
   <div class="subtitle">Unofficial Windows port of PICLas 4.1.0 &mdash; complete setup, build, and distribution guide for Windows 11 with MSYS2 UCRT64</div>
   <p style="margin-top:10px;font-size:0.85rem;color:var(--yellow);">
     &#9888; This is an <strong>unofficial</strong> Windows port. It is not affiliated with or endorsed by the PICLas development team.
@@ -143,6 +154,41 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     <span>&#128196; Based on PICLas v4.1.0</span>
   </div>
 </div>
+
+<!-- ─────────────── RELEASE HISTORY ─────────────── -->
+<h2 id="changelog">Release History</h2>
+<table>
+  <tr><th>Version</th><th>Date</th><th>Highlights</th></tr>
+  <tr>
+    <td><strong>v0.9.2</strong></td>
+    <td>April 2026</td>
+    <td>
+      <strong>GPU particle push verified working (DSMC-cone-2D).</strong>
+      Two CMake build fixes required to make <code>libpiclasGPU.dll</code> link correctly on Windows:
+      <ul style="margin-top:4px;">
+        <li>Added <code>CACHE INTERNAL "" FORCE</code> to <code>SET(CMAKE_CUDA_CREATE_SHARED_LIBRARY ...)</code>
+            so the custom link rule (using <code>-cudart none</code> + <code>/DEFAULTLIB:ucrt</code>)
+            is not silently overridden by the CMake CUDA platform module — fixes 31 LNK2019 errors on
+            <code>__imp_fminf</code> / C99 float math symbols (§14.5 Challenge 12).</li>
+        <li>Replaced the <code>/LIBPATH:"C:/Program Files/..."</code> argument (spaces caused LNK1181
+            through cmd.exe quote mangling) with a copy of <code>cudart.lib</code> staged into the
+            space-free build directory at configure time (§14.5 Challenge 12).</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td>v0.9.1</td>
+    <td>April 2026</td>
+    <td>Initial GPU acceleration layer (§14): CUDA kernel, CMake integration, Fortran call-site wiring,
+        DLL loader-lock fix, 11 Windows/CUDA compatibility challenges documented.</td>
+  </tr>
+  <tr>
+    <td>v0.9.0</td>
+    <td>2026</td>
+    <td>First fully working Windows port: HDF5 (serial), MS-MPI v10.1, PETSc 3.24.5 (sequential),
+        MSYS2 UCRT64 toolchain, all runtime bugs fixed.</td>
+  </tr>
+</table>
 
 <!-- ─────────────── OVERVIEW ─────────────── -->
 <h2 id="overview">Overview</h2>
@@ -1354,6 +1400,707 @@ IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN</code></pre>
   copy the new <code>piclas.exe</code> to the simulation directory before re-running.
 </div>
 
+<!-- ─────────────── GPU ACCELERATION ─────────────── -->
+<h2 id="gpu-accel">14. GPU Acceleration (CUDA) <span class="badge new">NEW</span></h2>
+<p>
+  PICLas for Windows gains GPU-accelerated particle kernels via CUDA C compiled by
+  <code>nvcc</code> and called from Fortran using <code>ISO_C_BINDING</code>.
+  The current release offloads the <strong>particle position push</strong>
+  (<code>pos += vel &times; dt</code>) to the GPU, providing a substantial speedup for
+  large particle counts in DSMC simulations.
+</p>
+<div class="tip">
+  <b>Status — fully implemented; GPU particle push verified working in v0.9.2 (DSMC-cone-2D)</b>
+  The GPU acceleration layer is complete end-to-end:
+  <ul style="margin-top:6px;">
+    <li>CUDA kernels, CMake integration, and all Windows-specific linker workarounds (§14.4, §14.5)</li>
+    <li><code>GPU_Init</code> / <code>GPU_Finalize</code> wired into particle init/finalize (§14.8)</li>
+    <li>GPU batch position push integrated into the DSMC time-step loop (§14.9)</li>
+  </ul>
+  See the git branch <code>feature/gpu-acceleration</code>, tag <code>v0.9.2</code>.
+</div>
+
+<!-- 14.1 Prerequisites -->
+<h3 id="gpu-prereqs">14.1 Prerequisites</h3>
+<p>In addition to the standard MSYS2/UCRT64 environment from Sections 2–3, you need:</p>
+
+<table>
+  <tr><th>Requirement</th><th>Version</th><th>Notes</th></tr>
+  <tr><td>NVIDIA GPU</td><td>Ampere (CC 8.6) or newer</td><td>RTX 30xx/40xx/50xx recommended. The preset defaults to <code>sm_86</code>; override with <code>-DCMAKE_CUDA_ARCHITECTURES=89</code> for RTX 40xx.</td></tr>
+  <tr><td>CUDA Toolkit</td><td>12.x or newer</td><td>Download from <code>developer.nvidia.com/cuda-downloads</code>. Install to the default path (<code>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x</code>). Ensure <code>nvcc.exe</code> is on PATH or <code>CUDA_PATH</code> env var is set.</td></tr>
+  <tr><td>VS Build Tools 2022</td><td>Any edition (Build Tools sufficient)</td><td><strong>Required by nvcc on Windows.</strong> nvcc does not support MinGW g++ as a host compiler. Install "Build Tools for Visual Studio 2022" (free, no IDE needed) and select the workload <em>"Desktop development with C++"</em>. CMake finds <code>cl.exe</code> automatically.</td></tr>
+  <tr><td>Python 3</td><td>Any 3.x</td><td>Already installed via MSYS2 (Section 3). Used by <code>patch_cuda_comdat.py</code>.</td></tr>
+  <tr><td>gendef + dlltool</td><td>Bundled with MSYS2 binutils</td><td>Used at configure time to generate a MinGW import library for <code>cudart64_13.dll</code>. Both tools are in <code>C:\msys64\ucrt64\bin\</code>.</td></tr>
+</table>
+
+<div class="warn">
+  <b>MPI and GPU cannot be combined (current release)</b>
+  The GPU build uses the <code>windows-ucrt64-gpu</code> preset which inherits from
+  <code>windows-ucrt64</code> (no MPI).  Combining <code>PICLAS_USE_GPU=ON</code> with
+  <code>LIBS_USE_MPI=ON</code> is not yet tested and is not supported in v0.9.2.
+</div>
+
+<!-- 14.2 Architecture -->
+<h3 id="gpu-architecture">14.2 Architecture Overview</h3>
+<p>
+  The GPU layer is a thin C/CUDA static library (<code>piclasGPU</code>) that is linked into
+  <code>libpiclas.dll</code> and <code>piclas.exe</code>. Fortran calls the CUDA routines
+  via <code>ISO_C_BINDING</code> — no Fortran CUDA extension or special compiler is required
+  on the Fortran side.
+</p>
+<pre><code><span class="comment">  ┌──────────────────────────────────────────┐
+  │  Fortran time-stepping code              │
+  │  (compiled by gfortran / MSYS2 UCRT64)   │
+  │                                          │
+  │  CALL GPU_PushParticlesBatch(...)         │  ← ISO_C_BINDING
+  └───────────────┬──────────────────────────┘
+                  │ C calling convention
+  ┌───────────────▼──────────────────────────┐
+  │  gpu_interface.f90  (BIND(C) wrapper)    │
+  │  gpu_vars.f90       (state variables)    │
+  └───────────────┬──────────────────────────┘
+                  │ extern "C"
+  ┌───────────────▼──────────────────────────┐
+  │  piclasGPU.a  (CUDA static lib)          │
+  │   gpu_init.cu      — device init         │
+  │   gpu_memory.cu    — buffers + transfer  │
+  │   particle_push.cu — CUDA kernel         │
+  │  (compiled by nvcc with cl.exe host)     │
+  └───────────────┬──────────────────────────┘
+                  │ cudaMemcpy + kernel launch
+  ┌───────────────▼──────────────────────────┐
+  │  NVIDIA GPU (CUDA device)                │
+  │   particle_push_kernel&lt;&lt;&lt;grid,block&gt;&gt;&gt;  │
+  │   each thread: pos += vel * dt           │
+  └──────────────────────────────────────────┘</span></code></pre>
+
+<p>
+  The CUDA objects are compiled by <code>nvcc</code> using MSVC <code>cl.exe</code> as the host
+  compiler (the only supported host compiler for nvcc on Windows).
+  The resulting COFF objects use the MSVC ABI for host-side code but expose GPU entry points
+  via <code>extern "C"</code>, making them linkable from MinGW-compiled Fortran/C code.
+</p>
+
+<!-- 14.3 Source Files -->
+<h3 id="gpu-files">14.3 New Source Files</h3>
+<table>
+  <tr><th>File</th><th>Language</th><th>Purpose</th></tr>
+  <tr><td><code>src/gpu/piclas_gpu.h</code></td><td>C</td><td>Interface header declaring all GPU entry points callable from C/CUDA and Fortran (via <code>ISO_C_BINDING</code>)</td></tr>
+  <tr><td><code>src/gpu/gpu_init.cu</code></td><td>CUDA C</td><td>Device initialisation: select device 0, print device properties; device reset on finalise</td></tr>
+  <tr><td><code>src/gpu/gpu_memory.cu</code></td><td>CUDA C</td><td>Allocate/free device buffers for <code>PartState</code> and active-particle mask; host↔device transfers; calls the kernel launcher</td></tr>
+  <tr><td><code>src/gpu/particle_push.cu</code></td><td>CUDA C</td><td>Position-push kernel (<code>x+=vx*dt</code>, one thread per particle); launched via <code>cudaLaunchKernel()</code> API (avoids thread-safe-init stubs — see §14.5)</td></tr>
+  <tr><td><code>src/gpu/gpu_vars.f90</code></td><td>Fortran 90</td><td>Module <code>MOD_GPU_Vars</code>: global state (<code>GPUInitialized</code>, <code>GPU_nMaxPart</code>) and host-side integer mask buffer</td></tr>
+  <tr><td><code>src/gpu/gpu_interface.f90</code></td><td>Fortran 90</td><td>Module <code>MOD_GPU_Interface</code>: <code>BIND(C)</code> declarations + high-level wrappers <code>GPU_Init</code>, <code>GPU_Finalize</code>, <code>GPU_PushParticlesBatch</code></td></tr>
+  <tr><td><code>src/gpu/msvc_stubs.c</code></td><td>C (MinGW)</td><td>MSVC runtime compatibility stubs so MinGW's linker can close all references from NVIDIA's CUDA objects (see §14.5, Challenge 9)</td></tr>
+  <tr><td><code>src/gpu/patch_cuda_comdat.py</code></td><td>Python 3</td><td>COFF post-processor: clears <code>IMAGE_SCN_LNK_COMDAT</code> from <code>.bss</code> sections so GNU ld includes them (see §14.5, Challenge 1)</td></tr>
+  <tr><td><code>cmake/SetGPU.cmake</code></td><td>CMake</td><td>All GPU/CUDA detection, language setup, and Windows-specific CMake fixes (included from top-level <code>CMakeLists.txt</code>)</td></tr>
+</table>
+
+<!-- 14.4 CMake Integration -->
+<h3 id="gpu-cmake">14.4 CMake Integration</h3>
+
+<h4>Option and preset</h4>
+<p>GPU acceleration is controlled by the CMake option <code>PICLAS_USE_GPU</code> (default <code>OFF</code>).
+The <code>windows-ucrt64-gpu</code> preset enables it:</p>
+
+<pre><code><span class="comment"># In CMakePresets.json (already present)</span>
+{
+  "name": "windows-ucrt64-gpu",
+  "displayName": "Windows MSYS2 UCRT64 + CUDA GPU (Release)",
+  "inherits": "windows-ucrt64",
+  "binaryDir": "${sourceDir}/build-ucrt64-gpu",
+  "cacheVariables": {
+    "PICLAS_USE_GPU":           "ON",
+    "CMAKE_CUDA_ARCHITECTURES": "86",
+    "CMAKE_CUDA_COMPILER":      "nvcc"
+  }
+}</code></pre>
+
+<p>Override the CUDA architecture for your GPU:</p>
+<table>
+  <tr><th>GPU family</th><th>Compute Capability</th><th>Flag</th></tr>
+  <tr><td>RTX 30xx (Ampere)</td><td>8.6</td><td><code>-DCMAKE_CUDA_ARCHITECTURES=86</code></td></tr>
+  <tr><td>RTX 40xx (Ada)</td><td>8.9</td><td><code>-DCMAKE_CUDA_ARCHITECTURES=89</code></td></tr>
+  <tr><td>RTX 50xx (Blackwell)</td><td>12.0</td><td><code>-DCMAKE_CUDA_ARCHITECTURES=120</code></td></tr>
+  <tr><td>H100 (Hopper)</td><td>9.0</td><td><code>-DCMAKE_CUDA_ARCHITECTURES=90</code></td></tr>
+</table>
+
+<h4>Preprocessor flag</h4>
+<p>When <code>PICLAS_USE_GPU=ON</code>, CMake adds <code>-DPICLAS_USE_GPU=1</code> to all
+compile commands (both Fortran and C/CUDA). When <code>OFF</code>, it adds
+<code>-DPICLAS_USE_GPU=0</code>. Fortran source guards use:</p>
+<pre><code>#if PICLAS_USE_GPU
+  USE MOD_GPU_Interface, ONLY: GPU_Init, GPU_Finalize
+  ...
+#endif</code></pre>
+
+<h4>What <code>SetGPU.cmake</code> does</h4>
+<ol>
+  <li>Runs <code>FIND_PACKAGE(CUDAToolkit 11.0 REQUIRED)</code> to locate nvcc and CUDA libraries.</li>
+  <li>Searches for <code>cl.exe</code> (MSVC host compiler) in known VS 2019/2022 install paths and on PATH; sets <code>CMAKE_CUDA_HOST_COMPILER</code>.</li>
+  <li>Pre-sets <code>CMAKE_CUDA_COMPILER_WORKS=TRUE</code> and <code>CMAKE_CUDA_ABI_COMPILED=TRUE</code> to bypass CMake's CUDA link test (which uses MSVC-style flags incompatible with MinGW's linker).</li>
+  <li>Calls <code>ENABLE_LANGUAGE(CUDA)</code>.</li>
+  <li>Replaces <code>CMAKE_CUDA_CREATE_STATIC_LIBRARY</code> with the GNU <code>ar qc</code> rule (CMake's CUDA default is MSVC-style).</li>
+  <li>Clears <code>CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES</code> and <code>CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES</code> (MSVC bare library names are incompatible with MinGW's ld).</li>
+  <li>Restores <code>CMAKE_LINK_LIBRARY_FLAG="-l"</code> and <code>CMAKE_LIBRARY_PATH_FLAG="-L"</code> (CUDA language detection sets these to MSVC style globally).</li>
+</ol>
+
+<h4>What <code>src/CMakeLists.txt</code> does for GPU</h4>
+<ol>
+  <li>Adds <code>gpu_vars.f90</code> and <code>gpu_interface.f90</code> to the Fortran source list.</li>
+  <li>Compiles all <code>src/gpu/*.cu</code> files into the <code>piclasGPU</code> static library with <code>CUDA_RUNTIME_LIBRARY=None</code> and <code>CUDA_SEPARABLE_COMPILATION=OFF</code>.</li>
+  <li>Sets CUDA include directories to only <code>src/gpu/</code> (prevents MinGW UCRT64 headers from reaching nvcc/cl.exe).</li>
+  <li>Passes <code>-Xcompiler=/GS-,/MD,/Zc:threadSafeInit-</code> to cl.exe via nvcc.</li>
+  <li>Runs <code>patch_cuda_comdat.py</code> on each <code>.cu.obj</code> file as a PRE_LINK step.</li>
+  <li>At configure time, generates <code>libcudart.dll.a</code> (MinGW import library) from <code>cudart64_13.dll</code> using <code>gendef</code> + <code>dlltool</code>.</li>
+  <li>Compiles <code>piclasGPUStubs</code> (MinGW-native C stubs for MSVC runtime symbols).</li>
+  <li>Links <code>piclasGPU</code>, <code>piclasGPUStubs</code>, and <code>libcudart.dll.a</code> into <code>libpiclasshared</code> and <code>piclas.exe</code>.</li>
+  <li>Runs <code>objcopy --remove-section=.voltbl</code> on <code>libpiclas.dll</code> after linking.</li>
+</ol>
+
+<!-- 14.5 Windows/CUDA Challenges -->
+<h3 id="gpu-challenges">14.5 Windows/CUDA Technical Challenges and Solutions</h3>
+<p>
+  Combining nvcc (MSVC host ABI) with MinGW/gfortran (GNU ABI) on Windows involves
+  a series of non-obvious problems. Each is documented here so future maintainers
+  understand why each workaround exists.
+</p>
+
+<h4>Challenge 1 — COMDAT .bss sections cause ACCESS VIOLATION at DLL load</h4>
+<p>
+  <strong>Symptom:</strong> <code>libpiclas.dll</code> fails to load with
+  <code>STATUS_DLL_INIT_FAILED</code> (error 1114) at import time.<br>
+  <strong>Root cause:</strong> nvcc (using cl.exe as host) emits two function-local statics as
+  <code>LINK_ONCE_DISCARD</code> COMDAT <code>.bss</code> sections in each <code>.cu.obj</code>:
+</p>
+<pre><code>?__ref@?1??____nv_dummy_param_ref@@YAXPEAX@Z@4PEAPECXEA
+?__ref@?2??__nv_cudaEntityRegisterCallback@@YAXPEAPEAX@Z@4PEAPECXEA</code></pre>
+<p>
+  GNU ld discards COMDAT sections, leaving <code>IMAGE_REL_AMD64_REL32</code> relocations
+  in <code>?__sti____cudaRegisterAll</code> with displacement zero.
+  This produces <code>mov %rax, 0(%rip)</code> — writing the CUDA fat-binary handle into the
+  read-only <code>.text</code> section → access violation.<br>
+  <strong>Fix:</strong> <code>patch_cuda_comdat.py</code> clears <code>IMAGE_SCN_LNK_COMDAT</code>
+  from every <code>.bss</code> section in the COFF object AND zeroes the COMDAT Selection byte
+  in the matching auxiliary symbol record. GNU ld then treats them as regular BSS and always
+  includes them.
+</p>
+
+<h4>Challenge 2 — cudart.lib MSVC static loader causes DLL init ordering crash</h4>
+<p>
+  <strong>Symptom:</strong> <code>STATUS_DLL_INIT_FAILED</code> even after COMDAT fix, or
+  intermittent CUDA API failures on first call.<br>
+  <strong>Root cause:</strong> NVIDIA's <code>cudart.lib</code> contains
+  <code>cudart_static_loader.obj</code> — an MSVC-compiled <code>.CRT$XCU</code> static
+  initializer that calls <code>LoadLibrary("cudart64_13.dll")</code>.
+  Under GNU ld, <code>.CRT$XCU</code> ordering is not guaranteed; the fat-binary
+  registration constructors in <code>piclasGPU.a</code> may run before
+  <code>cudart64_13.dll</code> is loaded.<br>
+  <strong>Fix:</strong> At configure time, <code>SetGPU.cmake</code> runs <code>gendef</code>
+  and <code>dlltool</code> to generate a MinGW-native import library
+  <code>libcudart.dll.a</code> from <code>cudart64_13.dll</code>.
+  This puts <code>cudart64_13.dll</code> in the PE IAT (import address table), so Windows
+  loads it before any <code>DllMain</code> or constructor runs — correct ordering without
+  relying on <code>.CRT$XCU</code> indices.
+</p>
+<pre class="cmd"><code><span class="comment"># cmake/SetGPU.cmake generates these commands at configure time:</span>
+gendef  C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.x/bin/x64/cudart64_13.dll
+dlltool -d cudart64_13.def -l libcudart.dll.a -D cudart64_13.dll</code></pre>
+
+<h4>Challenge 3 — nvcc requires MSVC cl.exe (MinGW g++ unsupported)</h4>
+<p>
+  nvcc on Windows does not support MinGW g++ as a host compiler
+  ("unsupported target OS" error). <code>SetGPU.cmake</code> searches for <code>cl.exe</code>
+  in known VS 2019/2022 install paths and sets
+  <code>CMAKE_CUDA_HOST_COMPILER</code> before <code>ENABLE_LANGUAGE(CUDA)</code>.
+  The <code>extern "C"</code> interface in <code>piclas_gpu.h</code> ensures the MSVC-ABI
+  CUDA objects link correctly against the MinGW-compiled Fortran code.
+</p>
+
+<h4>Challenge 4 — CMake CUDA link test fails with MinGW</h4>
+<p>
+  CMake's <code>ENABLE_LANGUAGE(CUDA)</code> runs a test link using
+  <code>cmake -E vs_link_exe</code> (MSVC protocol) because the host compiler is
+  <code>cl.exe</code>. This drives MinGW's <code>ld</code> with MSVC flags
+  (<code>/nologo</code>, <code>/out:</code>) and <code>windres.exe</code> with MSVC manifest
+  arguments — both fail.<br>
+  <strong>Fix:</strong> Pre-set <code>CMAKE_CUDA_COMPILER_WORKS=TRUE</code> and
+  <code>CMAKE_CUDA_ABI_COMPILED=TRUE</code> in the cache before
+  <code>ENABLE_LANGUAGE(CUDA)</code>. CMake skips the link test and ABI detection,
+  treating them as already resolved.
+  Since <code>piclasGPU</code> is a <em>static</em> library, no CUDA executable link is
+  ever needed during the build.
+</p>
+
+<h4>Challenge 5 — GNU ar rule overwritten by CUDA language detection</h4>
+<p>
+  After <code>ENABLE_LANGUAGE(CUDA)</code>, CMake sets
+  <code>CMAKE_CUDA_CREATE_STATIC_LIBRARY</code> to an MSVC-style rule
+  (<code>"ar.exe /nologo /out:TARGET OBJECTS"</code>). MinGW <code>ar</code> does not
+  understand <code>/nologo</code> or <code>/out:</code>.<br>
+  <strong>Fix:</strong> Immediately after <code>ENABLE_LANGUAGE(CUDA)</code>, override:
+</p>
+<pre><code>SET(CMAKE_CUDA_CREATE_STATIC_LIBRARY
+  "&lt;CMAKE_AR&gt; qc &lt;TARGET&gt; &lt;LINK_FLAGS&gt; &lt;OBJECTS&gt;"
+  CACHE STRING "GNU ar rule for CUDA static library" FORCE)</code></pre>
+
+<h4>Challenge 6 — CUDA implicit link libraries use MSVC bare names</h4>
+<p>
+  <code>ENABLE_LANGUAGE(CUDA)</code> probes the MSVC toolchain and records all implicit
+  Windows SDK libraries (<code>kernel32</code>, <code>ws2_32</code>, <code>cudart</code>, etc.)
+  as bare names into <code>CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES</code>.
+  MinGW's ld requires <code>-l&lt;name&gt;</code> — bare names are unresolvable.<br>
+  <strong>Fix:</strong> Clear both variables immediately after language setup:
+</p>
+<pre><code>SET(CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES   "" CACHE INTERNAL "")
+SET(CMAKE_CUDA_IMPLICIT_LINK_DIRECTORIES "" CACHE INTERNAL "")</code></pre>
+
+<h4>Challenge 7 — CUDA language detection clobbers global linker flags</h4>
+<p>
+  Including <code>Platform/Windows-NVIDIA-CUDA.cmake</code> pulls in
+  <code>Platform/Windows-MSVC.cmake</code>, which sets
+  <code>CMAKE_LINK_LIBRARY_FLAG=""</code> (empty, MSVC style) and
+  <code>CMAKE_LIBRARY_PATH_FLAG="-LIBPATH:"</code> globally.
+  This strips the <code>-l</code> prefix from <em>all</em> subsequent gfortran/ld link
+  commands — HDF5, MPI, and PETSc all stop linking.<br>
+  <strong>Fix:</strong>
+</p>
+<pre><code>SET(CMAKE_LINK_LIBRARY_FLAG "-l")
+SET(CMAKE_LIBRARY_PATH_FLAG "-L")
+SET(CMAKE_CUDA_LINKER_PREFERENCE_PROPAGATES 0)</code></pre>
+
+<h4>Challenge 8 — .voltbl section makes libpiclas.dll malformed</h4>
+<p>
+  MSVC-compiled CUDA objects contain a <code>.voltbl</code> section
+  (volatile-metadata / Control-Flow-Guard table). GNU ld assigns it an address outside
+  the normal DLL address range, producing <code>STATUS_INVALID_IMAGE_FORMAT</code> —
+  Windows refuses to load the DLL.<br>
+  <strong>Fix:</strong> Strip the section post-link with <code>objcopy</code>:
+</p>
+<pre class="cmd"><code>C:/msys64/ucrt64/bin/objcopy.exe --remove-section=.voltbl libpiclas.dll</code></pre>
+<p>This is an automatic CMake <code>POST_BUILD</code> step on the <code>libpiclasshared</code> target.</p>
+
+<h4>Challenge 9 — MSVC runtime symbols undefined in MinGW link</h4>
+<p>
+  CUDA objects compiled with cl.exe (and NVIDIA's pre-compiled <code>cudart.lib</code>)
+  reference MSVC-specific symbols that do not exist in MinGW's libraries:
+  <code>__security_cookie</code>, <code>__security_check_cookie</code>,
+  <code>__GSHandlerCheck</code>, <code>__local_stdio_printf_options</code>,
+  <code>_Init_thread_epoch</code>, <code>_Init_thread_header</code>,
+  <code>_Init_thread_footer</code>.<br>
+  <strong>Fix:</strong> <code>src/gpu/msvc_stubs.c</code> compiled by MinGW gcc provides
+  inert no-op stubs for all of these. It is built into <code>piclasGPUStubs.a</code>
+  and linked with <code>--whole-archive</code> to guarantee all stubs are present.
+</p>
+
+<h4>Challenge 10 — api-ms-win-crt-private dependency appears in DLL import table</h4>
+<p>
+  MSVC-compiled objects in <code>cudart.lib</code> (compiled with <code>/MD</code>)
+  reference basic CRT functions (<code>memcpy</code>, <code>memcmp</code>, <code>strchr</code>, etc.)
+  via MSVC DLL import thunks: <code>call [__imp_memcpy]</code>.
+  GNU ld creates IAT entries for <code>api-ms-win-crt-private-l1-1-0.dll</code>,
+  which is in <code>System32\downlevel\</code> (not on the normal DLL search path)
+  → runtime DLL-not-found failure.<br>
+  <strong>Fix:</strong> <code>msvc_stubs.c</code> defines <code>__imp_memcpy</code>,
+  <code>__imp_memcmp</code>, etc. as function pointers to MinGW's own implementations.
+  GNU ld resolves the MSVC relocations to these local pointer variables — no IAT
+  entry is created and the private UCRT DLL dependency disappears entirely.
+</p>
+
+<h4>Challenge 11 — Thread-safe static init stubs with &lt;&lt;&lt;&gt;&gt;&gt; syntax</h4>
+<p>
+  CUDA <code>&lt;&lt;&lt;&gt;&gt;&gt;</code> kernel launch syntax causes nvcc to generate a
+  host-side stub containing a function-local static with MSVC thread-safe initialization
+  (<code>_Init_thread_header</code> / <code>_Init_thread_footer</code> / <code>_Init_thread_epoch</code>).
+  Even with <code>/Zc:threadSafeInit-</code>, some stubs remain.<br>
+  <strong>Fix:</strong> <code>particle_push.cu</code> uses the explicit
+  <code>cudaLaunchKernel()</code> API instead of <code>&lt;&lt;&lt;&gt;&gt;&gt;</code>:
+</p>
+<pre><code>void *args[] = { &amp;d_PartState, &amp;d_isActive, &amp;nPart, &amp;dt };
+cudaLaunchKernel((const void*)particle_push_kernel, grid, block, args, 0, nullptr);</code></pre>
+
+<h4>Challenge 12 — <code>CMAKE_CUDA_CREATE_SHARED_LIBRARY</code> override silently ignored (31 LNK2019 on <code>__imp_fminf</code> / C99 float math)</h4>
+<p>
+  <strong>Symptom:</strong> <code>bin\libpiclasGPU.dll</code> fails to link with 31 LNK2019 errors on
+  <code>__imp_fminf</code>, <code>__imp_fmaxf</code>, <code>__imp_exp2f</code>, <code>__imp_cbrtf</code>,
+  <code>__imp_erff</code>, <code>__imp__dsign</code>, and 25 more C99 float/double math symbols.
+  The linker warning <code>LNK4098: MSVCRT conflicts with other libraries</code> also appears.
+  The build log shows <code>nvcc -shared -cudart shared ...</code> — but the
+  <code>CMAKE_CUDA_CREATE_SHARED_LIBRARY</code> override in <code>src/CMakeLists.txt</code>
+  specifies <code>-cudart none</code>. The override is not being applied.
+</p>
+<p>
+  <strong>Root cause (two layers):</strong>
+</p>
+<ol>
+  <li>
+    CMake's CUDA platform module (loaded during <code>ENABLE_LANGUAGE(CUDA)</code> in
+    <code>cmake/SetGPU.cmake</code>) stores <code>CMAKE_CUDA_CREATE_SHARED_LIBRARY</code>
+    as a <code>CACHE INTERNAL</code> variable — with <code>FORCE</code>.
+    A subsequent plain <code>SET(CMAKE_CUDA_CREATE_SHARED_LIBRARY ...)</code>
+    <em>without</em> <code>FORCE</code> cannot override a cached value and is
+    <strong>silently ignored</strong>, even in a fresh configure. The platform default
+    (<code>-cudart shared</code> with no <code>/DEFAULTLIB</code> flags) survives into
+    the generated Ninja rule.
+  </li>
+  <li>
+    With <code>-cudart shared</code>, nvcc auto-links <code>cudadevrt.lib</code>, which
+    injects <code>/DEFAULTLIB:LIBCMT</code> (static MSVC CRT).  The MSVC linker then
+    resolves UCRT symbols through <code>libucrt.lib</code> (static UCRT) rather than
+    <code>ucrt.lib</code> (dynamic UCRT import library).  <code>libucrt.lib</code> does
+    <em>not</em> expose <code>__imp_fminf</code> / <code>__imp_fmaxf</code> / … DLL-import
+    stubs — those live only in <code>ucrt.lib</code> — so every C99 float math overload
+    that CUDA's device wrapper headers generate becomes an unresolved external.
+  </li>
+</ol>
+<p>
+  <strong>Fix:</strong> Add <code>CACHE INTERNAL "" FORCE</code> to the
+  <code>SET(CMAKE_CUDA_CREATE_SHARED_LIBRARY ...)</code> call in
+  <code>src/CMakeLists.txt</code> so it runs <em>after</em> the platform module's
+  forced SET and wins:
+</p>
+<pre><code>SET(CMAKE_CUDA_CREATE_SHARED_LIBRARY
+    "&lt;CMAKE_CUDA_COMPILER&gt; -shared -cudart none -ccbin \"...\" -o &lt;TARGET&gt; &lt;OBJECTS&gt;
+     -Xlinker /LIBPATH:\"...\" -Xlinker cudart.lib
+     -Xlinker /NODEFAULTLIB:LIBCMT -Xlinker /NODEFAULTLIB:LIBCMTD
+     -Xlinker /NODEFAULTLIB:libucrt -Xlinker /DEFAULTLIB:ucrt"
+    CACHE INTERNAL "CUDA SHARED library link rule (Windows MinGW+MSVC host)" FORCE)</code></pre>
+<p>
+  With <code>-cudart none</code> the automatic cudadevrt/cudart library injection is
+  suppressed; <code>cudart.lib</code> is added explicitly instead.
+  <code>/NODEFAULTLIB:LIBCMT</code> and <code>/NODEFAULTLIB:libucrt</code> remove the
+  static-CRT defaults; <code>/DEFAULTLIB:ucrt</code> adds the dynamic UCRT import
+  library which provides all 31 missing <code>__imp_*</code> stubs.
+  After applying this fix a fresh <code>cmake --preset windows-ucrt64-gpu</code> (reconfigure)
+  is required so CMake regenerates <code>build.ninja</code> with the corrected link rule.
+</p>
+<div class="warn">
+  <b>Secondary failure after applying the CACHE FORCE fix — LNK1181 on <code>"Files\NVIDIA.obj"</code></b><br>
+  Once the template <em>is</em> applied, a second error can appear:
+  <code>LINK : fatal error LNK1181: cannot open input file 'Files\NVIDIA.obj'</code>.
+  This is caused by the <code>/LIBPATH:</code> argument containing spaces
+  (<code>C:/Program Files/NVIDIA GPU Computing Toolkit/…</code>).
+  When Ninja wraps the link rule in <code>cmd.exe /C "…"</code>, the inner quotes
+  around <code>/LIBPATH:"…"</code> are consumed by cmd.exe's quote parser.
+  nvcc receives the argument with its quotes stripped and passes it to link.exe
+  without re-quoting; link.exe then splits the path at the first space and treats
+  <code>Files\NVIDIA</code> as a stray object file.<br><br>
+  <strong>Fix (already in <code>src/CMakeLists.txt</code>):</strong>
+  at configure time, copy <code>cudart.lib</code> from the CUDA toolkit into the
+  build directory (<code>${CMAKE_BINARY_DIR}/lib/cuda/</code>), which is assumed to
+  be space-free (e.g. <code>C:/Data/PRJ/piclas-win/dsmc-cone-2D/lib/cuda</code>).
+  Then use that path in <code>/LIBPATH:</code> — no quotes needed:
+<pre><code>SET(_CUDA_LOCAL_LIB_DIR "${CMAKE_BINARY_DIR}/lib/cuda")
+FILE(MAKE_DIRECTORY "${_CUDA_LOCAL_LIB_DIR}")
+FILE(COPY "${CUDAToolkit_LIBRARY_DIR}/cudart.lib" DESTINATION "${_CUDA_LOCAL_LIB_DIR}")
+# Template uses space-free build-dir path — no quoting required
+-Xlinker /LIBPATH:${_CUDA_LOCAL_LIB_DIR} -Xlinker cudart.lib</code></pre>
+  CMake's <code>FILE(COPY ...)</code> runs at configure time, so <code>cudart.lib</code>
+  is present in the build tree before Ninja starts.  During configure you should see:
+  <code>--   CUDA cudart.lib staged: .../dsmc-cone-2D/lib/cuda/cudart.lib</code>
+  <div class="note" style="margin-top:8px">
+    <b>Note — PowerShell GetShortPathName() approach was tried first</b><br>
+    An earlier attempt used <code>[System.IO.Path]::GetShortPathName()</code> to obtain
+    the 8.3 form of the path.  This failed because PowerShell may not be in the cmake
+    subprocess's PATH, or 8.3 names may be disabled on the volume.  The copy-to-build-dir
+    approach is unconditionally reliable as long as the build directory itself has no spaces.
+  </div>
+</div>
+
+<!-- 14.6 Building -->
+<h3 id="gpu-build">14.6 Building the GPU Version</h3>
+
+<h4>Prerequisites check</h4>
+<pre class="cmd"><code><span class="comment"># Verify nvcc is available</span>
+nvcc --version
+
+<span class="comment"># Verify cl.exe is findable (SetGPU.cmake will search VS install paths automatically)</span>
+where cl  <span class="comment"># not required — CMake finds it from VS install path</span>
+
+<span class="comment"># Verify gendef and dlltool are available (part of MSYS2 binutils)</span>
+/c/msys64/ucrt64/bin/gendef --version
+/c/msys64/ucrt64/bin/dlltool --version</code></pre>
+
+<h4>Configure and build</h4>
+<pre class="cmd"><code>export TEMP=/tmp && export TMP=/tmp
+cd /c/Data/PRJ/Piclas/piclas-master
+
+<span class="comment"># Ampere GPU (RTX 30xx, sm_86) — default</span>
+cmake --preset windows-ucrt64-gpu \
+  -DPICLAS_EQNSYSNAME=poisson \
+  -DPICLAS_TIMEDISCMETHOD=DSMC \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPICLAS_BUILD_POSTI=ON \
+  -DPICLAS_UNITTESTS=OFF
+
+cmake --build build-ucrt64-gpu --target piclas piclas2vtk</code></pre>
+
+<pre class="cmd"><code><span class="comment"># Ada GPU (RTX 40xx, sm_89) — override architecture</span>
+cmake --preset windows-ucrt64-gpu \
+  -DCMAKE_CUDA_ARCHITECTURES=89 \
+  -DPICLAS_EQNSYSNAME=poisson \
+  -DPICLAS_TIMEDISCMETHOD=DSMC \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPICLAS_BUILD_POSTI=ON \
+  -DPICLAS_UNITTESTS=OFF
+
+cmake --build build-ucrt64-gpu --target piclas piclas2vtk</code></pre>
+
+<h4>Expected configure output</h4>
+<pre><code>-- Compiling with [CUDA] GPU acceleration
+--   CUDA Toolkit : 12.x.y
+--   nvcc         : C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.x/bin/nvcc.exe
+--   Architectures: sm_86
+--   CUDA host   : C:/Program Files/Microsoft Visual Studio/2022/.../cl.exe
+--   CUDA link test bypassed (static-library build only)
+-- Generating MinGW import library for cudart64_13.dll ...
+--   MinGW cudart import lib: .../build-ucrt64-gpu/libcudart.dll.a</code></pre>
+
+<h4>Expected build output (PRE_LINK patch step)</h4>
+<pre><code>[patch_cuda_comdat]  sec hdr  N (.bss): cleared COMDAT  0x...  ->  0x...
+[patch_cuda_comdat]  sym aux  N: cleared COMDAT Selection 2 -> 0 (sec N)
+[patch_cuda_comdat]  1 auxiliary COMDAT record(s) cleared
+[patch_cuda_comdat] Patched 1 COMDAT .bss section(s) out of N total sections
+Stripping .voltbl from libpiclas.dll</code></pre>
+
+<div class="tip">
+  <b>Confirm GPU is active at runtime</b>
+  When PICLas starts with a GPU build and <code>GPU_Init</code> has been called,
+  you will see:
+<pre><code>[GPU] -------------------------------------------------------
+[GPU] CUDA device 0 : NVIDIA GeForce RTX 3060
+[GPU]   Compute capability : 8.6
+[GPU]   Global memory      : 12.0 GB
+[GPU]   Multiprocessors    : 28 x SM
+[GPU]   Max threads/block  : 1024
+[GPU] PICLas GPU acceleration ENABLED.
+[GPU] -------------------------------------------------------</code></pre>
+  <em>Note: GPU_Init call-site integration (Step 2) is the next development task.</em>
+</div>
+
+<!-- 14.7 Distribution -->
+<h3 id="gpu-distribution">14.7 Distribution — Required DLLs</h3>
+<p>
+  In addition to the MSYS2 DLLs bundled for the standard build (Section 10),
+  a GPU build requires one additional DLL from the CUDA Toolkit:
+</p>
+<table>
+  <tr><th>DLL</th><th>Location in CUDA Toolkit</th><th>Notes</th></tr>
+  <tr><td><code>cudart64_13.dll</code></td><td><code>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x\bin\x64\</code></td><td>CUDA runtime. Must be in the same folder as <code>piclas.exe</code> or on the system PATH.</td></tr>
+</table>
+<p>Add to the distribution packaging script (Section 10.1):</p>
+<pre class="cmd"><code><span class="comment"># Copy cudart64_13.dll alongside the executable</span>
+CUDA_BIN="$(cygpath "$CUDA_PATH")/bin/x64"
+cp "$CUDA_BIN/cudart64_13.dll" "$DIST/"
+
+<span class="comment"># Or find it automatically:</span>
+find /c/Program\ Files/NVIDIA\ GPU\ Computing\ Toolkit -name "cudart64_13.dll" \
+  -exec cp {} "$DIST/" \;</code></pre>
+
+<div class="note">
+  <b>cudart64_13.dll — CUDA version numbering</b>
+  The <code>13</code> in <code>cudart64_13.dll</code> refers to the CUDA runtime major version,
+  not the toolkit version. CUDA Toolkit 12.x ships <code>cudart64_12.dll</code> for CUDA 12.x
+  and <code>cudart64_13.dll</code> for CUDA 13.x / upcoming releases.
+  Check the actual filename in <code>bin\x64\</code> and update <code>SetGPU.cmake</code>
+  if you upgrade the toolkit.
+</div>
+
+<!-- 14.8 Init/Finalize call sites -->
+<h3 id="gpu-callsites">14.8 GPU Init / Finalize Call Sites</h3>
+<p>
+  <code>GPU_Init</code> and <code>GPU_Finalize</code> are called inside the particle
+  initialization and finalization routines using Fortran's <code>BLOCK</code> construct,
+  which scopes the <code>USE</code> statements to avoid polluting the module's namespace.
+</p>
+
+<h4>Initialization — <code>src/particles/particle_init.f90</code>, <code>InitParticles()</code></h4>
+<p>Called at the end of <code>InitParticles</code>, after <code>PDM%maxParticleNumber</code>
+has been set and all particle arrays (<code>PartState</code>, <code>PDM%ParticleInside</code>, etc.)
+have been allocated:</p>
+<pre><code>#if PICLAS_USE_GPU
+! Initialize GPU: locate device, allocate device buffers for all particles
+BLOCK
+  USE MOD_GPU_Interface, ONLY: GPU_Init
+  USE MOD_Particle_Vars, ONLY: PDM
+  CALL GPU_Init(PDM%maxParticleNumber)
+END BLOCK
+#endif /*PICLAS_USE_GPU*/
+
+ParticlesInitIsDone=.TRUE.</code></pre>
+
+<p><code>GPU_Init</code> calls <code>piclas_gpu_init()</code> (prints device info),
+<code>piclas_gpu_alloc_buffers(nMaxPart)</code> (allocates device-side PartState + isActive arrays),
+and <code>GPU_AllocActiveMask(nMaxPart)</code> (allocates the host-side integer mask buffer).
+After this call, <code>GPUInitialized = .TRUE.</code>.</p>
+
+<h4>Finalization — <code>src/particles/particle_init.f90</code>, <code>FinalizeParticles()</code></h4>
+<p>Called at the end of <code>FinalizeParticles</code>, before the subroutine returns.
+The <code>GPUInitialized</code> guard prevents double-free if GPU was never initialized
+(e.g., non-GPU builds that somehow reach this path):</p>
+<pre><code>#if PICLAS_USE_GPU
+! Finalize GPU: free device buffers and reset CUDA device
+BLOCK
+  USE MOD_GPU_Interface, ONLY: GPU_Finalize
+  USE MOD_GPU_Vars,      ONLY: GPUInitialized
+  IF (GPUInitialized) CALL GPU_Finalize()
+END BLOCK
+#endif /*PICLAS_USE_GPU*/</code></pre>
+
+<p><code>GPU_Finalize</code> frees the host mask buffer, calls
+<code>piclas_gpu_free_buffers()</code> (frees device arrays), then
+<code>piclas_gpu_finalize()</code> (<code>cudaDeviceReset()</code>).
+Sets <code>GPUInitialized = .FALSE.</code>.</p>
+
+<!-- 14.9 Time-step integration -->
+<h3 id="gpu-timestep">14.9 DSMC Time-Step Integration</h3>
+<p>
+  The GPU batch push is integrated into <code>src/timedisc/timedisc_TimeStep_DSMC.f90</code>
+  (<code>PP_TimeDiscMethod==4</code>) using three coordinated changes.
+</p>
+
+<h4>Step A — Module imports (top of subroutine)</h4>
+<pre><code>#if PICLAS_USE_GPU
+USE MOD_GPU_Vars      ,ONLY: GPUInitialized
+USE MOD_GPU_Interface ,ONLY: GPU_PushParticlesBatch
+#endif /*PICLAS_USE_GPU*/</code></pre>
+<p>And the local flag variable:</p>
+<pre><code>#if PICLAS_USE_GPU
+LOGICAL :: UseGPUPush
+#endif /*PICLAS_USE_GPU*/</code></pre>
+
+<h4>Step B — Eligibility check before the particle loop</h4>
+<p>
+  The GPU push is only valid for the simple constant-<code>dt</code> case.
+  It is disabled when any of the following features are active, because they either
+  require per-particle <code>dtVar</code> or modify positions inside the loop in ways
+  that the GPU kernel does not replicate:
+</p>
+<pre><code>#if PICLAS_USE_GPU
+UseGPUPush = GPUInitialized          .AND. &amp;
+             .NOT.UseVarTimeStep     .AND. &amp;  ! GPU kernel uses constant dt
+             .NOT.UseRotRefFrame     .AND. &amp;  ! RotRef uses CalcPartPosInRotRef
+             .NOT.UseGranularSpecies .AND. &amp;  ! granular particles have their own push
+             .NOT.DoSurfaceFlux      .AND. &amp;  ! surface-flux particles use dtFracPush (random dt)
+             .NOT.Symmetry%Axisymmetric        ! axisym calls CalcPartSymmetryPos on new positions
+#endif /*PICLAS_USE_GPU*/</code></pre>
+
+<h4>Step C — CPU loop: skip position update for GPU-eligible particles</h4>
+<p>
+  The per-particle CPU loop still runs (it handles <code>LastPartPos</code> bookkeeping,
+  surface-flux fractional-dt particles, and rotating-reference-frame particles).
+  For GPU-eligible particles the position update is skipped with <code>CONTINUE</code> —
+  the GPU kernel will do it below the loop:
+</p>
+<pre><code>    IF(UseRotRefFrame) THEN
+      LastPartVeloRotRef(1:3,iPart)=PartVeloRotRef(1:3,iPart)
+      CALL CalcPartPosInRotRef(iPart, dtVar)
+#if PICLAS_USE_GPU
+    ELSE IF (UseGPUPush) THEN
+      CONTINUE   ! position push offloaded to GPU batch call below the loop
+#endif /*PICLAS_USE_GPU*/
+    ELSE
+      PartState(1:3,iPart) = PartState(1:3,iPart) + PartState(4:6,iPart) * dtVar
+    END IF</code></pre>
+
+<div class="note">
+  <b>LastPartPos is still set correctly</b>
+  <code>LastPartPos(1:3,iPart) = PartState(1:3,iPart)</code> executes inside the
+  <code>IF (.NOT.PDM%dtFracPush(iPart))</code> branch, which runs before the
+  RotRef/GPU/CPU fork. So <code>LastPartPos</code> captures the position at the
+  start of the time step regardless of which path does the actual push.
+</div>
+
+<h4>Step D — GPU batch call after the loop</h4>
+<pre><code>#if PICLAS_USE_GPU
+! GPU batch position push: upload PartState, run kernel, download results.
+! Replaces the per-particle CPU push skipped with CONTINUE inside the loop.
+IF (UseGPUPush) THEN
+  CALL GPU_PushParticlesBatch(PartState, PDM%ParticleInside, PDM%ParticleVecLength, dt)
+END IF
+#endif /*PICLAS_USE_GPU*/</code></pre>
+
+<p>
+  <code>GPU_PushParticlesBatch</code> converts <code>PDM%ParticleInside</code>
+  (Fortran <code>LOGICAL</code>) to a C <code>int</code> mask in <code>GPU_ActiveMask</code>,
+  then calls <code>piclas_gpu_push_particles</code>:
+</p>
+<ol>
+  <li>H2D <code>cudaMemcpy</code> — uploads <code>PartState(1:6, 1:nPart)</code> and the mask to device</li>
+  <li>Kernel launch — <code>particle_push_kernel&lt;&lt;&lt;ceil(nPart/256), 256&gt;&gt;&gt;</code>
+      sets <code>pos += vel * dt</code> for every active particle (one thread each)</li>
+  <li>D2H <code>cudaMemcpy</code> — downloads updated <code>PartState</code> back to host
+      (implicit synchronisation point — no extra <code>cudaDeviceSynchronize</code> needed)</li>
+</ol>
+
+<div class="note">
+  <b>Memory layout</b>
+  Fortran stores <code>PartState(1:6, iPart)</code> column-major: all 6 components of
+  particle <code>iPart</code> are contiguous in memory. The CUDA kernel maps
+  <code>iPart * 6 + 0..2</code> → x,y,z and <code>iPart * 6 + 3..5</code> → vx,vy,vz,
+  matching this layout exactly. No transposition is needed.
+</div>
+
+<h3>GPU Troubleshooting</h3>
+<table>
+  <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+  <tr>
+    <td><code>FATAL_ERROR: PICLAS_USE_GPU=ON on Windows requires Visual Studio Build Tools (cl.exe)</code></td>
+    <td>nvcc host compiler not found</td>
+    <td>Install "Build Tools for Visual Studio 2022" with the "Desktop development with C++" workload. CMake finds <code>cl.exe</code> automatically from the VS install path.</td>
+  </tr>
+  <tr>
+    <td><code>Cannot find CUDAToolkit</code> / <code>nvcc not found</code></td>
+    <td>CUDA Toolkit not installed or not on PATH</td>
+    <td>Install CUDA Toolkit 12.x. Set the <code>CUDA_PATH</code> environment variable to the toolkit root, or add <code>%CUDA_PATH%\bin</code> to PATH.</td>
+  </tr>
+  <tr>
+    <td><code>gendef failed</code> / <code>cudart64_13.dll not found</code></td>
+    <td>CUDA runtime DLL filename or path differs from expected</td>
+    <td>Check the actual <code>cudart64_*.dll</code> filename in <code>%CUDA_PATH%\bin\x64\</code>. Update <code>_CUDART_DLL</code> and the dlltool <code>-D</code> argument in <code>SetGPU.cmake</code> to match.</td>
+  </tr>
+  <tr>
+    <td><code>STATUS_DLL_INIT_FAILED</code> (error 1114) loading libpiclas.dll</td>
+    <td>COMDAT .bss patch not applied, or archive not rebuilt before linking</td>
+    <td>The <code>CMakeLists.txt</code> PRE_LINK step deletes the archive before patching and re-archiving. Confirm <code>patch_cuda_comdat.py</code> output shows "Patched N COMDAT .bss section(s)". Do a clean rebuild if needed.</td>
+  </tr>
+  <tr>
+    <td><code>STATUS_INVALID_IMAGE_FORMAT</code> loading libpiclas.dll</td>
+    <td><code>.voltbl</code> section not stripped</td>
+    <td>Confirm the POST_BUILD objcopy step ran: look for "Stripping .voltbl from libpiclas.dll" in build output. Run manually: <code>objcopy --remove-section=.voltbl bin/libpiclas.dll</code></td>
+  </tr>
+  <tr>
+    <td>Link error: <code>undefined reference to '__security_cookie'</code> or <code>'_Init_thread_epoch'</code></td>
+    <td>piclasGPUStubs not linked or not linked with --whole-archive</td>
+    <td>Check that <code>src/gpu/msvc_stubs.c</code> exists and that <code>piclasGPUStubs</code> is listed before <code>piclasGPU</code> in the link command with <code>--whole-archive</code>.</td>
+  </tr>
+  <tr>
+    <td>Link error: <code>undefined reference to '__imp_memcpy'</code> or <code>'api-ms-win-crt-private'</code> dependency</td>
+    <td>MSVC import thunk stubs missing</td>
+    <td>Same fix as above — <code>msvc_stubs.c</code> provides the <code>__imp_xxx</code> function pointers. Ensure <code>--whole-archive</code> is applied.</td>
+  </tr>
+  <tr>
+    <td>LNK2019 on <code>__imp_fminf</code>, <code>__imp_fmaxf</code>, <code>__imp_exp2f</code>, <code>__imp_cbrtf</code>, <code>__imp_erff</code>, <code>__imp__dsign</code> (31 symbols total) — linker also prints <code>LNK4098: MSVCRT conflicts</code>; build log shows <code>-cudart shared</code> despite override</td>
+    <td><code>CMAKE_CUDA_CREATE_SHARED_LIBRARY</code> override silently ignored — CMake CUDA platform module uses <code>CACHE INTERNAL FORCE</code>; plain <code>SET()</code> cannot override it</td>
+    <td>Add <code>CACHE INTERNAL "" FORCE</code> to the <code>SET(CMAKE_CUDA_CREATE_SHARED_LIBRARY ...)</code> call in <code>src/CMakeLists.txt</code> (see §14.5 Challenge 12). Then reconfigure: <code>cmake --preset windows-ucrt64-gpu -B dsmc-cone-2D</code>. The corrected rule uses <code>-cudart none</code> + explicit <code>cudart.lib</code> + <code>/DEFAULTLIB:ucrt</code> which provides all missing <code>__imp_*f</code> stubs.</td>
+  </tr>
+  <tr>
+    <td><code>LINK : fatal error LNK1181: cannot open input file 'Files\NVIDIA.obj'</code> when linking <code>libpiclasGPU.dll</code></td>
+    <td>Spaces in <code>CUDAToolkit_LIBRARY_DIR</code> (<code>C:/Program Files/NVIDIA…</code>) — cmd.exe strips inner quotes from <code>/LIBPATH:"…"</code>; nvcc passes the unquoted path to link.exe which splits it at the first space</td>
+    <td>See §14.5 Challenge 12 warning box. The fix is already in <code>src/CMakeLists.txt</code>: <code>cudart.lib</code> is copied to <code>${CMAKE_BINARY_DIR}/lib/cuda/</code> at configure time (space-free path); <code>/LIBPATH:</code> points there without any quoting. Reconfigure to regenerate <code>build.ninja</code> and to trigger the copy. Confirm you see <code>CUDA cudart.lib staged: …/lib/cuda/cudart.lib</code> in the cmake output.</td>
+  </tr>
+  <tr>
+    <td>Link error: <code>undefined reference to 'h5pset_fapl_mpio_f_'</code> or other non-GPU symbols after adding GPU</td>
+    <td>CUDA language detection clobbered <code>CMAKE_LINK_LIBRARY_FLAG</code></td>
+    <td>Verify <code>SetGPU.cmake</code> restores <code>CMAKE_LINK_LIBRARY_FLAG="-l"</code> and <code>CMAKE_LIBRARY_PATH_FLAG="-L"</code> after <code>ENABLE_LANGUAGE(CUDA)</code>.</td>
+  </tr>
+  <tr>
+    <td>Runtime: <code>[GPU] No CUDA-capable devices found!</code></td>
+    <td>No NVIDIA GPU present, or GPU driver too old for installed toolkit</td>
+    <td>Verify driver version meets toolkit minimum. Run <code>nvidia-smi</code> from CMD to confirm GPU is detected by the driver.</td>
+  </tr>
+</table>
+
 <!-- ─────────────── FILE SUMMARY ─────────────── -->
 <h2 id="file-summary">File Summary</h2>
 <p>All files created or modified as part of this Windows port:</p>
@@ -1365,10 +2112,12 @@ IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN</code></pre>
   &nbsp;&nbsp;<span class="new-file">piclas_builder.py</span> &nbsp;&nbsp;<em>Python web server build configurator</em><br>
   <br>
   <span class="dir">C:\Data\PRJ\Piclas\piclas-master\</span><br>
-  &nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Full path to powershell.exe for userblock step</em><br>
-  &nbsp;&nbsp;<span class="mod-file">CMakePresets.json</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added windows-ucrt64, windows-ucrt64-mpi, windows-ucrt64-poisson, windows-ucrt64-debug presets</em><br>
+  &nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Full path to powershell.exe for userblock step; INCLUDE(SetGPU)</em><br>
+  &nbsp;&nbsp;<span class="mod-file">src\piclaslib.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Version banner updated to piclas-win 0.9.2</em><br>
+  &nbsp;&nbsp;<span class="mod-file">CMakePresets.json</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added windows-ucrt64, windows-ucrt64-mpi, windows-ucrt64-poisson, windows-ucrt64-debug, windows-ucrt64-gpu presets</em><br>
   &nbsp;&nbsp;<span class="dir">cmake\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">SetLibraries.cmake</span> &nbsp;&nbsp;&nbsp;&nbsp;<em>mpi_f08.o ordering, HDF5 parallel detection, USE_MPI_HDF5 flag</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">SetGPU.cmake</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>GPU/CUDA detection, cl.exe host setup, ENABLE_LANGUAGE(CUDA), MinGW linker flag fixes (NEW — §14)</em><br>
   &nbsp;&nbsp;<span class="dir">src\globals\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">glob_windows.c</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Win32 wildcard expansion (NEW)</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">commandlinearguments.f90</span> &nbsp;<em>ISO_C_BINDING call to glob_expand_c</em><br>
@@ -1378,12 +2127,25 @@ IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN</code></pre>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">hdf5_output.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>USE_MPI_HDF5 guard on DXPL; gather-write pattern in GatheredWriteArray/DistributedWriteArray (Fix G)</em><br>
   &nbsp;&nbsp;<span class="dir">src\particles\dsmc\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">dsmc_analyze.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>WriteDSMCToHDF5 uses GatheredWriteArray instead of direct WriteArrayToHDF5 (Fix H)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\particles\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_init.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;<em>GPU_Init called at end of InitParticles; GPU_Finalize called in FinalizeParticles (§14.8)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\timedisc\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">timedisc_TimeStep_DSMC.f90</span> &nbsp;<em>UseGPUPush flag + CONTINUE skip + GPU_PushParticlesBatch batch call after loop (§14.9)</em><br>
   &nbsp;&nbsp;<span class="dir">src\particles\particle_mesh\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_mesh_readin.f90</span> &nbsp;<em>Guard MPI_ALLGATHERV(MPI_IN_PLACE) on MPI_COMM_LEADERS_SHARED with IF(nLeaderGroupProcs.GT.1) — fixes MS-MPI buffer-zeroing bug (§13.1)</em><br>
   &nbsp;&nbsp;<span class="dir">src\particles\particle_mpi\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_mpi_halo.f90</span> &nbsp;&nbsp;&nbsp;<em>Replace IF(halo_eps.LE.0.) with IF(nComputeNodeProcessors.EQ.nProcessors_Global) — fixes single-node+shape_function halo detection (§13.3)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\gpu\</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>GPU acceleration layer (all NEW — §14)</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">piclas_gpu.h</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>C interface header (extern "C" entry points)</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_init.cu</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>CUDA device init/finalize</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_memory.cu</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Device buffer management + cudaMemcpy + kernel launch dispatch</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">particle_push.cu</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Position-push kernel: pos += vel*dt per thread; uses cudaLaunchKernel() API</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_vars.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Fortran state module (GPUInitialized, GPU_ActiveMask)</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_interface.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Fortran BIND(C) wrappers: GPU_Init, GPU_Finalize, GPU_PushParticlesBatch</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">msvc_stubs.c</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>MinGW-compiled stubs for MSVC runtime symbols from CUDA objects</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">patch_cuda_comdat.py</span> &nbsp;&nbsp;&nbsp;<em>COFF patcher: clears COMDAT flag from .bss sections to fix ACCESS VIOLATION</em><br>
   &nbsp;&nbsp;<span class="dir">src\</span><br>
-  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added globlib; added ${linkedlibs} to add_exec on Windows</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added globlib; added ${linkedlibs} to add_exec on Windows; added piclasGPU/piclasGPUStubs targets and all GPU link logic (§14.4)</em><br>
   &nbsp;&nbsp;<span class="dir">unitTests\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added libpiclasstaticF90 dependency; added ${linkedlibs} on Windows</em><br>
   <br>
@@ -1408,7 +2170,7 @@ IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN</code></pre>
 <hr>
 <p style="font-size:0.78rem;color:var(--muted);text-align:center;">
   PICLas Windows Port Documentation &mdash; April 2026 &mdash;
-  PICLas v4.1.0 / MSYS2 UCRT64 / GCC 14 / Windows 11
+  PICLas v4.1.0 / MSYS2 UCRT64 / GCC 15 / Windows 11
 </p>
 
 </main>
