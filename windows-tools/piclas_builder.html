@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 0.9.2 Build Configurator</title>
+<title>piclas-win 0.9.3 Build Configurator</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
@@ -52,7 +52,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 <body>
 
 <header>
-  <h1>piclas-win 0.9.2 Build Configurator</h1>
+  <h1>piclas-win 0.9.3 Build Configurator</h1>
   <span style="font-size:0.78rem;color:#8892b0;">Unofficial Windows port of PICLas 4.1.0 &mdash; standalone HTML, works in any browser, no server needed</span>
 </header>
 <div class="note-bar">
@@ -141,7 +141,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-posti" checked onchange="updateAll()">
         <label for="chk-posti">PICLAS_BUILD_POSTI</label>
       </div>
-      <div class="desc">Build post-processing tools (piclas2vtk) for converting HDF5 output to VTK/ParaView format.</div>
+      <div class="desc">Build post-processing tools: <b>piclas2vtk</b> (HDF5 → VTK/ParaView converter) and <b>superB</b> (standalone magnetic-field pre-processor — computes coil and permanent-magnet B-fields on a mesh and writes an HDF5 background-field file for use in subsequent PICLas simulations).</div>
       <div class="check-row">
         <input type="checkbox" id="chk-readin" onchange="updateAll()">
         <label for="chk-readin">PICLAS_READIN_CONSTANTS</label>
@@ -419,7 +419,7 @@ function updateAll() {
   var o   = getOpts();
   var dir = getBuildDir(o);
   var bp  = o.buildroot + '/' + dir;
-  var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
+  var tg  = o.posti ? 'piclas piclas2vtk superB' : 'piclas';
 
   var defs = [
     '-DPICLAS_EQNSYSNAME='       + o.eqnsys,
@@ -516,7 +516,7 @@ function downloadBat() {
   var bp  = o.buildroot + '/' + dir;
   var bpWin = bp.replace(/\//g, '\\');
   var srcWin = o.srcroot.replace(/\//g, '\\');
-  var tg  = o.posti ? 'piclas piclas2vtk' : 'piclas';
+  var tg  = o.posti ? 'piclas piclas2vtk superB' : 'piclas';
 
   // ── cmake -D flags (CMD-style quoting: double-quote the INSTRUCTION value) ──
   var defs =
@@ -549,7 +549,7 @@ function downloadBat() {
     // PETSC_DIR is needed by the cmake find scripts when PETSc is enabled
     (o.petsc ? 'set PETSC_DIR=C:\\msys64\\ucrt64\r\n' : '') +
     'echo.\r\n' +
-    'echo  piclas-win 0.9.2 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
+    'echo  piclas-win 0.9.3 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
     'echo  Config : ' + dir + '\r\n' +
     'echo  Source : ' + srcWin + '\r\n' +
     'echo  Binary : ' + bpWin + '\r\n' +

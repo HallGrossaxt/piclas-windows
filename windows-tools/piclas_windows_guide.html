@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 0.9.2 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
+<title>piclas-win 0.9.3 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -94,7 +94,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 
 <!-- ═══════════════ NAVIGATION ═══════════════ -->
 <nav>
-  <div class="nav-title">piclas-win 0.9.2 Guide</div>
+  <div class="nav-title">piclas-win 0.9.3 Guide</div>
 
   <div class="nav-section">
     <a href="#changelog">Release History</a>
@@ -132,6 +132,12 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     <a class="nav-sub" href="#gpu-distribution">14.7 Distribution</a>
     <a class="nav-sub" href="#gpu-callsites">14.8 Init/Finalize Sites</a>
     <a class="nav-sub" href="#gpu-timestep">14.9 Time-Step Integration</a>
+    <a class="nav-sub" href="#gpu-lserk">14.10 LSERK4 / PIC-EM</a>
+    <a href="#superb">15. superB Port</a>
+    <a class="nav-sub" href="#superb-what">15.1 What superB Does</a>
+    <a class="nav-sub" href="#superb-arch">15.2 Build Architecture</a>
+    <a class="nav-sub" href="#superb-changes">15.3 Windows Changes</a>
+    <a class="nav-sub" href="#superb-build">15.4 Building &amp; Running</a>
     <a href="#file-summary">File Summary</a>
   </div>
 </nav>
@@ -140,7 +146,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <main>
 
 <div class="hero">
-  <h1>piclas-win 0.9.2</h1>
+  <h1>piclas-win 0.9.3</h1>
   <div class="subtitle">Unofficial Windows port of PICLas 4.1.0 &mdash; complete setup, build, and distribution guide for Windows 11 with MSYS2 UCRT64</div>
   <p style="margin-top:10px;font-size:0.85rem;color:var(--yellow);">
     &#9888; This is an <strong>unofficial</strong> Windows port. It is not affiliated with or endorsed by the PICLas development team.
@@ -211,7 +217,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
   <tr><td>HDF5 library</td><td>Standard</td><td>Installed via pacman (serial only, no parallel MPI)</td></tr>
   <tr><td>MS-MPI library</td><td>Standard</td><td>Installed via pacman (<code>mingw-w64-ucrt-x86_64-msmpi</code>)</td></tr>
   <tr><td>PETSc library</td><td>Needs .pc fix</td><td>Create petsc.pc wrapper (Section 5)</td></tr>
-  <tr><td>CMakePresets.json</td><td>Extended</td><td>Added windows-ucrt64, windows-ucrt64-mpi and other presets</td></tr>
+  <tr><td>CMakePresets.json</td><td>Extended</td><td>Added windows-ucrt64, windows-ucrt64-mpi and other presets; added windows-ucrt64-superB (§15)</td></tr>
   <tr><td>CMakeLists.txt</td><td>Patched</td><td>Full path to powershell.exe for userblock step</td></tr>
   <tr><td>cmake/SetLibraries.cmake</td><td>Patched</td><td>MPI linker ordering, HDF5 parallel detection, USE_MPI_HDF5 flag</td></tr>
   <tr><td>src/globals/glob_windows.c</td><td>New file</td><td>Win32 wildcard expansion</td></tr>
@@ -931,6 +937,14 @@ cp /c/Data/PRJ/Piclas/build-*/bin/piclas2vtk.exe "$DIST/" 2>/dev/null
 ldd "$DIST/piclas.exe" | grep ucrt64 | awk '{print $3}' | xargs -I{} cp {} "$DIST/"
 ldd "$DIST/piclas2vtk.exe" 2>/dev/null | grep ucrt64 | awk '{print $3}' | xargs -I{} cp {} "$DIST/" 2>/dev/null
 
+<span class="comment"># GPU build only: copy CUDA runtime DLL</span>
+<span class="comment"># (skip this block for non-GPU builds)</span>
+CUDA_BIN="$(cygpath "$CUDA_PATH")/bin/x64"
+if [ -d "$CUDA_BIN" ]; then
+  cp "$CUDA_BIN"/cudart64_*.dll "$DIST/"
+  echo "Copied CUDA runtime DLL(s) from $CUDA_BIN"
+fi
+
 echo "Distribution folder contents:"
 ls "$DIST/"</code></pre>
 
@@ -946,6 +960,7 @@ ls "$DIST/"</code></pre>
   <tr><td>libpetsc-dso.dll</td><td>PETSc (if built with PETSc)</td></tr>
   <tr><td>libopenblas.dll</td><td>BLAS/LAPACK (if PETSc)</td></tr>
   <tr><td>libzlib1.dll / libsz.dll</td><td>Compression (HDF5 dependency)</td></tr>
+  <tr><td>cudart64_13.dll</td><td>CUDA runtime — GPU build only (from <code>%CUDA_PATH%\bin\x64\</code>)</td></tr>
 </table>
 
 <h3>9.3 Distribution folder structure</h3>
@@ -961,6 +976,7 @@ ls "$DIST/"</code></pre>
   &nbsp;&nbsp;<span class="file">hdf5_fortran.dll</span><br>
   &nbsp;&nbsp;<span class="file">libpetsc-dso.dll</span> <em>(if PETSc build)</em><br>
   &nbsp;&nbsp;<span class="file">libopenblas.dll</span> <em>(if PETSc build)</em><br>
+  &nbsp;&nbsp;<span class="file">cudart64_13.dll</span> <em>(GPU build only — from CUDA Toolkit bin\x64\)</em><br>
   &nbsp;&nbsp;<span class="file">... other DLLs from ldd output</span><br>
   &nbsp;&nbsp;<span class="file">README.txt</span>
 </div>
@@ -1875,7 +1891,6 @@ Stripping .voltbl from libpiclas.dll</code></pre>
 [GPU]   Max threads/block  : 1024
 [GPU] PICLas GPU acceleration ENABLED.
 [GPU] -------------------------------------------------------</code></pre>
-  <em>Note: GPU_Init call-site integration (Step 2) is the next development task.</em>
 </div>
 
 <!-- 14.7 Distribution -->
@@ -2041,9 +2056,132 @@ END IF
   matching this layout exactly. No transposition is needed.
 </div>
 
+<!-- ─────────────── GPU LSERK (Step 2) ─────────────── -->
+<h3 id="gpu-lserk">14.10 LSERK4 Time-Step Integration (PIC-EM, Step 2) <span class="badge new">NEW</span></h3>
+<p>
+  Extends GPU acceleration to <strong>PP_TimeDiscMethod&nbsp;2</strong> (LSERK4-5, Carpenter 1994, 5 stages)
+  and <strong>PP_TimeDiscMethod&nbsp;6</strong> (LSERK4-14, Niegemann 2012, 14 stages) — the two methods
+  used for PIC-EM and combined DSMC+PIC-EM simulations.
+  Both methods call the same <code>TimeStepByLSERK()</code> subroutine; only the compile-time
+  RK coefficients and stage count differ.
+</p>
+
+<h4>Design guideline — Pt_temp residency (from Linux MPI source analysis)</h4>
+<div class="note">
+  <b>Pt_temp follows the Linux MPI design: persistent host array, communicated with migrating particles</b>
+  <p style="margin-top:6px;">
+    In the Linux MPI code (<code>particle_mpi.f90</code>), <code>Pt_temp(1:6, iPart)</code> is a
+    <em>persistent host-side array</em> that lives for the entire timestep across all RK stages.
+    When a particle crosses a domain boundary mid-sweep, the MPI layer packs
+    <code>Pt_temp(1:6)</code> into the send buffer and unpacks it on the receiving rank — the
+    accumulated derivative history travels with the particle so the RK integration can continue
+    correctly without recomputation.
+  </p>
+  <p>
+    The GPU implementation mirrors this design exactly:
+  </p>
+  <ul>
+    <li><code>d_Pt_temp</code> is allocated alongside <code>d_PartState</code> and initialized to zero
+        (matching <code>Pt_temp=0.</code> in <code>particle_init.f90</code>).</li>
+    <li><strong>Per stage</strong>: <code>PartState</code> and <code>Pt_temp</code> are uploaded (H2D) before the
+        kernel and downloaded (D2H) after. The D2H of <code>Pt_temp</code> keeps the host copy in sync,
+        which is the correct foundation for future MPI+GPU support — when a particle crosses a rank
+        boundary after the kernel, the host <code>Pt_temp</code> already contains the updated value.</li>
+    <li><code>Pt</code> (acceleration from Lorentz force), <code>isActive</code>, <code>isPush</code>,
+        and <code>isNewPart</code> are also uploaded each stage.</li>
+    <li>For <strong>single-node builds</strong> (current target) there is no MPI particle exchange,
+        so the Pt_temp D2H is cheap insurance rather than a correctness requirement.</li>
+  </ul>
+</div>
+
+<h4>New source files</h4>
+<table>
+  <tr><th>File</th><th>Purpose</th></tr>
+  <tr><td><code>src/gpu/lserk_push.cu</code></td>
+      <td>CUDA kernel <code>lserk_stage_kernel</code> and launcher <code>launch_lserk_stage</code>.
+          Handles all four per-particle cases: stage-1, stage-N existing, stage-N new particle
+          (position NOP, vel treated as stage-1), and neutral particles (pos pushed, vel skipped).</td></tr>
+</table>
+
+<h4>Modified source files</h4>
+<table>
+  <tr><th>File</th><th>Change</th></tr>
+  <tr><td><code>src/gpu/piclas_gpu.h</code></td>
+      <td>Added <code>piclas_gpu_lserk_stage()</code> declaration.</td></tr>
+  <tr><td><code>src/gpu/gpu_memory.cu</code></td>
+      <td>Added device buffers <code>d_Pt_temp</code>, <code>d_Pt</code>, <code>d_isPush</code>,
+          <code>d_isNewPart</code>; cudaMemset of <code>d_Pt_temp</code> to zero at alloc;
+          implemented <code>piclas_gpu_lserk_stage()</code> entry point.</td></tr>
+  <tr><td><code>src/gpu/gpu_vars.f90</code></td>
+      <td>Added <code>GPU_IsPushMask</code> and <code>GPU_IsNewPartMask</code> arrays
+          (allocated alongside <code>GPU_ActiveMask</code> in <code>GPU_AllocActiveMask</code>).</td></tr>
+  <tr><td><code>src/gpu/gpu_interface.f90</code></td>
+      <td>Added <code>BIND(C)</code> declaration for <code>piclas_gpu_lserk_stage</code>;
+          added <code>GPU_LSERKStageBatch</code> Fortran wrapper.
+          <code>IsPush</code> mask accepted as caller-supplied <code>LOGICAL</code> argument
+          (no <code>USE MOD_Particle_Tools</code>) to avoid module compile-order errors.</td></tr>
+  <tr><td><code>src/timedisc/timedisc_TimeStepByLSERK.f90</code></td>
+      <td>Added <code>UseGPUPush</code> eligibility check and GPU branch replacing the
+          per-particle CPU push loop; builds <code>IsPushArr</code> from
+          <code>isPushParticle()</code> before calling <code>GPU_LSERKStageBatch</code>.</td></tr>
+</table>
+
+<h4>Eligibility conditions</h4>
+<p>The GPU push activates when all of the following hold (same pattern as §14.9):</p>
+<pre><code>UseGPUPush = GPUInitialized          .AND. &amp;
+             .NOT.UseVarTimeStep     .AND. &amp;  ! GPU kernel uses a single b_dt per stage
+             .NOT.UseRotRefFrame     .AND. &amp;  ! RotRef uses CalcPartPosInRotRef
+             .NOT.CalcCoupledPower   .AND. &amp;  ! requires per-particle host bookkeeping
+             .NOT.DoFieldIonization           ! can change species (isPush) mid-timestep</code></pre>
+
+<h4>Kernel — four cases per particle per stage</h4>
+<table>
+  <tr><th>Condition</th><th>Position</th><th>Velocity (charged only)</th></tr>
+  <tr><td><code>isStage1=1</code></td>
+      <td><code>Pt_temp_pos = vel; pos += vel·b_dt</code></td>
+      <td><code>Pt_temp_vel = Pt; vel += Pt·b_dt</code></td></tr>
+  <tr><td><code>isStage1=0, isNewPart=0</code></td>
+      <td><code>Pt_temp_pos = vel − RK_a·Pt_temp_pos; pos += Pt_temp_pos·b_dt</code></td>
+      <td><code>Pt_temp_vel = Pt − RK_a·Pt_temp_vel; vel += Pt_temp_vel·b_dt</code></td></tr>
+  <tr><td><code>isStage1=0, isNewPart=1</code></td>
+      <td><code>Pt_temp_pos = vel; pos NOP</code> (particle arrived late — Fortran behaviour)</td>
+      <td><code>Pt_temp_vel = Pt; vel += Pt·b_dt</code> (host Pt_temp was 0 → same as stage 1)</td></tr>
+  <tr><td><code>isPush=0</code> (neutral)</td>
+      <td>As above</td>
+      <td>Skipped — velocity unchanged</td></tr>
+</table>
+
+<div class="note">
+  <b>Preset and build command — unchanged</b>
+  The LSERK GPU push uses the same <code>windows-ucrt64-gpu</code> preset and
+  <code>PICLAS_USE_GPU=ON</code> flag as the DSMC push (§14.4).
+  No new preset is needed — GPU acceleration is a single on/off switch regardless of
+  which time-disc method is selected.
+<pre class="cmd"><code>cmake --preset windows-ucrt64-gpu \
+  -DPICLAS_EQNSYSNAME=maxwell \
+  -DPICLAS_TIMEDISCMETHOD=RK4-5 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPICLAS_BUILD_POSTI=ON \
+  -DPICLAS_UNITTESTS=OFF
+
+cmake --build build-ucrt64-gpu --target piclas piclas2vtk</code></pre>
+  At runtime, PICLas selects the DSMC push or LSERK push automatically depending on
+  which equation system and time-disc method were compiled in.
+</div>
+
 <h3>GPU Troubleshooting</h3>
 <table>
   <tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr>
+  <tr>
+    <td>Link error: <code>undefined reference to 'piclas_gpu_lserk_stage'</code> when linking <code>libpiclas.dll</code></td>
+    <td><code>gpu_loader.c</code> (compiled into <code>libpiclasGPULoader.a</code>) was missing the function pointer, <code>resolve()</code> call, and forwarding stub for <code>piclas_gpu_lserk_stage</code>. Every new CUDA entry point in <code>piclas_gpu.h</code> must have a corresponding entry in <code>gpu_loader.c</code>.</td>
+    <td>Add a <code>pfn_lserk</code> typedef, a <code>g_gpu_lserk</code> static pointer, a <code>resolve("piclas_gpu_lserk_stage")</code> call inside <code>piclas_gpu_load_library()</code>, and a forwarding stub <code>piclas_gpu_lserk_stage()</code> that calls <code>g_gpu_lserk(...)</code>. See <code>src/gpu/gpu_loader.c</code>.</td>
+  </tr>
+  <tr>
+    <td>Compile error: <code>Cannot open module file 'mod_particle_tools.mod'</code> when compiling <code>gpu_interface.f90</code></td>
+    <td><code>GPU_LSERKStageBatch</code> contained <code>USE MOD_Particle_Tools, ONLY: isPushParticle</code>. This file is compiled early (before the particle module tree), so the <code>.mod</code> file does not yet exist.</td>
+    <td>Remove <code>USE MOD_Particle_Tools</code> from <code>gpu_interface.f90</code>. Add an <code>IsPush(1:*) LOGICAL INTENT(IN)</code> parameter to <code>GPU_LSERKStageBatch</code>. Build the mask with <code>isPushParticle()</code> in the caller (<code>timedisc_TimeStepByLSERK.f90</code>) which already has access to the module.</td>
+  </tr>
   <tr>
     <td><code>FATAL_ERROR: PICLAS_USE_GPU=ON on Windows requires Visual Studio Build Tools (cl.exe)</code></td>
     <td>nvcc host compiler not found</td>
@@ -2101,6 +2239,165 @@ END IF
   </tr>
 </table>
 
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     §15  superB Windows Port
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<h2 id="superb">15. superB Windows Port <span class="badge new">NEW</span></h2>
+
+<!-- 15.1 What superB Does -->
+<h3 id="superb-what">15.1 What superB Does</h3>
+<p>
+  <strong>superB</strong> is a standalone magnetic-field pre-processor bundled with PICLas.
+  It is a <em>separate executable</em> (not part of the main simulation loop) that:
+</p>
+<ol style="margin:8px 0 8px 22px;line-height:1.8;">
+  <li>Reads a PICLas mesh file (HDF5).</li>
+  <li>Evaluates coil magnetic fields via the <strong>Biot-Savart law</strong> (static) or
+      <strong>Jefimenko equations</strong> (time-dependent), and permanent-magnet fields via
+      magnetic scalar potential + gradient.</li>
+  <li>Writes the resulting background B-field (<code>BGField</code>) to an HDF5 output file.</li>
+  <li>That HDF5 file is referenced in the main PICLas parameter file so the field is loaded
+      at runtime as a frozen background field.</li>
+</ol>
+<p>
+  Typical use case: compute the static field of a Helmholtz coil or a permanent-magnet ring,
+  then run a combined DSMC+PIC-EM simulation that accelerates charged particles in that field.
+</p>
+
+<!-- 15.2 Build Architecture -->
+<h3 id="superb-arch">15.2 Build Architecture</h3>
+<p>
+  When <code>PICLAS_PARTICLES=ON</code> (the default for all maxwell/DSMC builds), CMake
+  includes all <code>src/posti/superB/*.f90</code> files in the main
+  <code>particlesF90</code> glob that feeds <code>libpiclasshared</code>.
+  The physics modules (<code>superB_coil</code>, <code>superB_permMag</code>,
+  <code>superB_init</code>, <code>superB_main</code>, <code>superB_tools</code>,
+  <code>superB_vars</code>) are therefore compiled into <code>libpiclas.dll</code>
+  as a side effect of any full PICLas build.
+</p>
+<p>
+  When <code>PICLAS_BUILD_POSTI=ON</code> the posti CMakeLists adds the
+  <code>superB</code> standalone target:
+</p>
+<pre><code>superB.exe ──links──► superBlib   (OBJECT lib: superB.f90 entry point)
+                    ► libpiclasshared  (mesh, HDF5, all superB physics)
+                    ► ${linkedlibs}    (HDF5, OpenBLAS — WIN32 add_exec branch)</code></pre>
+<div class="note">
+  <b>No extra DLLs needed for superB.</b>
+  Because the physics is already in <code>libpiclas.dll</code>, the <code>superB.exe</code>
+  binary is tiny (~100 KB). It shares the same HDF5 and MPI infrastructure as
+  <code>piclas.exe</code> and does not require any GPU libraries.
+</div>
+
+<!-- 15.3 Windows Changes -->
+<h3 id="superb-changes">15.3 Windows Changes</h3>
+<p>
+  The superB Fortran source is entirely cross-platform — no POSIX calls, no signal handlers,
+  no Linux-specific I/O. Only two build-system changes were required:
+</p>
+
+<h4>Change 1 — New <code>windows-ucrt64-superB</code> CMake preset (<code>CMakePresets.json</code>)</h4>
+<p>
+  The base <code>windows-ucrt64</code> preset has <code>PICLAS_BUILD_POSTI=OFF</code>.
+  A dedicated preset activates the superB target without requiring the user to pass extra
+  <code>-D</code> flags:
+</p>
+<pre><code>{
+  "name": "windows-ucrt64-superB",
+  "inherits": "windows-ucrt64",
+  "binaryDir": "${sourceDir}/build-ucrt64-superB",
+  "cacheVariables": {
+    "PICLAS_EQNSYSNAME":     "maxwell",
+    "PICLAS_TIMEDISCMETHOD": "RK4",
+    "PICLAS_BUILD_POSTI":    "ON",
+    "PICLAS_UNITTESTS":      "OFF"
+  }
+}</code></pre>
+<p>
+  <code>maxwell + RK4</code> is chosen because superB output is typically used as a background
+  field in PIC-EM simulations. Any equation system works — superB itself only uses the mesh
+  and HDF5 infrastructure.
+</p>
+<p>
+  The <strong>Build Configurator</strong> (<code>piclas_builder.html</code>) already has a
+  <code>PICLAS_BUILD_POSTI</code> checkbox. Its description and build target line were updated
+  to mention superB, so ticking the box now builds <code>piclas piclas2vtk superB</code>
+  instead of just <code>piclas piclas2vtk</code>.
+</p>
+
+<h4>Change 2 — Regex case fix in <code>src/posti/superB/CMakeLists.txt</code></h4>
+<p>
+  The <code>PICLAS_PARTICLES=OFF</code> branch used a lowercase regex to exclude the
+  standalone entry point from the library source list:
+</p>
+<pre><code># Before (broken on case-sensitive and case-preserving filesystems):
+LIST(FILTER superBnoparticlesF90 EXCLUDE REGEX ".*superb.f90$")
+
+# After:
+LIST(FILTER superBnoparticlesF90 EXCLUDE REGEX ".*[Ss]uper[Bb]\\.f90$")</code></pre>
+<p>
+  The actual filename is <code>superB.f90</code> (capital B). CMake REGEX is case-sensitive,
+  so the original pattern silently failed to exclude the <code>PROGRAM</code> entry point
+  from the library object list, which would cause a duplicate-symbol link error on Windows
+  in no-particles builds. The fix uses a character class to match either case.
+</p>
+<div class="note">
+  <b>Scope:</b> This code path is only active when <code>PICLAS_PARTICLES=OFF</code>
+  (uncommon — requires explicitly disabling particle physics). All standard maxwell/DSMC/RK4
+  builds use <code>PICLAS_PARTICLES=ON</code> (the default) and are not affected.
+</div>
+
+<!-- 15.4 Building & Running -->
+<h3 id="superb-build">15.4 Building &amp; Running</h3>
+
+<h4>Build</h4>
+<p>Use the dedicated preset to configure and build:</p>
+<pre class="cmd"><code>cmake --preset windows-ucrt64-superB -B build-ucrt64-superB
+cmake --build build-ucrt64-superB --target superB</code></pre>
+<p>
+  Or check <b>PICLAS_BUILD_POSTI</b> in the Build Configurator and select any equation system —
+  the downloaded <code>.bat</code> will build <code>piclas piclas2vtk superB</code> together.
+</p>
+<p>The binary is written to <code>build-ucrt64-superB\bin\superB.exe</code>.</p>
+
+<h4>Run</h4>
+<pre class="cmd"><code>cd my-superB-case
+..\build-ucrt64-superB\bin\superB.exe superB.ini</code></pre>
+<p>
+  <code>superB.ini</code> is the parameter file. It must specify the mesh file
+  (<code>MeshFile = ...</code>) and the coil/magnet geometry. On success superB writes
+  <code>*_BGField.h5</code> (and optionally <code>*_BGField_TDep.h5</code> for
+  time-dependent fields).
+</p>
+
+<h4>Example parameter file structure</h4>
+<pre><code>! superB.ini — minimal example
+MeshFile      = my_mesh.h5
+ProjectName   = myproject
+PIC-CalcBField-OutputVTK = T   ! write coil geometry to VTK for visualisation
+
+NumOfCoils    = 1
+Coil1-Type    = circle
+Coil1-Current = 1000.0         ! Amperes
+Coil1-Radius  = 0.05           ! metres
+Coil1-NumOfSegments = 200
+Coil1-AxisDirection = (/0.,0.,1./)
+Coil1-BasePoint     = (/0.,0.,0./)</code></pre>
+
+<h4>Linking with the main simulation</h4>
+<p>
+  In the PICLas <code>parameter.ini</code> for the subsequent simulation, reference the
+  output file as the background field:
+</p>
+<pre><code>BG-Field = myproject_BGField.h5</code></pre>
+
+<h4>Test case</h4>
+<p>
+  An example with 3 permanent-magnet cylinders (HEMPT thruster geometry) is included in
+  the regression tests:
+</p>
+<pre><code>regressioncheck\WEK_PIC_poisson\HEMPT-90deg-symmetry\pre-superB\superB.ini</code></pre>
+
 <!-- ─────────────── FILE SUMMARY ─────────────── -->
 <h2 id="file-summary">File Summary</h2>
 <p>All files created or modified as part of this Windows port:</p>
@@ -2113,8 +2410,8 @@ END IF
   <br>
   <span class="dir">C:\Data\PRJ\Piclas\piclas-master\</span><br>
   &nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Full path to powershell.exe for userblock step; INCLUDE(SetGPU)</em><br>
-  &nbsp;&nbsp;<span class="mod-file">src\piclaslib.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Version banner updated to piclas-win 0.9.2</em><br>
-  &nbsp;&nbsp;<span class="mod-file">CMakePresets.json</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added windows-ucrt64, windows-ucrt64-mpi, windows-ucrt64-poisson, windows-ucrt64-debug, windows-ucrt64-gpu presets</em><br>
+  &nbsp;&nbsp;<span class="mod-file">src\piclaslib.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Version banner updated to piclas-win 0.9.3</em><br>
+  &nbsp;&nbsp;<span class="mod-file">CMakePresets.json</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added windows-ucrt64, windows-ucrt64-mpi, windows-ucrt64-poisson, windows-ucrt64-debug, windows-ucrt64-gpu, windows-ucrt64-superB presets (§15.3)</em><br>
   &nbsp;&nbsp;<span class="dir">cmake\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">SetLibraries.cmake</span> &nbsp;&nbsp;&nbsp;&nbsp;<em>mpi_f08.o ordering, HDF5 parallel detection, USE_MPI_HDF5 flag</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">SetGPU.cmake</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>GPU/CUDA detection, cl.exe host setup, ENABLE_LANGUAGE(CUDA), MinGW linker flag fixes (NEW — §14)</em><br>
@@ -2131,6 +2428,7 @@ END IF
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_init.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;<em>GPU_Init called at end of InitParticles; GPU_Finalize called in FinalizeParticles (§14.8)</em><br>
   &nbsp;&nbsp;<span class="dir">src\timedisc\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">timedisc_TimeStep_DSMC.f90</span> &nbsp;<em>UseGPUPush flag + CONTINUE skip + GPU_PushParticlesBatch batch call after loop (§14.9)</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">timedisc_TimeStepByLSERK.f90</span> &nbsp;<em>UseGPUPush eligibility check + GPU_LSERKStageBatch per-stage GPU call replacing CPU push loop (§14.10)</em><br>
   &nbsp;&nbsp;<span class="dir">src\particles\particle_mesh\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">particle_mesh_readin.f90</span> &nbsp;<em>Guard MPI_ALLGATHERV(MPI_IN_PLACE) on MPI_COMM_LEADERS_SHARED with IF(nLeaderGroupProcs.GT.1) — fixes MS-MPI buffer-zeroing bug (§13.1)</em><br>
   &nbsp;&nbsp;<span class="dir">src\particles\particle_mpi\</span><br>
@@ -2142,8 +2440,12 @@ END IF
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">particle_push.cu</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Position-push kernel: pos += vel*dt per thread; uses cudaLaunchKernel() API</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_vars.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Fortran state module (GPUInitialized, GPU_ActiveMask)</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_interface.f90</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Fortran BIND(C) wrappers: GPU_Init, GPU_Finalize, GPU_PushParticlesBatch</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">gpu_loader.c</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>LoadLibrary loader + GetProcAddress forwarding stubs for all GPU entry points (avoids DLL loader deadlock); updated with piclas_gpu_lserk_stage stub (§14.10)</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">msvc_stubs.c</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>MinGW-compiled stubs for MSVC runtime symbols from CUDA objects</em><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">patch_cuda_comdat.py</span> &nbsp;&nbsp;&nbsp;<em>COFF patcher: clears COMDAT flag from .bss sections to fix ACCESS VIOLATION</em><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="new-file">lserk_push.cu</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>LSERK4 per-stage kernel: pos+vel RK update with Pt_temp accumulation (NEW — §14.10)</em><br>
+  &nbsp;&nbsp;<span class="dir">src\posti\superB\</span><br>
+  &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Fixed EXCLUDE REGEX case: <code>superb.f90</code> → <code>[Ss]uper[Bb]\.f90</code> so PARTICLES=OFF builds exclude the PROGRAM entry point correctly on Windows (§15.3)</em><br>
   &nbsp;&nbsp;<span class="dir">src\</span><br>
   &nbsp;&nbsp;&nbsp;&nbsp;<span class="mod-file">CMakeLists.txt</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<em>Added globlib; added ${linkedlibs} to add_exec on Windows; added piclasGPU/piclasGPUStubs targets and all GPU link logic (§14.4)</em><br>
   &nbsp;&nbsp;<span class="dir">unitTests\</span><br>
