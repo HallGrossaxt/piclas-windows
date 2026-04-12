@@ -26,6 +26,7 @@
 void piclas_gpu_init(void)
 {
     int devCount = 0;
+    printf("[GPU] Querying CUDA device count ...\n"); fflush(stdout);
     CUDA_CHECK(cudaGetDeviceCount(&devCount));
     if (devCount == 0) {
         fprintf(stderr, "[GPU] No CUDA-capable devices found!\n");
