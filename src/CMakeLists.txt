@@ -568,6 +568,15 @@ IF (PICLAS_TIMEDISCMETHOD STREQUAL "Radiation")
   LIST(APPEND piclasF90 ${radiationF90})
 ENDIF()
 
+# =========================================================================
+# GPU acceleration — add Fortran interface sources to the main lib
+# =========================================================================
+IF(PICLAS_USE_GPU)
+  FILE(GLOB gpuF90 ./src/gpu/gpu_vars.f90
+                   ./src/gpu/gpu_interface.f90)
+  LIST(APPEND piclasF90 ${gpuF90})
+ENDIF()
+
 # define libs
 ADD_LIBRARY(          libpiclasstaticF90 OBJECT ${piclasF90} )
 SET_TARGET_PROPERTIES(libpiclasstaticF90 PROPERTIES COMPILE_FLAGS ${PICLAS_COMPILE_FLAGS}
@@ -604,12 +613,171 @@ SET_TARGET_PROPERTIES(memusagelib PROPERTIES LANGUAGE CXX LINKER_LANGUAGE CXX
                                               COMPILE_OPTIONS "-fPIC"
                                              CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# =========================================================================
+# GPU acceleration — CUDA shared library (libpiclasGPU.dll)
+#
+# Built as SHARED so it can be loaded explicitly via LoadLibrary() from
+# gpu_loader.c after main() has started.  Embedding CUDA objects in
+# libpiclas.dll caused a Windows DLL loader deadlock: the fat-binary
+# registration static initialiser ran during libpiclas.dll's DllMain
+# (loader lock held) and CUDA's driver threads also needed the loader
+# lock → process hung before main() ever ran.
+# =========================================================================
+IF(PICLAS_USE_GPU)
+  FILE(GLOB gpuCU ./src/gpu/*.cu)
+  # On Windows+MinGW, CMake's CUDA SHARED link rule uses MSVC linker syntax:
+  #   ld.exe /nologo /out:<TARGET> /implib:<IMPLIB> /dll /MANIFEST:EMBED,ID=2 kernel32.lib ...
+  # because nvcc uses cl.exe as host compiler and CMake picks the MSVC link template.
+  # ld.exe does not understand MSVC flags → fatal errors on every option.
+  # Override the link rule to use MinGW gcc, which generates correct GNU ld flags.
+  # This override only affects piclasGPU (the sole CUDA SHARED target).
+  IF(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # Linking MSVC-compiled CUDA objects with MinGW ld.exe fails in two ways:
+    #   1. MSVC CRT (printf, __local_stdio_printf_options ...) is ABI-incompatible with
+    #      MinGW UCRT64 wrappers → "undefined reference to printf/fprintf" at link.
+    #   2. CUDA inline host functions (sin, cos, dim3::...) appear in .drectve as DLL
+    #      exports but live only in cudart64_13.dll — MinGW ld reports "cannot export:
+    #      symbol not defined" because it cannot create forwarder re-exports.
+    # Fix: use nvcc as the GPU-DLL linker.  nvcc calls MSVC link.exe which:
+    #   - resolves MSVC CRT (printf etc.) correctly;
+    #   - creates forwarder re-exports from cudart64_13.dll for math overloads;
+    #   - handles COMDAT correctly (no .bss ACCESS VIOLATION at DLL load time).
+    # "-cudart shared" → cudart64_13.dll imported via the PE IAT; nvcc resolves
+    # cudart.lib automatically from the CUDA toolkit.  No <LINK_LIBRARIES> or
+    # <LINK_FLAGS> in the template so MinGW-format archives and -Wl, options
+    # do not reach MSVC link.exe.
+    SET(CMAKE_CUDA_STANDARD_LIBRARIES "")
+    SET(CMAKE_CUDA_IMPLICIT_LINK_LIBRARIES "")
+    # -ccbin tells nvcc where cl.exe lives so it can locate link.exe and MSVC libs.
+    # CMake adds -ccbin automatically for compile rules but not for our custom link
+    # template, so we must supply it explicitly using CMAKE_CUDA_HOST_COMPILER.
+    #
+    # "-cudart none": do NOT let nvcc auto-add cudadevrt.lib / cudart.lib; some
+    # of those libraries force /DEFAULTLIB:LIBCMT (static CRT) which conflicts with
+    # our /MD objects and causes link.exe to switch to libucrt.lib (static UCRT).
+    # Static UCRT does not define __imp_fminf/__imp_cbrtf/... DLL-import stubs, so
+    # all C99 float math functions become unresolved (LNK2019).
+    # Instead we add cudart.lib explicitly and suppress the static CRT default libs.
+    #
+    # /NODEFAULTLIB:LIBCMT   — suppress static MSVC main CRT (forced by cudadevrt)
+    # /NODEFAULTLIB:libucrt  — suppress static UCRT    (forces libucrt instead of ucrt.lib)
+    # /DEFAULTLIB:ucrt       — add dynamic UCRT import lib (provides __imp_fminf etc.)
+    # cudart.lib             — MSVC import library for cudart64_13.dll
+    #
+    # LIBPATH spaces problem: CUDAToolkit_LIBRARY_DIR is usually under
+    # "C:/Program Files/NVIDIA GPU Computing Toolkit/..." which contains spaces.
+    # When Ninja wraps the link command in  cmd.exe /C "..."  the inner quotes
+    # around  /LIBPATH:"..."  are consumed by cmd.exe's quote parser; nvcc then
+    # receives the argument with its quotes stripped and passes it to link.exe
+    # without re-quoting → link.exe splits the path at the first space and
+    # reports LNK1181 "Files\NVIDIA.obj" (stray object file name).
+    # Fix: copy cudart.lib from the CUDA toolkit into the build dir at configure
+    # time.  The build dir path (CMAKE_BINARY_DIR) is assumed to have no spaces.
+    # No quoting is needed for the resulting /LIBPATH: argument.
+    SET(_CUDA_LOCAL_LIB_DIR "${CMAKE_BINARY_DIR}/lib/cuda")
+    FILE(MAKE_DIRECTORY "${_CUDA_LOCAL_LIB_DIR}")
+    FILE(COPY "${CUDAToolkit_LIBRARY_DIR}/cudart.lib"
+         DESTINATION "${_CUDA_LOCAL_LIB_DIR}")
+    MESSAGE(STATUS "  CUDA cudart.lib staged: ${_CUDA_LOCAL_LIB_DIR}/cudart.lib")
+    #
+    # CACHE INTERNAL "" FORCE is required: ENABLE_LANGUAGE(CUDA) loads the CUDA
+    # platform module which stores CMAKE_CUDA_CREATE_SHARED_LIBRARY as a CACHE
+    # INTERNAL variable (with FORCE).  A plain SET() cannot override a cached
+    # value — it is silently ignored — so the platform default "-cudart shared"
+    # survives into the generated Ninja rule, omitting all /DEFAULTLIB flags and
+    # causing LNK2019 on __imp_fminf/__imp_cbrtf/... (31 symbols).
+    # Using CACHE INTERNAL FORCE here runs after the platform SET and wins.
+    SET(CMAKE_CUDA_CREATE_SHARED_LIBRARY
+        "<CMAKE_CUDA_COMPILER> -shared -cudart none -ccbin \"${CMAKE_CUDA_HOST_COMPILER}\" -o <TARGET> <OBJECTS> -Xlinker /LIBPATH:${_CUDA_LOCAL_LIB_DIR} -Xlinker cudart.lib -Xlinker /NODEFAULTLIB:LIBCMT -Xlinker /NODEFAULTLIB:LIBCMTD -Xlinker /NODEFAULTLIB:libucrt -Xlinker /DEFAULTLIB:ucrt"
+        CACHE INTERNAL "CUDA SHARED library link rule (Windows MinGW+MSVC host — overrides platform default)" FORCE)
+  ENDIF()
+  ADD_LIBRARY(piclasGPU SHARED ${gpuCU})
+  SET_TARGET_PROPERTIES(piclasGPU PROPERTIES
+    OUTPUT_NAME              "piclasGPU"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+    CUDA_SEPARABLE_COMPILATION  OFF
+    # Prevent CMake from adding an automatic device-link step for SHARED targets.
+    # All .cu TUs are self-contained (no inter-TU __device__ calls), so device
+    # symbols are resolved at compile time.  Without this, CMake generates
+    # cmake_device_link.obj whose .drectve sections (MSVC-style library refs) are
+    # processed by MinGW ld.exe and cause "cannot find comdlg32.lib" fatal errors.
+    CUDA_RESOLVE_DEVICE_SYMBOLS OFF
+    CUDA_ARCHITECTURES          "${CMAKE_CUDA_ARCHITECTURES}"
+    # On Windows+MinGW: CMAKE_CUDA_RUNTIME_LIBRARY_DEFAULT=SHARED causes CMake
+    # to inject CUDA::cudart into piclasGPU's INTERFACE_LINK_LIBRARIES, which
+    # then propagates MSVC-style bare library names to all consumers.
+    # Set to None so we control CUDA runtime linking explicitly via cudart.lib.
+    CUDA_RUNTIME_LIBRARY       None)
+  # Override INCLUDE_DIRECTORIES to prevent MinGW UCRT64 headers from being
+  # passed to nvcc when using cl.exe as host compiler.  MinGW's stdio.h etc.
+  # are ABI-incompatible with MSVC and cause compilation errors.
+  # The .cu files only need: src/gpu (piclas_gpu.h) + CUDA SDK headers (added
+  # automatically by nvcc via -isystem).
+  SET_PROPERTY(TARGET piclasGPU PROPERTY INCLUDE_DIRECTORIES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/gpu")
+  IF(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # cl.exe compile flags (passed to the MSVC host compiler via nvcc's -Xcompiler).
+    # /GS-                : disable buffer security check (__security_check_cookie not emitted).
+    # /MD                 : use MSVC DLL CRT (ucrtbase.dll / msvcrt.dll).
+    # /Zc:threadSafeInit- : disable thread-safe static init (avoids _Init_thread_header refs).
+    # Comma-list keeps flags as one nvcc token (spaces make nvcc treat /MD as an input file).
+    TARGET_COMPILE_OPTIONS(piclasGPU PRIVATE
+      $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/GS-,/MD,/Zc:threadSafeInit->)
+    # Trigger PICLAS_GPU_API = __declspec(dllexport) in piclas_gpu.h for our 5 API functions.
+    TARGET_COMPILE_DEFINITIONS(piclasGPU PRIVATE PICLAS_BUILDING_GPU_DLL)
+
+    # Locate cudart64_13.dll for the POST_BUILD copy.
+    # libpiclasGPU.dll imports cudart64_13.dll via its PE IAT ("-cudart shared" in the
+    # link template); Windows must find it when LoadLibraryA("libpiclasGPU.dll") runs.
+    SET(_CUDART_DLL "${CUDAToolkit_BIN_DIR}/cudart64_13.dll")
+    IF(NOT EXISTS "${_CUDART_DLL}")
+      SET(_CUDART_DLL "${CUDAToolkit_BIN_DIR}/x64/cudart64_13.dll")
+    ENDIF()
+    IF(NOT EXISTS "${_CUDART_DLL}")
+      MESSAGE(FATAL_ERROR "cudart64_13.dll not found; searched ${CUDAToolkit_BIN_DIR} and x64/")
+    ENDIF()
+    ADD_CUSTOM_COMMAND(TARGET piclasGPU POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_CUDART_DLL}" "${CMAKE_BINARY_DIR}/bin/"
+      COMMENT "Copying cudart64_13.dll to bin/")
+
+    # piclasGPULoader: MinGW-compiled C stub library linked into libpiclas.dll.
+    # Provides piclas_gpu_load_library() + forwarding stubs (piclas_gpu_init etc.)
+    # that resolve to libpiclasGPU.dll via GetProcAddress after explicit LoadLibrary.
+    # No CUDA symbols or MSVC CRT dependencies — plain Windows API only.
+    ADD_LIBRARY(piclasGPULoader STATIC ./src/gpu/gpu_loader.c)
+    SET_TARGET_PROPERTIES(piclasGPULoader PROPERTIES LINKER_LANGUAGE C)
+
+    # Do NOT add GPU libs to the global linkedlibs variable — see comment below.
+  ELSE()
+    TARGET_LINK_LIBRARIES(piclasGPU PRIVATE CUDA::cudart_static)
+    # Same rationale: add GPU to specific targets only, not the global linkedlibs.
+  ENDIF()
+ENDIF()
+
 # we link the statically built libs
 ADD_LIB_SHARED(libpiclasshared ./src/piclaslib.f90)
 SET_TARGET_PROPERTIES(libpiclasshared PROPERTIES OUTPUT_NAME "libpiclas")
 ADD_DEPENDENCIES(libpiclasshared libpiclasstatic userblocklib stacksizelib globlib memusagelib ${INTERNALLIBS})
+IF(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND PICLAS_USE_GPU)
+  # libpiclas.dll does NOT link CUDA objects or cudart — those are in libpiclasGPU.dll,
+  # which is loaded explicitly by gpu_loader.c via LoadLibrary() after main() starts.
+  # Only the forwarding-stub loader is linked here; no CUDA IAT entries in libpiclas.dll.
+  ADD_DEPENDENCIES(libpiclasshared piclasGPULoader piclasGPU)
+  TARGET_LINK_LIBRARIES(libpiclasshared PRIVATE piclasGPULoader)
+ELSEIF(PICLAS_USE_GPU)
+  # Non-Windows GPU: link piclasGPU and CUDA runtime directly into libpiclasshared.
+  TARGET_LINK_LIBRARIES(libpiclasshared PRIVATE piclasGPU CUDA::cudart_static)
+ENDIF()
 ADD_EXEC(piclas ./src/piclas.f90)
 ADD_DEPENDENCIES(piclas libpiclasstatic userblocklib stacksizelib globlib memusagelib ${INTERNALLIBS})
+# GPU on Windows: piclas.exe does not link CUDA objects or cudart directly.
+# libpiclasGPU.dll is loaded via LoadLibrary in gpu_loader.c (part of libpiclas.dll).
+# No CUDA symbols in piclas.exe's IAT — no loader deadlock.
+IF(NOT WIN32 AND PICLAS_USE_GPU)
+  # Non-Windows: link CUDA runtime directly into the executable.
+  TARGET_LINK_LIBRARIES(piclas piclasGPU CUDA::cudart_static)
+ENDIF()
 
 # special compiler flags to avoid warnings for empty functions of testcase.f90 and overwrite of intrinsic abort in globals.f90
 IF (CMAKE_Fortran_COMPILER_ID MATCHES "GNU")

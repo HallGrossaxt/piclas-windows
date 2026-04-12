@@ -13,7 +13,7 @@ FILE(GLOB ${TOOL_NAME}F90 ${TOOL_DIR}/CMakeLists.txt
 IF (NOT PICLAS_PARTICLES)
   FILE(GLOB superBnoparticlesF90 ${TOOL_DIR}/*.f90)
   LIST(FILTER superBnoparticlesF90 EXCLUDE REGEX ".*CMakeLists.txt$")
-  LIST(FILTER superBnoparticlesF90 EXCLUDE REGEX ".*superb.f90$")
+  LIST(FILTER superBnoparticlesF90 EXCLUDE REGEX ".*[Ss]uper[Bb]\\.f90$")
   LIST(FILTER superBnoparticlesF90 EXCLUDE REGEX ".*superB_vars.f90$")
   LIST(APPEND ${TOOL_NAME}F90 ${superBnoparticlesF90})
 ENDIF()

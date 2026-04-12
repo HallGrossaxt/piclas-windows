@@ -25,7 +25,7 @@ CHARACTER(LEN=6),PARAMETER :: ProgramName  = 'PICLas'              !> name of th
 INTEGER,PARAMETER          :: MajorVersion = 4                     !> FileVersion number saved in each hdf5 file with hdf5 header
 INTEGER,PARAMETER          :: MinorVersion = 1                     !> FileVersion number saved in each hdf5 file with hdf5 header
 INTEGER,PARAMETER          :: PatchVersion = 0                     !> FileVersion number saved in each hdf5 file with hdf5 header
-REAL,PARAMETER             :: FileVersionReal  = REAL(MajorVersion,8)+REAL(MinorVersion,8)/10.+REAL(PatchVersion,8)/100.
+REAL,PARAMETER             :: FileVersionReal  = REAL(MajorVersion,8)+REAL(MinorVersion,8)/10._8+REAL(PatchVersion,8)/100._8
                                                                    !> OLD number saved in each hdf5 file with hdf5 header
 INTEGER,PARAMETER          :: FileVersionInt = PatchVersion+MinorVersion*100+MajorVersion*10000
                                                                    !>  NEWnumber saved in each hdf5 file with hdf5 header
@@ -45,10 +45,10 @@ REAL                       :: SimulationEfficiency                 !> relates th
 REAL                       :: StartT                               !> Timer start
 REAL                       :: PID                                  !> Performance index: (CalcTimeEnd-CalcTimeStart)*nProcessors/(nGlobalElems*(PP_N+1)**3*iter_loc)
 REAL                       :: memory(1:4)                          !> RAM: used, available, total and initial (total at the beginning of the simulation)
-REAL,PARAMETER             :: PI=ACOS(-1.0)                         !> the number pi ~= 3.14
-REAL,PARAMETER             :: sPI=1.0/PI                            !> inverse of pi
+REAL,PARAMETER             :: PI=ACOS(-1.0_8)                      !> the number pi ~= 3.14
+REAL,PARAMETER             :: sPI=1.0_8/PI                          !> inverse of pi
 REAL,PARAMETER             :: epsMach=EPSILON(0.0)                  !> Machine accuracy
-REAL,PARAMETER             :: TwoepsMach=2.0d0*epsMach              !> twice the machine accuracy
+REAL,PARAMETER             :: TwoepsMach=2.0_8*epsMach              !> twice the machine accuracy
 REAL,PARAMETER             :: EuMas          = 0.577215664901533_8  !> Euler-Mascheroni constant
 REAL,PARAMETER             :: PlanckConst    = 6.62606957e-34       !> Planck constant [J s] SI-Unit!
 REAL,PARAMETER             :: ElementaryCharge = 1.602176634e-19    !> redefinition of SI base units in 2018-2019,
@@ -68,7 +68,7 @@ REAL,PARAMETER             :: BohrRadius     = 5.2917721067E-11     !> Radius, 1
 REAL,PARAMETER             :: AtomicMassUnit = 1.660539040E-27      !> Atomic mass unit [kg]
 REAL,PARAMETER             :: GravityAccelerationEarth = 9.8067     !> Acceleration due to Earth's gravity [m/s^2]
 
-REAL,PARAMETER             :: maxEXP= LOG(HUGE(maxexp))
+REAL,PARAMETER             :: maxEXP= LOG(HUGE(0.))
 ! Set variables (natural constants and derived quantities) from user input or hard coded
 ! depending on compile flag (PICLAS_READIN_CONSTANTS=ON)
 #if USE_READIN_CONSTANTS

@@ -71,6 +71,8 @@ MODULE mpi_f08
     f90_win_flush_all        => MPI_Win_flush_all,       &
     f90_win_fence            => MPI_WIN_FENCE,           &
     f90_win_create           => MPI_Win_create,          &
+    f90_win_allocate_shared  => MPI_Win_allocate_shared, &
+    f90_win_shared_query     => MPI_Win_shared_query,    &
     f90_abort                => MPI_ABORT,               &
     f90_get_address          => MPI_Get_address,         &
     f90_error_string         => MPI_ERROR_STRING,        &
@@ -146,27 +148,28 @@ MODULE mpi_f08
   !---------------------------------------------------------------------------
   ! Datatype constants
   !---------------------------------------------------------------------------
+  ! All constants taken directly from the MS-MPI SDK mpi.f90 (mpi.f90 PARAMETER values).
   TYPE(MPI_Datatype), PARAMETER :: MPI_DATATYPE_NULL    = MPI_Datatype(0)
   TYPE(MPI_Datatype), PARAMETER :: MPI_BYTE             = MPI_Datatype(1275068685)
   TYPE(MPI_Datatype), PARAMETER :: MPI_PACKED           = MPI_Datatype(1275068687)
   TYPE(MPI_Datatype), PARAMETER :: MPI_CHARACTER        = MPI_Datatype(1275068698)
   TYPE(MPI_Datatype), PARAMETER :: MPI_LOGICAL          = MPI_Datatype(1275069469)
   TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER          = MPI_Datatype(1275069467)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER1         = MPI_Datatype(1275068673)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER2         = MPI_Datatype(1275068930)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER4         = MPI_Datatype(1275069467)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER8         = MPI_Datatype(1275070488)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER1         = MPI_Datatype(1275068717)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER2         = MPI_Datatype(1275068975)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER4         = MPI_Datatype(1275069488)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_INTEGER8         = MPI_Datatype(1275070513)
   TYPE(MPI_Datatype), PARAMETER :: MPI_REAL             = MPI_Datatype(1275069468)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL4            = MPI_Datatype(1275069468)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL8            = MPI_Datatype(1275070489)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_DOUBLE_PRECISION = MPI_Datatype(1275070489)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_COMPLEX          = MPI_Datatype(1275070504)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL4            = MPI_Datatype(1275069479)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_REAL8            = MPI_Datatype(1275070505)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_DOUBLE_PRECISION = MPI_Datatype(1275070495)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_COMPLEX          = MPI_Datatype(1275070494)
   TYPE(MPI_Datatype), PARAMETER :: MPI_DOUBLE_COMPLEX   = MPI_Datatype(1275072546)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_2INTEGER         = MPI_Datatype(1275070486)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_2REAL            = MPI_Datatype(1275070487)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_2DOUBLE_PRECISION= MPI_Datatype(1275072520)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_UB               = MPI_Datatype(2)
-  TYPE(MPI_Datatype), PARAMETER :: MPI_LB               = MPI_Datatype(3)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_2INTEGER         = MPI_Datatype(1275070496)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_2REAL            = MPI_Datatype(1275070497)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_2DOUBLE_PRECISION= MPI_Datatype(1275072547)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_UB               = MPI_Datatype(1275068433)
+  TYPE(MPI_Datatype), PARAMETER :: MPI_LB               = MPI_Datatype(1275068432)
 
   !---------------------------------------------------------------------------
   ! Reduction operator constants
@@ -872,6 +875,41 @@ CONTAINS
     CALL f90_win_create(base, size, disp_unit, info%MPI_VAL, comm%MPI_VAL, &
                         win%MPI_VAL, ierror)
   END SUBROUTINE MPI_WIN_CREATE
+
+  ! MPI_WIN_ALLOCATE_SHARED: allocate shared-memory window.
+  ! The legacy MS-MPI binding returns BASEPTR as INTEGER(MPI_ADDRESS_KIND)
+  ! (a raw pointer value).  We receive it as such and bit-transfer it to
+  ! TYPE(C_PTR) so that callers can use C_F_POINTER on it.
+  SUBROUTINE MPI_WIN_ALLOCATE_SHARED(size, disp_unit, info, comm, baseptr, win, ierror)
+    USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_NULL_PTR
+    IMPLICIT NONE
+    INTEGER(KIND=MPI_ADDRESS_KIND), INTENT(IN)  :: size
+    INTEGER,        INTENT(IN)  :: disp_unit
+    TYPE(MPI_Info), INTENT(IN)  :: info
+    TYPE(MPI_Comm), INTENT(IN)  :: comm
+    TYPE(C_PTR),    INTENT(OUT) :: baseptr
+    TYPE(MPI_Win),  INTENT(OUT) :: win
+    INTEGER,        INTENT(OUT) :: ierror
+    INTEGER(KIND=MPI_ADDRESS_KIND) :: baseptr_raw
+    CALL f90_win_allocate_shared(size, disp_unit, info%MPI_VAL, comm%MPI_VAL, &
+                                 baseptr_raw, win%MPI_VAL, ierror)
+    baseptr = TRANSFER(baseptr_raw, C_NULL_PTR)
+  END SUBROUTINE MPI_WIN_ALLOCATE_SHARED
+
+  ! MPI_WIN_SHARED_QUERY: query shared-memory window address for a given rank.
+  SUBROUTINE MPI_WIN_SHARED_QUERY(win, rank, size, disp_unit, baseptr, ierror)
+    USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_NULL_PTR
+    IMPLICIT NONE
+    TYPE(MPI_Win), INTENT(IN)   :: win
+    INTEGER,       INTENT(IN)   :: rank
+    INTEGER(KIND=MPI_ADDRESS_KIND), INTENT(OUT) :: size
+    INTEGER,       INTENT(OUT)  :: disp_unit
+    TYPE(C_PTR),   INTENT(OUT)  :: baseptr
+    INTEGER,       INTENT(OUT)  :: ierror
+    INTEGER(KIND=MPI_ADDRESS_KIND) :: baseptr_raw
+    CALL f90_win_shared_query(win%MPI_VAL, rank, size, disp_unit, baseptr_raw, ierror)
+    baseptr = TRANSFER(baseptr_raw, C_NULL_PTR)
+  END SUBROUTINE MPI_WIN_SHARED_QUERY
 
   !==========================================================================
   ! Miscellaneous

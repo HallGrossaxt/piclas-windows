@@ -66,6 +66,31 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
+    },
+    {
+      "name": "windows-ucrt64-gpu",
+      "displayName": "Windows MSYS2 UCRT64 + CUDA GPU (Release)",
+      "description": "GPU-accelerated build: CUDA kernels compiled by nvcc, Fortran via ISO_C_BINDING. Requires NVIDIA GPU + CUDA Toolkit 12.x on PATH.",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-gpu",
+      "cacheVariables": {
+        "PICLAS_USE_GPU":            "ON",
+        "CMAKE_CUDA_ARCHITECTURES":  "86",
+        "CMAKE_CUDA_COMPILER":       "nvcc"
+      }
+    },
+    {
+      "name": "windows-ucrt64-superB",
+      "displayName": "Windows MSYS2 UCRT64 - superB magnetic field pre-processor",
+      "description": "Builds the superB standalone tool for computing coil and permanent-magnet B-fields on a mesh. Output HDF5 background-field file is loaded by subsequent PICLas simulations.",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-ucrt64-superB",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -87,6 +112,16 @@
     {
       "name": "windows-ucrt64-debug",
       "configurePreset": "windows-ucrt64-debug",
+      "jobs": 0
+    },
+    {
+      "name": "windows-ucrt64-gpu",
+      "configurePreset": "windows-ucrt64-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-ucrt64-superB",
+      "configurePreset": "windows-ucrt64-superB",
       "jobs": 0
     }
   ]

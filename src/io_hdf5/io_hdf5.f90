@@ -259,14 +259,9 @@ END IF
 #endif /*USE_MPI*/
 
 ! Open the file collectively.
+#if USE_MPI_HDF5
 IF(create)THEN
-  IF (userblockSize_loc > 0) THEN
-    tmp = userblockSize_loc/userblockSize_512
-    IF (MOD(userblockSize_loc,userblockSize_512).GT.0) tmp = tmp+1
-    tmp2 = 512*2**CEILING(LOG(REAL(tmp))/LOG(2.))
-    CALL H5PSET_USERBLOCK_F(Plist_File_ID, tmp2, iError)
-  END IF
-  CALL H5FCREATE_F(TRIM(FileString), H5F_ACC_TRUNC_F, File_ID, iError, creation_prp = Plist_File_ID)
+  CALL H5FCREATE_F(TRIM(FileString), H5F_ACC_TRUNC_F, File_ID, iError)
 ELSE !read-only ! and write (added later)
   IF(.NOT.FILEEXISTS(FileString)) CALL abort(__STAMP__,&
     'ERROR: Specified file '//TRIM(FileString)//' does not exist.')
@@ -277,6 +272,43 @@ ELSE !read-only ! and write (added later)
   END IF
 END IF
 IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not open or create file '//TRIM(FileString))
+#else
+! Sequential HDF5 (USE_MPI_HDF5=0):
+! - Read-only opens: ALL ranks open so each rank holds a valid File_ID for subsequent
+!   ReadAttribute/ReadArray calls. Multiple simultaneous read-only openers are safe on Windows.
+! - Write/create: only MPIRoot opens/creates to avoid exclusive file-lock contention.
+iError = 0
+IF(create)THEN
+  ! Only root creates files to avoid race conditions
+  IF(MPIRoot)THEN
+    ! Set userblock size in creation property list (must be power of 2 and >= 512)
+    IF(userblockSize_loc.GT.0)THEN
+      tmp = userblockSize_512
+      DO WHILE(tmp.LT.userblockSize_loc)
+        tmp = tmp * 2
+      END DO
+      CALL H5PSET_USERBLOCK_F(Plist_File_ID, tmp, iError)
+    END IF
+    CALL H5FCREATE_F(TRIM(FileString), H5F_ACC_TRUNC_F, File_ID, iError, creation_prp=Plist_File_ID)
+    IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not create file '//TRIM(FileString))
+  END IF
+ELSE
+  IF(.NOT.FILEEXISTS(FileString)) CALL abort(__STAMP__,&
+    'ERROR: Specified file '//TRIM(FileString)//' does not exist.')
+  IF(readOnly)THEN
+    ! All ranks open read-only — safe for multiple simultaneous openers
+    CALL H5FOPEN_F(TRIM(FileString), H5F_ACC_RDONLY_F, File_ID, iError, access_prp = Plist_File_ID)
+    IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not open file (iError) '//TRIM(FileString))
+    IF(File_ID.EQ.0) CALL abort(__STAMP__,'ERROR: H5FOPEN_F returned zero File_ID '//TRIM(FileString))
+  ELSE
+    ! Read-write without parallel HDF5: only root opens to avoid conflicts
+    IF(MPIRoot)THEN
+      CALL H5FOPEN_F(TRIM(FileString), H5F_ACC_RDWR_F, File_ID, iError, access_prp = Plist_File_ID)
+      IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not open file '//TRIM(FileString))
+    END IF
+  END IF
+END IF
+#endif /*USE_MPI_HDF5*/
 
 LOGWRITE(*,*)'...DONE!'
 
@@ -295,7 +327,7 @@ END SUBROUTINE OpenDataFile
 !==================================================================================================================================
 SUBROUTINE CloseDataFile()
 ! MODULES
-USE MOD_Globals,ONLY:UNIT_logOut,Logging
+USE MOD_Globals,ONLY:UNIT_logOut,Logging,MPIRoot
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT/OUTPUT VARIABLES
@@ -304,10 +336,19 @@ IMPLICIT NONE
 !==================================================================================================================================
 LOGWRITE(*,'(A)')'  CLOSE HDF5 FILE...'
 ! Close file
+#if USE_MPI_HDF5
 CALL H5PCLOSE_F(Plist_File_ID, iError)
 CALL H5FCLOSE_F(File_ID, iError)
-! Close FORTRAN predefined datatypes.
 CALL H5CLOSE_F(iError)
+#else
+! Sequential HDF5: close on any rank that has the file open (File_ID != 0).
+! Read-only opens are done by all ranks; write/create opens are done only by MPIRoot.
+IF(File_ID.NE.0)THEN
+  CALL H5PCLOSE_F(Plist_File_ID, iError)
+  CALL H5FCLOSE_F(File_ID, iError)
+  CALL H5CLOSE_F(iError)
+END IF
+#endif /*USE_MPI_HDF5*/
 File_ID=0
 LOGWRITE(*,*)'...DONE!'
 END SUBROUTINE CloseDataFile

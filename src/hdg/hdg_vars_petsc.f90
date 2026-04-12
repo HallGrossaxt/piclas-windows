@@ -13,6 +13,7 @@
 #include "piclas.h"
 #if USE_PETSC
 #include "petsc/finclude/petsc.h"
+#include "petsc_mpi_compat.h"
 #endif
 !===================================================================================================================================
 !> Contains global variables used by the HDG modules.

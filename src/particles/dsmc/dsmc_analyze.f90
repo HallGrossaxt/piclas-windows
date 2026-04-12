@@ -948,7 +948,7 @@ USE MOD_Globals
 USE MOD_Globals_Vars  ,ONLY: ProjectName, ElementaryCharge
 USE MOD_Mesh_Vars     ,ONLY: offsetElem,nGlobalElems, nElems
 USE MOD_io_HDF5
-USE MOD_HDF5_Output   ,ONLY: WriteAttributeToHDF5, WriteHDF5Header, WriteArrayToHDF5
+USE MOD_HDF5_Output   ,ONLY: WriteAttributeToHDF5, WriteHDF5Header, WriteArrayToHDF5, GatheredWriteArray
 USE MOD_Particle_Vars ,ONLY: nSpecies, Species, UseVarTimeStep, SampleElecExcitation, ExcitationLevelCounter, DoVirtualCellMerge
 USE MOD_Particle_Vars ,ONLY: SamplePressTensHeatflux
 USE MOD_BGK_Vars      ,ONLY: BGKInitDone
@@ -1180,9 +1180,6 @@ END IF
 CALL MPI_BARRIER(MPI_COMM_PICLAS,iError)
 #endif
 
-! Open data file for parallel output
-CALL OpenDataFile(FileName,create=.false.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-
 ALLOCATE(DSMC_MacroVal(1:nVar+nVar_quality+nVar_HeatPress+nVarMPF,nElems), STAT=ALLOCSTAT)
 IF (ALLOCSTAT.NE.0) THEN
   CALL abort(__STAMP__,' Cannot allocate output array: DSMC_MacroVal!')
@@ -1206,22 +1203,20 @@ ASSOCIATE (&
   PP_nElems    => INT(PP_nElems,IK)               ,&
   offsetElem   => INT(offsetElem,IK)              ,&
   nGlobalElems => INT(nGlobalElems,IK)         )
-  CALL WriteArrayToHDF5(DataSetName='ElemData' , rank=2         , &
-                        nValGlobal =(/nVarX    , nGlobalElems/) , &
-                        nVal       =(/nVarX    , PP_nElems/)    , &
-                        offset     =(/0_IK     , offsetElem/)   , &
-                        collective =.false.,  RealArray=DSMC_MacroVal(:,:))
+  CALL GatheredWriteArray(FileName,create=.FALSE.,DataSetName='ElemData' , rank=2         , &
+                          nValGlobal =(/nVarX    , nGlobalElems/) , &
+                          nVal       =(/nVarX    , PP_nElems/)    , &
+                          offset     =(/0_IK     , offsetElem/)   , &
+                          collective =.false.,  RealArray=DSMC_MacroVal(:,:))
   ! Output of electronic excitation rates in a separate container
   IF(SampleElecExcitation) THEN
-    CALL WriteArrayToHDF5(DataSetName='ExcitationData' , rank=2         , &
-                          nValGlobal =(/nVarExci , nGlobalElems/) , &
-                          nVal       =(/nVarExci , PP_nElems/)    , &
-                          offset     =(/0_IK     , offsetElem/)   , &
-                          collective =.false.,  RealArray=MacroElecExcitation(:,:))
+    CALL GatheredWriteArray(FileName,create=.FALSE.,DataSetName='ExcitationData' , rank=2 , &
+                            nValGlobal =(/nVarExci , nGlobalElems/) , &
+                            nVal       =(/nVarExci , PP_nElems/)    , &
+                            offset     =(/0_IK     , offsetElem/)   , &
+                            collective =.false.,  RealArray=MacroElecExcitation(:,:))
   END IF
 END ASSOCIATE
-
-CALL CloseDataFile()
 
 DEALLOCATE(StrVarNames)
 DEALLOCATE(DSMC_MacroVal)

@@ -423,8 +423,14 @@ END DO
 CALL BARRIER_AND_SYNC(SideInfo_Shared_Win,MPI_COMM_SHARED)
 
 IF (myComputeNodeRank.EQ.0) THEN
-  CALL MPI_ALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,SideInfo_Shared,recvcountSide  &
-      ,displsSide,MPI_STRUCT_SIDE         ,MPI_COMM_LEADERS_SHARED,IERROR)
+  ! Only gather across node leaders when there are multiple compute nodes.
+  ! MS-MPI MPI_ALLGATHERV(MPI_IN_PLACE,...) on a 1-process communicator corrupts
+  ! the receive buffer by zeroing it before filling from the (now-zero) in-place
+  ! buffer.  With a single node all data is already in shared memory — skip.
+  IF (nLeaderGroupProcs.GT.1) THEN
+    CALL MPI_ALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,SideInfo_Shared,recvcountSide  &
+        ,displsSide,MPI_STRUCT_SIDE         ,MPI_COMM_LEADERS_SHARED,IERROR)
+  END IF
   CALL MPI_TYPE_FREE(MPI_STRUCT_ELEM,iError)
   CALL MPI_TYPE_FREE(MPI_STRUCT_SIDE,iError)
   CALL MPI_TYPE_FREE(MPI_STRUCT_NODE,iError)

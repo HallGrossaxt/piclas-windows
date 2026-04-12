@@ -69,6 +69,11 @@ USE MOD_Particle_MPI           ,ONLY: IRecvNbOfParticles, MPIParticleSend,MPIPar
 #endif /*USE_MPI*/
 USE MOD_vMPF                   ,ONLY: SplitAndMerge
 USE MOD_Particle_Vars          ,ONLY: UseSplitAndMerge
+#if PICLAS_USE_GPU
+USE MOD_GPU_Vars               ,ONLY: GPUInitialized
+USE MOD_GPU_Interface          ,ONLY: GPU_LSERKStageBatch
+USE MOD_Particle_Vars          ,ONLY: UseVarTimeStep,UseRotRefFrame,DoFieldIonization
+#endif /*PICLAS_USE_GPU*/
 #endif /*PARTICLES*/
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Timers     ,ONLY: LBStartTime,LBSplitTime,LBPauseTime
@@ -84,6 +89,10 @@ REAL                          :: tStage,b_dt(1:nRKStages)
 #ifdef PARTICLES
 REAL                          :: timeStart,timeEnd
 INTEGER                       :: iPart
+#if PICLAS_USE_GPU
+LOGICAL                       :: UseGPUPush
+LOGICAL, ALLOCATABLE          :: IsPushArr(:)
+#endif /*PICLAS_USE_GPU*/
 #endif /*PARTICLES*/
 #if USE_LOADBALANCE
 REAL                          :: tLBStart ! load balance
@@ -96,6 +105,19 @@ b_dt = RK_b*dt
 
 #if defined(PARTICLES)
 IF (CalcCoupledPower) PCoupl = 0. ! if output of coupled power is active: reset PCoupl
+#if PICLAS_USE_GPU
+! GPU LSERK push is eligible when:
+!   - GPU has been initialised
+!   - No variable timestep (GPU kernel uses a single b_dt per stage)
+!   - No rotating reference frame (uses CalcPartPosInRotRef instead of simple push)
+!   - No coupled power output (requires per-particle host-side bookkeeping)
+!   - No field ionization (can change particle species mid-timestep)
+UseGPUPush = GPUInitialized          .AND. &
+             .NOT.UseVarTimeStep     .AND. &
+             .NOT.UseRotRefFrame     .AND. &
+             .NOT.CalcCoupledPower   .AND. &
+             .NOT.DoFieldIonization
+#endif /*PICLAS_USE_GPU*/
 #endif /*defined(PARTICLES)*/
 DO iStage = 1,nRKStages
   IF (iStage.EQ.1) THEN
@@ -143,6 +165,26 @@ DO iStage = 1,nRKStages
     LastPartPos(     1:3,1:PDM%ParticleVecLength)=PartState(   1:3,1:PDM%ParticleVecLength)
     PEM%LastGlobalElemID(1:PDM%ParticleVecLength)=PEM%GlobalElemID(1:PDM%ParticleVecLength)
     ! Perform the push
+#if PICLAS_USE_GPU
+    IF (UseGPUPush) THEN
+      ! GPU batch push: uploads PartState+Pt_temp+Pt, runs kernel, downloads results.
+      ! GPU_LSERKStageBatch also clears PDM%IsNewPart for all active particles,
+      ! mirroring the CPU loop's PDM%IsNewPart(iPart)=.FALSE. assignment.
+      ! Build isPush mask here (MOD_Part_Tools already USEd above) so that
+      ! gpu_interface.f90 does not need to USE MOD_Particle_Tools and can
+      ! compile before particle modules are available.
+      IF (.NOT. ALLOCATED(IsPushArr)) ALLOCATE(IsPushArr(PDM%maxParticleNumber))
+      DO iPart = 1, PDM%ParticleVecLength
+        IsPushArr(iPart) = isPushParticle(iPart)
+      END DO
+      CALL GPU_LSERKStageBatch(PartState, Pt_temp, Pt,                       &
+                                PDM%ParticleInside, PDM%IsNewPart, IsPushArr, &
+                                PDM%ParticleVecLength,                        &
+                                iStage,                                       &
+                                MERGE(0., RK_a(MAX(iStage,2)), iStage.EQ.1), &
+                                b_dt(iStage))
+    ELSE
+#endif /*PICLAS_USE_GPU*/
     IF (iStage.EQ.1) THEN
       DO iPart=1,PDM%ParticleVecLength
         IF (PDM%ParticleInside(iPart)) THEN
@@ -179,6 +221,9 @@ DO iStage = 1,nRKStages
         END IF ! PDM%ParticleInside(iPart)
       END DO ! iPart=1,PDM%ParticleVecLength
     END IF
+#if PICLAS_USE_GPU
+    END IF ! UseGPUPush
+#endif /*PICLAS_USE_GPU*/
 #if USE_LOADBALANCE
     CALL LBPauseTime(LB_PUSH,tLBStart)
 #endif /*USE_LOADBALANCE*/

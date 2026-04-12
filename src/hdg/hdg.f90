@@ -13,6 +13,7 @@
 #include "piclas.h"
 #if USE_PETSC
 #include "petsc/finclude/petsc.h"
+#include "petsc_mpi_compat.h"
 #endif
 
 !===================================================================================================================================
@@ -385,7 +386,7 @@ DO SideID=1,nBCSides
   SELECT CASE(BCType)
   CASE(HDGDIRICHLETBCSIDEIDS) ! Dirichlet
     nDirichletBCsides=nDirichletBCsides+1
-  CASE(10,11,12) ! Neumann
+  CASE(3,10,11,12) ! 3=symmetry/Euler-wall (zero normal flux = Neumann); 10-12=Neumann
     nNeumannBCsides=nNeumannBCsides+1
   CASE(20) ! Conductor: Floating Boundary Condition (FPC)
     nConductorBCsides=nConductorBCsides+1
@@ -439,7 +440,7 @@ DO SideID=1,nBCSides
     nDirichletBCsides=nDirichletBCsides+1
     DirichletBC(nDirichletBCsides)=SideID
     MaskedSide(SideID)=1
-  CASE(10,11,12) !Neumann,
+  CASE(3,10,11,12) ! 3=symmetry/Euler-wall (zero normal flux = Neumann); 10-12=Neumann
     nNeumannBCsides=nNeumannBCsides+1
     NeumannBC(nNeumannBCsides)=SideID
   CASE(20) ! Conductor: Floating Boundary Condition (FPC)

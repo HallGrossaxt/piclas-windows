@@ -1043,7 +1043,7 @@ IF(meshMode.GT.1)THEN
             CALL abort(__STAMP__,'SideID.LE.nBCSides and SideID is periodic should not happen')
           CASE(HDGDIRICHLETBCSIDEIDS) ! Dirichlet
             ! do not consider this side
-          CASE(10,11,12) ! Neumann
+          CASE(3,10,11,12) ! 3=symmetry/Euler-wall (zero normal flux = Neumann); 10-12=Neumann
             HDGSides = HDGSides + 1
           CASE(20) ! FPC
             HDGSides = HDGSides + 1

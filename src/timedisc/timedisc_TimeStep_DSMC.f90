@@ -60,6 +60,10 @@ USE MOD_part_RHS                 ,ONLY: CalcPartPosInRotRef, PushGranularSpecies
 USE MOD_part_pos_and_velo        ,ONLY: SetParticleVelocity
 USE MOD_Part_Tools               ,ONLY: InRotRefFrameCheck
 USE MOD_Part_Tools               ,ONLY: CalcPartSymmetryPos
+#if PICLAS_USE_GPU
+USE MOD_GPU_Vars                 ,ONLY: GPUInitialized
+USE MOD_GPU_Interface            ,ONLY: GPU_PushParticlesBatch
+#endif /*PICLAS_USE_GPU*/
 #if USE_MPI
 USE MOD_Particle_MPI_Boundary_Sampling, ONLY: ExchangeChemSurfData
 USE MOD_SurfaceModel_Chemistry   ,ONLY: ExchangeSurfChemCoverage
@@ -82,6 +86,9 @@ REAL                       :: timeEnd, timeStart, dtVar, RandVal
 #if USE_LOADBALANCE
 REAL                  :: tLBStart
 #endif /*USE_LOADBALANCE*/
+#if PICLAS_USE_GPU
+LOGICAL                    :: UseGPUPush
+#endif /*PICLAS_USE_GPU*/
 !===================================================================================================================================
 ! for reservoir simulation: no surface flux, particle push, tracking, ...
 IF (DSMC%ReservoirSimu) THEN ! fix grid should be defined for reservoir simu
@@ -126,6 +133,19 @@ END IF
 CALL LBStartTime(tLBStart)
 #endif /*USE_LOADBALANCE*/
 
+#if PICLAS_USE_GPU
+! GPU push is valid only for the simple constant-dt case without surface flux,
+! rotating reference frame, granular species, or axisymmetric treatment.
+! (Axisymmetric CalcPartSymmetryPos runs inside the CPU loop on updated positions;
+!  excluding that case avoids GPU push acting on stale positions.)
+UseGPUPush = GPUInitialized          .AND. &
+             .NOT.UseVarTimeStep     .AND. &
+             .NOT.UseRotRefFrame     .AND. &
+             .NOT.UseGranularSpecies .AND. &
+             .NOT.DoSurfaceFlux      .AND. &
+             .NOT.Symmetry%Axisymmetric
+#endif /*PICLAS_USE_GPU*/
+
 DO iPart=1,PDM%ParticleVecLength
   IF (PDM%ParticleInside(iPart)) THEN
     ! Skip granular particles here
@@ -150,6 +170,11 @@ DO iPart=1,PDM%ParticleVecLength
     IF(UseRotRefFrame) THEN
       LastPartVeloRotRef(1:3,iPart)=PartVeloRotRef(1:3,iPart)
       CALL CalcPartPosInRotRef(iPart, dtVar)
+#if PICLAS_USE_GPU
+    ELSE IF (UseGPUPush) THEN
+      ! Position update offloaded to GPU batch call below this loop — skip here
+      CONTINUE
+#endif /*PICLAS_USE_GPU*/
     ELSE
       PartState(1:3,iPart) = PartState(1:3,iPart) + PartState(4:6,iPart) * dtVar
     END IF
@@ -165,6 +190,14 @@ END DO
 IF(UseGranularSpecies) THEN
   CALL PushGranularSpecies()
 END IF
+
+#if PICLAS_USE_GPU
+! GPU batch position push: upload PartState, run kernel, download results.
+! Replaces the per-particle CPU push skipped above for simple constant-dt runs.
+IF (UseGPUPush) THEN
+  CALL GPU_PushParticlesBatch(PartState, PDM%ParticleInside, PDM%ParticleVecLength, dt)
+END IF
+#endif /*PICLAS_USE_GPU*/
 
 #if USE_LOADBALANCE
 CALL LBSplitTime(LB_PUSH,tLBStart)
