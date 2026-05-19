@@ -91,6 +91,134 @@
         "PICLAS_BUILD_POSTI":    "ON",
         "PICLAS_UNITTESTS":      "OFF"
       }
+    },
+    {
+      "name": "windows-maxwell-bgk-mpi-gpu",
+      "displayName": "Windows - maxwell + BGK-Flow + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-bgk-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "BGK-Flow",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-mpi-gpu",
+      "displayName": "Windows - maxwell + RK4 + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "RK4",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk3-mpi",
+      "displayName": "Windows - maxwell + RK3 + MPI",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk3-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK3"
+      }
+    },
+    {
+      "name": "windows-maxwell-radiation-mpi-gpu",
+      "displayName": "Windows - maxwell + Radiation + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-radiation-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "Radiation",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-superb-mpi",
+      "displayName": "Windows - maxwell + RK3 + MPI + SuperB POSTI",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-superb-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK3",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_SUPERB":    "ON"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-dmd-mpi",
+      "displayName": "Windows - maxwell + RK4 + DMD + MPI (no particles)",
+      "description": "PARTICLES=OFF build with DMD and piclas2vtk POSTI tools. Required by NIG_maxwell_RK4 (builds.ini: PICLAS_PARTICLES=OFF, POSTI_BUILD_DMD=ON).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-dmd-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_PARTICLES":      "OFF",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_DMD":       "ON",
+        "POSTI_BUILD_SUPERB":    "OFF",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
+      "name": "windows-edvm-mpi",
+      "displayName": "Windows - discrete_velocity + ED-DVM + MPI",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-edvm-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "discrete_velocity",
+        "PICLAS_TIMEDISCMETHOD": "ED-DVM",
+        "PICLAS_FV_2D":          "ON",
+        "PICLAS_PARTICLES":      "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-leapfrog-mpi-gpu",
+      "displayName": "Windows - poisson + Leapfrog + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-leapfrog-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "poisson",
+        "PICLAS_TIMEDISCMETHOD":    "Leapfrog",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-poisson-boris-mpi-gpu",
+      "displayName": "Windows - poisson + Boris-Leapfrog + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-boris-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "poisson",
+        "PICLAS_TIMEDISCMETHOD":    "Boris-Leapfrog",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-poisson-rk3-mpi-gpu",
+      "displayName": "Windows - poisson + RK3 + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-rk3-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "poisson",
+        "PICLAS_TIMEDISCMETHOD":    "RK3",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
     }
   ],
   "buildPresets": [
@@ -122,6 +250,56 @@
     {
       "name": "windows-ucrt64-superB",
       "configurePreset": "windows-ucrt64-superB",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-bgk-mpi-gpu",
+      "configurePreset": "windows-maxwell-bgk-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-mpi-gpu",
+      "configurePreset": "windows-maxwell-rk4-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk3-mpi",
+      "configurePreset": "windows-maxwell-rk3-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-radiation-mpi-gpu",
+      "configurePreset": "windows-maxwell-radiation-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-superb-mpi",
+      "configurePreset": "windows-maxwell-superb-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-dmd-mpi",
+      "configurePreset": "windows-maxwell-rk4-dmd-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-edvm-mpi",
+      "configurePreset": "windows-edvm-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-leapfrog-mpi-gpu",
+      "configurePreset": "windows-poisson-leapfrog-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-boris-mpi-gpu",
+      "configurePreset": "windows-poisson-boris-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-rk3-mpi-gpu",
+      "configurePreset": "windows-poisson-rk3-mpi-gpu",
       "jobs": 0
     }
   ]

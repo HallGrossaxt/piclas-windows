@@ -173,7 +173,10 @@ DO iStage = 1,nRKStages
       ! Build isPush mask here (MOD_Part_Tools already USEd above) so that
       ! gpu_interface.f90 does not need to USE MOD_Particle_Tools and can
       ! compile before particle modules are available.
-      IF (.NOT. ALLOCATED(IsPushArr)) ALLOCATE(IsPushArr(PDM%maxParticleNumber))
+      IF (.NOT. ALLOCATED(IsPushArr) .OR. SIZE(IsPushArr) < PDM%maxParticleNumber) THEN
+        IF (ALLOCATED(IsPushArr)) DEALLOCATE(IsPushArr)
+        ALLOCATE(IsPushArr(PDM%maxParticleNumber))
+      END IF
       DO iPart = 1, PDM%ParticleVecLength
         IsPushArr(iPart) = isPushParticle(iPart)
       END DO

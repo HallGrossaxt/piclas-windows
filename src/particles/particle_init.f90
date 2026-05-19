@@ -482,7 +482,7 @@ IF(.NOT. DoRestart) CALL CheckAndMayDeleteFIBGM()
 BLOCK
   USE MOD_GPU_Interface, ONLY: GPU_Init
   USE MOD_Particle_Vars, ONLY: PDM
-  CALL GPU_Init(PDM%maxParticleNumber)
+  CALL GPU_Init(PDM%maxAllowedParticleNumber)
 END BLOCK
 #endif /*PICLAS_USE_GPU*/
 

@@ -144,8 +144,24 @@ SUBROUTINE GPU_PushParticlesBatch(PartState, ParticleInside, nPart, dt)
   INTEGER, INTENT(IN)    :: nPart                 !< PDM%ParticleVecLength
   REAL,    INTENT(IN)    :: dt                    !< time step
   ! Local
-  INTEGER(C_INT) :: nPart_c
+  INTEGER(C_INT) :: nPart_c, newMax_c
   REAL(C_DOUBLE) :: dt_c
+  INTEGER        :: newMax
+
+  IF (nPart <= 0) RETURN
+
+  ! Grow host + device buffers when particle count exceeds the capacity allocated
+  ! during GPU_Init.  DSMC ionisation and surface emission can raise ParticleVecLength
+  ! above PDM%maxParticleNumber (the value passed at init time).
+  IF (nPart > GPU_nMaxPart) THEN
+    newMax   = MAX(nPart, GPU_nMaxPart * 2)
+    newMax_c = INT(newMax, C_INT)
+    CALL piclas_gpu_free_buffers()
+    CALL GPU_FreeActiveMask()
+    CALL piclas_gpu_alloc_buffers(newMax_c)
+    CALL GPU_AllocActiveMask(newMax)
+    GPU_nMaxPart = newMax
+  END IF
 
   ! Convert Fortran LOGICAL to C int (Fortran LOGICAL is not C bool)
   WHERE (ParticleInside(1:nPart))
@@ -183,9 +199,23 @@ SUBROUTINE GPU_LSERKStageBatch(PartState, Pt_temp, Pt,                        &
   REAL,    INTENT(IN)    :: RK_a_stage            !< RK_a(iStage); 0 if iStage==1
   REAL,    INTENT(IN)    :: b_dt_stage            !< RK_b(iStage) * dt
   ! Local
-  INTEGER :: iPart
-  INTEGER(C_INT) :: nPart_c, isStage1_c
+  INTEGER :: iPart, newMax
+  INTEGER(C_INT) :: nPart_c, isStage1_c, newMax_c
   REAL(C_DOUBLE) :: RK_a_c, b_dt_c
+
+  IF (nPart <= 0) RETURN
+
+  ! Grow host + device buffers when particle count exceeds the capacity allocated
+  ! during GPU_Init.  Same guard as GPU_PushParticlesBatch.
+  IF (nPart > GPU_nMaxPart) THEN
+    newMax   = MAX(nPart, GPU_nMaxPart * 2)
+    newMax_c = INT(newMax, C_INT)
+    CALL piclas_gpu_free_buffers()
+    CALL GPU_FreeActiveMask()
+    CALL piclas_gpu_alloc_buffers(newMax_c)
+    CALL GPU_AllocActiveMask(newMax)
+    GPU_nMaxPart = newMax
+  END IF
 
   ! Build integer masks from Fortran LOGICALs
   DO iPart = 1, nPart

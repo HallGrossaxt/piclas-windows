@@ -94,5 +94,7 @@ reggie/
 *.dll
 *.dll.a
 *.pdb
+*.exp
+*.lib
 build-ucrt64*/
 windows-tools/*.bak

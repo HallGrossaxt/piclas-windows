@@ -279,8 +279,9 @@ IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not open or create file '//TR
 ! - Write/create: only MPIRoot opens/creates to avoid exclusive file-lock contention.
 iError = 0
 IF(create)THEN
-  ! Only root creates files to avoid race conditions
-  IF(MPIRoot)THEN
+  ! single=.TRUE. means only the calling rank will call this (e.g. WriteRP from RP rank 0).
+  ! Without the single guard, only MPIRoot creates to avoid race conditions.
+  IF(MPIRoot .OR. single)THEN
     ! Set userblock size in creation property list (must be power of 2 and >= 512)
     IF(userblockSize_loc.GT.0)THEN
       tmp = userblockSize_512
@@ -301,8 +302,9 @@ ELSE
     IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not open file (iError) '//TRIM(FileString))
     IF(File_ID.EQ.0) CALL abort(__STAMP__,'ERROR: H5FOPEN_F returned zero File_ID '//TRIM(FileString))
   ELSE
-    ! Read-write without parallel HDF5: only root opens to avoid conflicts
-    IF(MPIRoot)THEN
+    ! Read-write without parallel HDF5: only root opens to avoid conflicts.
+    ! single=.TRUE. means only ONE rank calls this (e.g. serialized RP writes).
+    IF(MPIRoot .OR. single)THEN
       CALL H5FOPEN_F(TRIM(FileString), H5F_ACC_RDWR_F, File_ID, iError, access_prp = Plist_File_ID)
       IF(iError.NE.0) CALL abort(__STAMP__,'ERROR: Could not open file '//TRIM(FileString))
     END IF

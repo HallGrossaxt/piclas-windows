@@ -261,39 +261,45 @@ IF (myComputeNodeRank.EQ.0) THEN
   END DO
   recvcountNode(nLeaderGroupProcs-1) = nNonUniqueGlobalNodes - displsNode(nLeaderGroupProcs-1)
 
-  ! Gather mesh information in a non-blocking way
-  ALLOCATE(MPI_COMM_LEADERS_REQUEST(1:4))
-  ! ElemInfo_Shared
-  IF(readFEMconnectivity)THEN
-    MPI_LENGTH = ALLELEMINFOSIZE
-  ELSE
-    MPI_LENGTH = ELEMINFOSIZE
-  END IF ! readFEMconnectivity
-  MPI_DISPLACEMENT = 0  ! 0*SIZEOF(MPI_SIZE)
-  MPI_TYPE         = MPI_INTEGER
-  CALL MPI_TYPE_CREATE_STRUCT(1,MPI_LENGTH,MPI_DISPLACEMENT,MPI_TYPE,MPI_STRUCT_ELEM,iError)
-  CALL MPI_TYPE_COMMIT(MPI_STRUCT_ELEM,iError)
-  CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,ElemInfo_Shared,recvcountElem  &
-      ,displsElem                   ,MPI_STRUCT_ELEM         ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(1),IERROR)
-  ! SideInfo_Shared
-  MPI_LENGTH       = SIDEINFOSIZE+1
-  MPI_DISPLACEMENT = 0  ! 0*SIZEOF(MPI_SIZE)
-  MPI_TYPE         = MPI_INTEGER
-  CALL MPI_TYPE_CREATE_STRUCT(1,MPI_LENGTH,MPI_DISPLACEMENT,MPI_TYPE,MPI_STRUCT_SIDE,iError)
-  CALL MPI_TYPE_COMMIT(MPI_STRUCT_SIDE,iError)
-  CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,SideInfo_Shared,                 recvcountSide  &
-      ,displsSide                   ,MPI_STRUCT_SIDE         ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(2),IERROR)
-  ! NodeInfo_Shared
-  CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,NodeInfo_Shared,                 recvcountNode  &
-      ,displsNode                   ,MPI_INTEGER             ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(3),IERROR)
-  ! NodeCoords_Shared
-  MPI_LENGTH       = 3
-  MPI_DISPLACEMENT = 0  ! 0*SIZEOF(MPI_SIZE)
-  MPI_TYPE         = MPI_DOUBLE_PRECISION
-  CALL MPI_TYPE_CREATE_STRUCT(1,MPI_LENGTH,MPI_DISPLACEMENT,MPI_TYPE,MPI_STRUCT_NODE,iError)
-  CALL MPI_TYPE_COMMIT(MPI_STRUCT_NODE,iError)
-  CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,NodeCoords_Shared,recvcountNode  &
-      ,displsNode                   ,MPI_STRUCT_NODE          ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(4),IERROR)
+  ! Only gather across node leaders when there are multiple compute nodes.
+  ! MS-MPI MPI_IALLGATHERV(MPI_IN_PLACE,...) on a 1-process communicator corrupts
+  ! the receive buffer by zeroing it before filling from the (now-zero) in-place
+  ! buffer.  With a single node all data is already in shared memory -- skip.
+  IF (nLeaderGroupProcs.GT.1) THEN
+    ! Gather mesh information in a non-blocking way
+    ALLOCATE(MPI_COMM_LEADERS_REQUEST(1:4))
+    ! ElemInfo_Shared
+    IF(readFEMconnectivity)THEN
+      MPI_LENGTH = ALLELEMINFOSIZE
+    ELSE
+      MPI_LENGTH = ELEMINFOSIZE
+    END IF ! readFEMconnectivity
+    MPI_DISPLACEMENT = 0  ! 0*SIZEOF(MPI_SIZE)
+    MPI_TYPE         = MPI_INTEGER
+    CALL MPI_TYPE_CREATE_STRUCT(1,MPI_LENGTH,MPI_DISPLACEMENT,MPI_TYPE,MPI_STRUCT_ELEM,iError)
+    CALL MPI_TYPE_COMMIT(MPI_STRUCT_ELEM,iError)
+    CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,ElemInfo_Shared,recvcountElem  &
+        ,displsElem                   ,MPI_STRUCT_ELEM         ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(1),IERROR)
+    ! SideInfo_Shared
+    MPI_LENGTH       = SIDEINFOSIZE+1
+    MPI_DISPLACEMENT = 0  ! 0*SIZEOF(MPI_SIZE)
+    MPI_TYPE         = MPI_INTEGER
+    CALL MPI_TYPE_CREATE_STRUCT(1,MPI_LENGTH,MPI_DISPLACEMENT,MPI_TYPE,MPI_STRUCT_SIDE,iError)
+    CALL MPI_TYPE_COMMIT(MPI_STRUCT_SIDE,iError)
+    CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,SideInfo_Shared,                 recvcountSide  &
+        ,displsSide                   ,MPI_STRUCT_SIDE         ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(2),IERROR)
+    ! NodeInfo_Shared
+    CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,NodeInfo_Shared,                 recvcountNode  &
+        ,displsNode                   ,MPI_INTEGER             ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(3),IERROR)
+    ! NodeCoords_Shared
+    MPI_LENGTH       = 3
+    MPI_DISPLACEMENT = 0  ! 0*SIZEOF(MPI_SIZE)
+    MPI_TYPE         = MPI_DOUBLE_PRECISION
+    CALL MPI_TYPE_CREATE_STRUCT(1,MPI_LENGTH,MPI_DISPLACEMENT,MPI_TYPE,MPI_STRUCT_NODE,iError)
+    CALL MPI_TYPE_COMMIT(MPI_STRUCT_NODE,iError)
+    CALL MPI_IALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,NodeCoords_Shared,recvcountNode  &
+        ,displsNode                   ,MPI_STRUCT_NODE          ,MPI_COMM_LEADERS_SHARED,MPI_COMM_LEADERS_REQUEST(4),IERROR)
+  END IF ! nLeaderGroupProcs.GT.1
 END IF
 #endif /*USE_MPI*/
 
@@ -373,8 +379,12 @@ END IF
 #if USE_MPI
 ! Finish non-blocking mesh communication
 IF (myComputeNodeRank.EQ.0) THEN
-  CALL MPI_WAITALL(4,MPI_COMM_LEADERS_REQUEST,MPI_STATUSES_IGNORE,IERROR)
-  DEALLOCATE(MPI_COMM_LEADERS_REQUEST)
+  ! Only wait/deallocate when the non-blocking gathers were actually posted
+  ! (single-node runs skip the gathers to avoid the MS-MPI MPI_IN_PLACE buffer-zeroing bug).
+  IF (nLeaderGroupProcs.GT.1) THEN
+    CALL MPI_WAITALL(4,MPI_COMM_LEADERS_REQUEST,MPI_STATUSES_IGNORE,IERROR)
+    DEALLOCATE(MPI_COMM_LEADERS_REQUEST)
+  END IF
 END IF
 
 ! Ensure communication for determination of SIDE_LOCALID
@@ -430,10 +440,10 @@ IF (myComputeNodeRank.EQ.0) THEN
   IF (nLeaderGroupProcs.GT.1) THEN
     CALL MPI_ALLGATHERV(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,SideInfo_Shared,recvcountSide  &
         ,displsSide,MPI_STRUCT_SIDE         ,MPI_COMM_LEADERS_SHARED,IERROR)
+    CALL MPI_TYPE_FREE(MPI_STRUCT_ELEM,iError)
+    CALL MPI_TYPE_FREE(MPI_STRUCT_SIDE,iError)
+    CALL MPI_TYPE_FREE(MPI_STRUCT_NODE,iError)
   END IF
-  CALL MPI_TYPE_FREE(MPI_STRUCT_ELEM,iError)
-  CALL MPI_TYPE_FREE(MPI_STRUCT_SIDE,iError)
-  CALL MPI_TYPE_FREE(MPI_STRUCT_NODE,iError)
 END IF
 
 ! Write compute-node local SIDE_NBELEMTYPE

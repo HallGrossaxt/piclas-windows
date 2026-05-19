@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -87,12 +87,16 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
     <div class="card">
       <h3>Equation System</h3>
       <div class="opt-group" id="grp-eqnsys">
-        <button class="opt-btn active" data-val="maxwell" onclick="sel('eqnsys',this)">maxwell</button>
-        <button class="opt-btn"        data-val="poisson" onclick="sel('eqnsys',this)">poisson</button>
+        <button class="opt-btn active" data-val="maxwell"           onclick="sel('eqnsys',this)">maxwell</button>
+        <button class="opt-btn"        data-val="poisson"           onclick="sel('eqnsys',this)">poisson</button>
+        <button class="opt-btn"        data-val="discrete_velocity" onclick="sel('eqnsys',this)">discrete_velocity</button>
+        <button class="opt-btn"        data-val="drift_diffusion"   onclick="sel('eqnsys',this)">drift_diffusion</button>
       </div>
       <div class="desc">
-        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser / PIC-DSMC simulations. Compatible with all time methods.<br>
-        <b>poisson</b>: electrostatic Poisson solver (HDG) &mdash; PIC plasma without radiation. Internally enables HDG; only <b>Boris-Leapfrog, Leapfrog, RK3, RK4, RK14</b> are supported. DSMC, FP-Flow, BGK-Flow and RK4-implicit will fail at configure time with this solver.
+        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser / combined DSMC+PIC-EM simulations. Use with RK3, RK4, RK14, DSMC, FP-Flow, BGK-Flow, Radiation.<br>
+        <b>poisson</b>: electrostatic Poisson solver (HDG) &mdash; electrostatic PIC without radiation. Supported: Euler-Explicit, Higuera-Cary, Boris-Leapfrog, Leapfrog, RK3, RK4, RK14. DSMC, FP-Flow, BGK-Flow, Radiation, ED-DVM, Explicit-FV, PLOESMA <b>fail</b> at configure time.<br>
+        <b>discrete_velocity</b>: Boltzmann discrete-velocity (FV solver) &mdash; use with ED-DVM, PLOESMA, or Explicit-FV.<br>
+        <b>drift_diffusion</b>: drift-diffusion (HDG+FV) &mdash; use with Explicit-FV or RK3/RK4/RK14 with combined field+FV.
       </div>
       <div class="compat" id="compat-eqnsys"></div>
     </div>
@@ -105,18 +109,28 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <button class="opt-btn"        data-val="RK14"           onclick="sel('timedisc',this)">RK14</button>
         <button class="opt-btn"        data-val="Boris-Leapfrog" onclick="sel('timedisc',this)">Boris-Leapfrog</button>
         <button class="opt-btn"        data-val="Leapfrog"       onclick="sel('timedisc',this)">Leapfrog</button>
-        <button class="opt-btn"        data-val="RK4-implicit"   onclick="sel('timedisc',this)">RK4-implicit</button>
+        <button class="opt-btn"        data-val="Euler-Explicit" onclick="sel('timedisc',this)">Euler-Explicit</button>
+        <button class="opt-btn"        data-val="Higuera-Cary"   onclick="sel('timedisc',this)">Higuera-Cary</button>
         <button class="opt-btn"        data-val="DSMC"           onclick="sel('timedisc',this)">DSMC</button>
         <button class="opt-btn"        data-val="FP-Flow"        onclick="sel('timedisc',this)">FP-Flow</button>
         <button class="opt-btn"        data-val="BGK-Flow"       onclick="sel('timedisc',this)">BGK-Flow</button>
+        <button class="opt-btn"        data-val="Radiation"      onclick="sel('timedisc',this)">Radiation</button>
+        <button class="opt-btn"        data-val="ED-DVM"         onclick="sel('timedisc',this)">ED-DVM</button>
+        <button class="opt-btn"        data-val="Explicit-FV"    onclick="sel('timedisc',this)">Explicit-FV</button>
+        <button class="opt-btn"        data-val="PLOESMA"        onclick="sel('timedisc',this)">PLOESMA</button>
       </div>
       <div class="desc">
-        <b>RK3/RK4/RK14</b>: explicit Runge-Kutta &mdash; general purpose.<br>
-        <b>Boris-Leapfrog</b>: symplectic, ideal for PIC particle tracking.<br>
-        <b>Leapfrog</b>: 2nd-order, lightweight &mdash; recommended for electrostatic PIC.<br>
-        <b>RK4-implicit</b>: for stiff systems with disparate time scales.<br>
-        <b>DSMC</b>: Direct Simulation Monte Carlo &mdash; rarefied gas / particle collisions. Use with <b>maxwell</b>. Required for the <code>dsmc-cone-3D</code> tutorial.<br>
-        <b>FP-Flow / BGK-Flow</b>: stochastic particle methods for transitional flow regimes. Require particles (PICLAS_PARTICLES=ON, the default).
+        <b>RK3 / RK4 / RK14</b>: explicit LSERK Runge-Kutta. Works with <b>maxwell</b> (PP_TimeDiscMethod=1/2/6), <b>poisson</b> (HDG, 501/502/506), or <b>drift_diffusion</b> (HDG+FV). <b>maxwell+RK4 is the correct build for combined DSMC+PIC-EM</b> &mdash; DSMC collision physics is enabled at runtime via parameter file (e.g. <code>Particles-DSMC-CollisMode=3</code>).<br>
+        <b>Boris-Leapfrog</b>: symplectic Boris pusher (PP_TimeDiscMethod=508) &mdash; <b>requires poisson</b>. Fails with maxwell.<br>
+        <b>Leapfrog</b>: 2nd-order leapfrog (PP_TimeDiscMethod=509) &mdash; <b>requires poisson</b>. Fails with maxwell.<br>
+        <b>Euler-Explicit</b>: 1st-order explicit Euler for HDG (PP_TimeDiscMethod=500) &mdash; <b>requires poisson</b>.<br>
+        <b>Higuera-Cary</b>: energy-conserving relativistic Boris variant (PP_TimeDiscMethod=507) &mdash; <b>requires poisson</b>.<br>
+        <b>DSMC</b>: <em>pure</em> Direct Simulation Monte Carlo time loop (PP_TimeDiscMethod=4, no EM field solve). Use with <b>maxwell</b>. For combined DSMC+PIC-EM use <b>RK4</b> + maxwell instead and enable DSMC at runtime.<br>
+        <b>FP-Flow / BGK-Flow</b>: stochastic particle methods for transitional flow regimes. Require <b>maxwell</b> and PICLAS_PARTICLES=ON (the default).<br>
+        <b>Radiation</b>: radiative transfer time loop (PP_TimeDiscMethod=600). Requires <b>maxwell</b>.<br>
+        <b>ED-DVM</b>: explicit discrete-velocity method (PP_TimeDiscMethod=700, FV solver). Requires <b>discrete_velocity</b> equation system.<br>
+        <b>Explicit-FV</b>: explicit finite-volume time stepping (PP_TimeDiscMethod=701). Requires <b>discrete_velocity</b> or <b>drift_diffusion</b>.<br>
+        <b>PLOESMA</b>: plasma+DVM coupling with HDG fields + FV particles (PP_TimeDiscMethod=702). Requires <b>discrete_velocity</b>.
       </div>
       <div class="compat" id="compat-timedisc"></div>
     </div>
@@ -172,9 +186,10 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
       </div>
       <div class="desc">
         Enable GPU-accelerated particle position push via CUDA.<br><br>
-        <b>What is accelerated (v0.9.2):</b><br>
-        &bull; <b>DSMC position push</b> &mdash; batch <code>pos += vel &times; dt</code> for all active particles, replacing the per-particle CPU loop. Active when <code>DSMC</code> time method is selected and none of the following are enabled: variable time step, rotating reference frame, granular species, surface flux, axisymmetric geometry.<br>
-        &bull; Other time methods (Boris-Leapfrog, RK4, etc.): GPU is present but the push is not yet wired in &mdash; they still run on CPU.<br><br>
+        <b>What is accelerated (v0.9.3):</b><br>
+        &bull; <b>DSMC position push</b> &mdash; batch <code>pos += vel &times; dt</code> for all active particles. Active when <code>DSMC</code> time method is selected and none of: variable time step, rotating reference frame, granular species, surface flux, axisymmetric geometry.<br>
+        &bull; <b>RK4 / RK14 LSERK stage push</b> &mdash; GPU-accelerated per-stage velocity+position update (Carpenter 1994 / Niegemann 2012 coefficients). Active when <code>maxwell + RK4</code> or <code>maxwell + RK14</code> is selected and none of: variable time step, rotating reference frame, coupled power output, field ionization.<br>
+        &bull; Other time methods: GPU build is valid but particle push runs on CPU.<br><br>
         <b>Requirements:</b><br>
         &bull; <b>NVIDIA GPU</b> (Ampere / RTX 30xx or newer recommended, CC&nbsp;&ge;&nbsp;8.6)<br>
         &bull; <b>CUDA Toolkit 12+</b> &mdash; install from <a href="https://developer.nvidia.com/cuda-downloads" style="color:#64ffda;" target="_blank">developer.nvidia.com</a>; ensure <code>nvcc.exe</code> is on <code>PATH</code> or <code>CUDA_PATH</code> is set<br>
@@ -293,15 +308,9 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         [GPU] CUDA device 0 : NVIDIA GeForce RTX 30xx<br>
         [GPU] PICLas GPU acceleration ENABLED.
       </code>
-      <b>Active push conditions</b> &mdash; the GPU position push fires when <em>all</em> of the following are true:
-      <ul style="margin:5px 0 8px 18px;line-height:1.7;">
-        <li>Time method = <b>DSMC</b></li>
-        <li>Constant time step (no <code>UseVarTimeStep</code>)</li>
-        <li>No rotating reference frame</li>
-        <li>No granular species</li>
-        <li>No surface flux</li>
-        <li>Not axisymmetric</li>
-      </ul>
+      <b>Active push conditions:</b><br>
+      <em>DSMC push</em> &mdash; time method = <b>DSMC</b>, constant dt, no rotating reference frame, no granular species, no surface flux, not axisymmetric.<br>
+      <em>RK4 / RK14 LSERK push</em> (v0.9.3) &mdash; time method = <b>RK4</b> or <b>RK14</b> with <b>maxwell</b>, constant dt, no rotating reference frame, no coupled power, no field ionization.<br>
       <b>Distribution</b> &mdash; copy <code>cudart64_13.dll</code> from
       <code>%CUDA_PATH%\bin\x64\</code> into the same folder as <code>piclas.exe</code> for deployment on machines without the CUDA Toolkit installed.
     </div>
@@ -391,12 +400,15 @@ function getGpuCompatMsg(o) {
   if (!o.gpu) return '';
   if (o.petsc) return '\u26A0 GPU is not compatible with PETSc. PETSc has been deselected.';
   if (o.eqnsys !== 'maxwell') {
-    return '\u26A0 GPU position push requires equation system \u201Cmaxwell\u201D + time method \u201CDSMC\u201D. The \u201C' + o.eqnsys + '\u201D solver does not support GPU acceleration in v0.9.2.';
+    return '⚠ GPU particle push requires equation system “maxwell”. The “' + o.eqnsys + '” solver does not support GPU acceleration.';
   }
   if (o.timedisc === 'DSMC') {
     return '\u2139 GPU position push active: maxwell + DSMC + constant dt + no surface flux = batch pos\u2009+=\u2009vel\u2009\u00D7\u2009dt on GPU.';
   }
-  return '\u26A0 GPU build selected but \u201C' + o.timedisc + '\u201D time method: the GPU position push is only wired for DSMC in v0.9.2. Particle pushing will still run on CPU. Switch to DSMC to activate the GPU kernel.';
+  if (o.timedisc === 'RK4' || o.timedisc === 'RK14') {
+    return 'ℹ GPU LSERK stage push active (v0.9.3): maxwell + ' + o.timedisc + ' = per-stage vel+pos update on GPU. Requires: constant dt, no rotating reference frame, no coupled power, no field ionization.';
+  }
+  return '⚠ GPU build selected but “' + o.timedisc + '” time method: GPU particle push is not wired for this time method. Particle pushing will run on CPU.';
 }
 
 function getBuildDir(o) {
@@ -469,10 +481,19 @@ function updateAll() {
   var eqMsg = '';
   var es    = o.eqnsys;
   var td    = o.timedisc;
-  var HDG_INCOMPATIBLE = ['DSMC', 'FP-Flow', 'BGK-Flow', 'RK4-implicit'];
-  if (es === 'poisson' && HDG_INCOMPATIBLE.indexOf(td) >= 0) {
-    eqMsg = '\u274C Configure will FAIL: \u201C' + td + '\u201D is not supported with the Poisson (HDG) solver. '
-          + 'Switch to maxwell for DSMC/FP-Flow/BGK-Flow, or use Boris-Leapfrog / Leapfrog / RK3 / RK4 / RK14 with poisson.';
+  // Methods that require specific equation systems
+  var POISSON_ONLY       = ['Euler-Explicit', 'Higuera-Cary', 'Boris-Leapfrog', 'Leapfrog'];
+  var MAXWELL_ONLY       = ['DSMC', 'FP-Flow', 'BGK-Flow', 'Radiation'];
+  var DISCRETE_VEL_ONLY  = ['ED-DVM', 'PLOESMA'];
+  var FV_EQNSYS          = ['Explicit-FV'];
+  if (POISSON_ONLY.indexOf(td) >= 0 && es !== 'poisson') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires PICLAS_EQNSYSNAME=poisson (HDG solver). Switch to poisson or choose a different time method.';
+  } else if (MAXWELL_ONLY.indexOf(td) >= 0 && es !== 'maxwell') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires PICLAS_EQNSYSNAME=maxwell. Switch to maxwell or choose a different time method.';
+  } else if (DISCRETE_VEL_ONLY.indexOf(td) >= 0 && es !== 'discrete_velocity') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires PICLAS_EQNSYSNAME=discrete_velocity.';
+  } else if (FV_EQNSYS.indexOf(td) >= 0 && es !== 'discrete_velocity' && es !== 'drift_diffusion') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires a finite-volume equation system (discrete_velocity or drift_diffusion).';
   }
   eqEl.textContent   = eqMsg;
   eqEl.style.display = eqMsg ? 'block' : 'none';
@@ -481,16 +502,30 @@ function updateAll() {
   // Time-disc compatibility hint
   var el  = document.getElementById('compat-timedisc');
   var msg = '';
-  if (es === 'maxwell' && td === 'Leapfrog') {
-    msg = '\u26A0 Leapfrog is designed for electrostatic PIC, not Maxwell. Consider RK4 or Boris-Leapfrog.';
-  } else if (td === 'DSMC') {
-    msg = '\u2139 DSMC: particle collisions via Direct Simulation Monte Carlo. Requires particles (PICLAS_PARTICLES=ON, the default). Correct setting for the dsmc-cone-3D tutorial.';
+  if (POISSON_ONLY.indexOf(td) >= 0 && es !== 'poisson') {
+    msg = '';  // already shown in eqnsys hint
+  } else if ((td === 'RK4' || td === 'RK14') && es === 'maxwell') {
+    msg = 'ℹ maxwell + ' + td + ': LSERK particle push + DGSEM EM field solver. Combined DSMC+PIC-EM: build this and enable DSMC collision physics at runtime (Particles-DSMC-CollisMode=3 etc.). GPU push available (v0.9.3).';
+  } else if (td === 'DSMC' && es === 'maxwell') {
+    msg = 'ℹ Pure DSMC time loop (PP_TimeDiscMethod=4) — no EM field solve. For combined DSMC+PIC-EM, use maxwell+RK4 instead and enable Particles-DSMC-CollisMode at runtime.';
   } else if (td === 'FP-Flow' || td === 'BGK-Flow') {
-    msg = '\u2139 ' + td + ': stochastic particle method for transitional flow. Requires particles (PICLAS_PARTICLES=ON, the default).';
+    msg = 'ℹ ' + td + ': stochastic particle method for transitional flow. Requires PICLAS_PARTICLES=ON (the default).';
+  } else if (td === 'Radiation') {
+    msg = 'ℹ Radiation: radiative transfer solver. Enables ray-tracing and radiative-transfer physics. Requires maxwell.';
+  } else if (td === 'ED-DVM') {
+    msg = 'ℹ ED-DVM: explicit discrete-velocity method for Boltzmann equation (FV, no HDG). Requires discrete_velocity equation system.';
+  } else if (td === 'PLOESMA') {
+    msg = 'ℹ PLOESMA: plasma+DVM coupling (HDG fields + FV particles). Requires discrete_velocity equation system.';
+  } else if (td === 'Explicit-FV') {
+    msg = 'ℹ Explicit-FV: explicit finite-volume time stepping. Requires discrete_velocity or drift_diffusion equation system.';
+  } else if (td === 'Euler-Explicit') {
+    msg = 'ℹ Euler-Explicit (PP_TimeDiscMethod=500): 1st-order explicit Euler for HDG/Poisson. Requires poisson equation system.';
+  } else if (td === 'Higuera-Cary') {
+    msg = 'ℹ Higuera-Cary (PP_TimeDiscMethod=507): energy-conserving relativistic Boris variant. Requires poisson equation system.';
   }
   el.textContent   = msg;
   el.style.display = msg ? 'block' : 'none';
-  el.className     = msg.charAt(0) === '\u2139' ? 'compat info' : 'compat';
+  el.className     = msg.charAt(0) === 'ℹ' ? 'compat info' : 'compat';
 }
 
 // ── Clipboard helpers ─────────────────────────────────────────────────────────

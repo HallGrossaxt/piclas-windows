@@ -166,6 +166,8 @@ INTEGER                        :: iSide,iHaloElem
 INTEGER                        :: ElemID,ElemDone
 REAL                           :: deltaT
 REAL                           :: globalDiag,maxCellRadius
+REAL                           :: BGMredBuf(3)   ! scratch buffer — avoids MPI_IN_PLACE (MS-MPI corruption)
+REAL                           :: BGMscalarBuf   ! scalar scratch buffer for same purpose
 INTEGER,ALLOCATABLE            :: sendbuf(:,:,:),recvbuf(:,:,:)
 INTEGER,ALLOCATABLE            :: offsetElemsInBGMCell(:,:,:)
 INTEGER                        :: nHaloElems
@@ -353,8 +355,12 @@ IF(GEO%InitFIBGM) THEN
       FIBGMdeltas1(3) = FIBGMdeltas1(3) + (BoundsOfElem_Shared(2,3,iElem)-BoundsOfElem_Shared(1,3,iElem))**2
     END DO
 #if USE_MPI
-    CALL MPI_ALLREDUCE(MPI_IN_PLACE,FIBGMdeltas1,3,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
-    CALL MPI_ALLREDUCE(MPI_IN_PLACE,ElemWeights ,3,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+    ! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) corrupts the buffer for all communicator sizes.
+    ! Use explicit send/recv buffers to avoid this.
+    CALL MPI_ALLREDUCE(FIBGMdeltas1,BGMredBuf,3,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+    FIBGMdeltas1 = BGMredBuf
+    CALL MPI_ALLREDUCE(ElemWeights ,BGMredBuf,3,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+    ElemWeights  = BGMredBuf
 #endif
     ! FIBGMdeltas1    = FIBGMdeltas1/REAL(nGlobalElems)
     FIBGMdeltas1    = FIBGMdeltas1/ElemWeights
@@ -368,7 +374,8 @@ IF(GEO%InitFIBGM) THEN
       FIBGMdeltas2(3) = MIN(FIBGMdeltas2(3),BoundsOfElem_Shared(2,3,iElem)-BoundsOfElem_Shared(1,3,iElem))
     END DO
 #if USE_MPI
-    CALL MPI_ALLREDUCE(MPI_IN_PLACE,FIBGMdeltas2(1:3),3,MPI_DOUBLE_PRECISION,MPI_MIN,MPI_COMM_PICLAS,iError)
+    CALL MPI_ALLREDUCE(FIBGMdeltas2(1:3),BGMredBuf,3,MPI_DOUBLE_PRECISION,MPI_MIN,MPI_COMM_PICLAS,iError)
+    FIBGMdeltas2(1:3) = BGMredBuf
 #endif
     ! Similar to Octree 50 (~25 including SideElems) Elements per FIBGM cell
     FIBGMdeltas2    = FIBGMdeltas2 * 25.**(1./Symmetry%Order)
@@ -702,7 +709,9 @@ DO iElem = firstElem, lastElem
                                                    GEO%FIBGMSymmetryVec))
 END DO
 ! >> Communicate global maximum
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,maxCellRadius,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_SHARED,iError)
+! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) corrupts the buffer; use explicit send/recv buffers.
+BGMscalarBuf = maxCellRadius
+CALL MPI_ALLREDUCE(BGMscalarBuf,maxCellRadius,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_SHARED,iError)
 WRITE(hilf,'(A,E15.7,A)') ' | Found max. cell radius as', maxCellRadius, ', for building halo BGM ...'
 LBWRITE(UNIT_stdOut,'(A)',ADVANCE='NO') TRIM(hilf)
 GETTIME(StartT)
@@ -1593,8 +1602,9 @@ IF(GEO%InitFIBGM) THEN
 
   ! 1.2) FIBGM_nTotalElems can just be added up
   IF (myComputeNodeRank.EQ.0) THEN
-    ! All-reduce between node leaders
-    CALL MPI_ALLREDUCE(MPI_IN_PLACE,FIBGM_nTotalElems_Shared,(BGMiglobDelta+1)*(BGMjglobDelta+1)*(BGMkglobDelta+1),MPI_INTEGER,MPI_SUM,MPI_COMM_LEADERS_SHARED,iError)
+    ! All-reduce between node leaders (single-node: 1 leader → MPI_IN_PLACE would zero the buffer → skip)
+    IF(nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLREDUCE(MPI_IN_PLACE,FIBGM_nTotalElems_Shared,(BGMiglobDelta+1)*(BGMjglobDelta+1)*(BGMkglobDelta+1),MPI_INTEGER,MPI_SUM,MPI_COMM_LEADERS_SHARED,iError)
   END IF
   CALL BARRIER_AND_SYNC(FIBGM_nTotalElems_Shared_Win,MPI_COMM_SHARED)
 
@@ -1699,7 +1709,9 @@ IF(GEO%InitFIBGM) THEN
 
     ! 2.5) Communicate the partially filled arrays between the procs
     ! > Technically, this could be an MPI_ALLGATHERV but good luck figuring out the linearized displacements
-    CALL MPI_ALLREDUCE(MPI_IN_PLACE,FIBGMProcs,nFIBGMToProc,MPI_INTEGER,MPI_MAX,MPI_COMM_LEADERS_SHARED,iError)
+    ! Single-node: 1 leader → MPI_IN_PLACE would zero the buffer → skip
+    IF(nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLREDUCE(MPI_IN_PLACE,FIBGMProcs,nFIBGMToProc,MPI_INTEGER,MPI_MAX,MPI_COMM_LEADERS_SHARED,iError)
   END IF ! myComputeNodeRank.EQ.0
 
   ! De-allocate FLAG array

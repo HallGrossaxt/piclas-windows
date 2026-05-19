@@ -173,7 +173,7 @@ END IF
 
 SWRITE(UNIT_stdOut,'(A)',ADVANCE='NO')' Read recordpoint definitions from data file "'//TRIM(FileString)//'" ...'
 ! Open data file
-CALL OpenDataFile(FileString,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
+CALL OpenDataFile(FileString,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
 
 ! compare mesh file names
 CALL ReadAttribute(File_ID,'MeshFile',1,StrScalar=MeshFile_RPList)
@@ -538,7 +538,11 @@ CALL MPI_BARRIER(RP_COMM,iError)
 IF(nRP_Procs.EQ.1)THEN
   CALL OpenDataFile(Filestring,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
 ELSE
+#if USE_MPI_HDF5
+  ! Parallel HDF5: all RP ranks open collectively
   CALL OpenDataFile(Filestring,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=RP_COMM)
+#endif /* USE_MPI_HDF5 */
+  ! Serial HDF5 + nRP_Procs>1: file is opened per-rank in the serialized write loop below
 END IF
 #else
 CALL OpenDataFile(Filestring,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
@@ -595,6 +599,8 @@ IF(iSample.GT.0)THEN
                             collective  = .FALSE.)
 #if USE_MPI
     ELSE
+#if USE_MPI_HDF5
+      ! Parallel HDF5: all RP ranks write collectively
       CALL WriteArrayToHDF5(DataSetName = 'RP_Data'   , rank = 3      , &
                             nValGlobal  = (/PP_nVarP1 , INT(nGlobalRP , IK)                  , nSamples/) , &
                             nVal        = (/PP_nVarP1 , nRP           , iSample/)            , &
@@ -603,12 +609,54 @@ IF(iSample.GT.0)THEN
                             chunkSize   = (/PP_nVar+1 , nGlobalRP     , chunkSamples      /) , &
                             RealArray   = RP_Data(:,:,1:iSample),&
                             collective  = .TRUE.)
+#endif /* USE_MPI_HDF5 */
+      ! Serial HDF5 + nRP_Procs>1: written in serialized loop after the ASSOCIATE block
     END IF
 #endif
   END ASSOCIATE
   lastSample=RP_Data(:,:,iSample)
 END IF
+
+! Close file and (for serial HDF5 + nRP_Procs>1) serialize open/write/close per RP rank
+#if USE_MPI
+IF(nRP_Procs.GT.1)THEN
+#if USE_MPI_HDF5
+  CALL CloseDataFile()
+#else /* serial HDF5 */
+  ! Each RP rank opens the file in turn, writes its local record-point slice, then closes.
+  ! MPI_BARRIER between turns prevents simultaneous RDWR access (Windows exclusive file lock).
+  BLOCK
+    INTEGER :: iRPrank_loop
+    DO iRPrank_loop = 0, nRP_Procs-1
+      IF(myRPrank.EQ.iRPrank_loop .AND. iSample.GT.0)THEN
+        CALL OpenDataFile(Filestring,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+        ASSOCIATE(PP_nVarP1  => INT(PP_nVar_loc+1,IK) ,&
+                  nSamples_a => INT(nSamples,IK)        ,&
+                  nRP_a      => INT(nRP,IK)              ,&
+                  iSample_a  => INT(iSample,IK)          ,&
+                  offsetRP_a => INT(offsetRP,IK)         )
+          CALL WriteArrayToHDF5(DataSetName='RP_Data'   , rank=3                                               ,&
+                                nValGlobal=(/PP_nVarP1  , INT(nGlobalRP,IK)    , nSamples_a/)                 ,&
+                                nVal      =(/PP_nVarP1  , nRP_a                , iSample_a/)                  ,&
+                                offset    =(/0_IK       , offsetRP_a           , nSamples_a-iSample_a/)       ,&
+                                resizeDim =(/.FALSE.    , .FALSE.              , .TRUE./)                      ,&
+                                chunkSize =(/PP_nVar+1  , nGlobalRP            , chunkSamples/)               ,&
+                                RealArray =RP_Data(:,:,1:iSample)                                             ,&
+                                collective=.FALSE.)
+        END ASSOCIATE
+        CALL CloseDataFile()
+      END IF
+      CALL MPI_BARRIER(RP_COMM,iError)
+    END DO
+  END BLOCK
+#endif /* USE_MPI_HDF5 */
+ELSE
+  CALL CloseDataFile()
+END IF
+#else
 CALL CloseDataFile()
+#endif /* USE_MPI */
+
 ! Reset buffer
 RP_Data=0.
 iSample=0

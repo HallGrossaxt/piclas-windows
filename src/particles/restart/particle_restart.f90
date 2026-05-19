@@ -118,6 +118,7 @@ INTEGER                            :: OffsetTotalNbrOfMissingParticles(0:nProces
 INTEGER                            :: NbrOfFoundParts, RecCount(0:nProcessors-1)
 INTEGER, ALLOCATABLE               :: SendBuffPoly(:), RecBuffPoly(:)
 REAL, ALLOCATABLE                  :: SendBuffAmbi(:), RecBuffAmbi(:), SendBuffElec(:), RecBuffElec(:)
+REAL, ALLOCATABLE                  :: SendBuffRestart(:,:)
 INTEGER                            :: LostPartsPoly(0:nProcessors-1), DisplacePoly(0:nProcessors-1)
 INTEGER                            :: LostPartsElec(0:nProcessors-1), DisplaceElec(0:nProcessors-1)
 INTEGER                            :: LostPartsAmbi(0:nProcessors-1), DisplaceAmbi(0:nProcessors-1)
@@ -586,15 +587,21 @@ IF(.NOT.DoMacroscopicRestart) THEN
         END IF ! useDSMC
       END DO ! iProc = 0, nProcessors-1
 
-      CALL MPI_ALLGATHERV( MPI_IN_PLACE                                     &
-                         , 0                                                &
-                         , MPI_DATATYPE_NULL                                &
+      ! MS-MPI corrupts MPI_IN_PLACE on shared-memory communicators — use explicit send buffer
+      ALLOCATE(SendBuffRestart(PartDataSize,MAX(1,TotalNbrOfMissingParticles(myRank))))
+      IF(TotalNbrOfMissingParticles(myRank).GT.0) &
+        SendBuffRestart = RecBuff(:,OffsetTotalNbrOfMissingParticles(myRank)+1: &
+                                    OffsetTotalNbrOfMissingParticles(myRank)+TotalNbrOfMissingParticles(myRank))
+      CALL MPI_ALLGATHERV( SendBuffRestart                                  &
+                         , PartDataSize*TotalNbrOfMissingParticles(myRank) &
+                         , MPI_DOUBLE_PRECISION                             &
                          , RecBuff                                          &
                          , PartDataSize*TotalNbrOfMissingParticles(:)       &
                          , PartDataSize*OffsetTotalNbrOfMissingParticles(:) &
                          , MPI_DOUBLE_PRECISION                             &
-                         , MPI_COMM_PICLAS                                     &
+                         , MPI_COMM_PICLAS                                  &
                          , IERROR)
+      DEALLOCATE(SendBuffRestart)
 
       IF (useDSMC) THEN
         ! Polyatomic
@@ -719,7 +726,6 @@ IF(.NOT.DoMacroscopicRestart) THEN
 
           CurrentPartNum = CurrentPartNum + 1
         ELSE ! Lost
-          PDM%ParticleInside(iPart)=.FALSE.
           IndexOfFoundParticles(iPart) = 0
         END IF
 

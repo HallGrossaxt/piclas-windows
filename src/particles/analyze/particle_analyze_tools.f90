@@ -97,7 +97,10 @@ LOGICAL,INTENT(IN)                 :: CalcNumSpec_IN,CalcSimNumSpec_IN ! Flags f
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER                            :: iPart, iSpec
-#if !(USE_MPI)
+#if USE_MPI
+REAL                               :: tmpNumSpec(nSpecAnalyze)
+INTEGER(KIND=IK)                   :: tmpSimNumSpec(nSpecAnalyze)
+#else
 LOGICAL :: dummy_log
 #endif /*!(USE_MPI)*/
 !===================================================================================================================================
@@ -138,16 +141,24 @@ IF(nSpecAnalyze.GT.1)THEN
 END IF
 
 #if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer for all communicator sizes.
+! Use explicit send/recv buffers to avoid this.
 IF (MPIRoot) THEN
-  IF(CalcNumSpec_IN)    CALL MPI_REDUCE(MPI_IN_PLACE    , NumSpec       , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+  IF(CalcNumSpec_IN) THEN
+    CALL MPI_REDUCE(NumSpec    , tmpNumSpec  , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+    NumSpec = tmpNumSpec
+  END IF
   IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SUM(SimNumSpec) , SimNumSpecMin , 1            , MPI_INTEGER_INT_KIND , MPI_MIN , 0 , MPI_COMM_PICLAS , IERROR)
   IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SUM(SimNumSpec) , SimNumSpecMax , 1            , MPI_INTEGER_INT_KIND , MPI_MAX , 0 , MPI_COMM_PICLAS , IERROR)
-  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(MPI_IN_PLACE    , SimNumSpec    , nSpecAnalyze , MPI_INTEGER_INT_KIND , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+  IF(CalcSimNumSpec_IN) THEN
+    CALL MPI_REDUCE(SimNumSpec , tmpSimNumSpec, nSpecAnalyze , MPI_INTEGER_INT_KIND , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+    SimNumSpec = tmpSimNumSpec
+  END IF
 ELSE
-  IF(CalcNumSpec_IN)    CALL MPI_REDUCE(NumSpec         , 0 , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
-  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SUM(SimNumSpec) , 0 , 1            , MPI_INTEGER_INT_KIND , MPI_MIN , 0 , MPI_COMM_PICLAS , IERROR)
-  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SUM(SimNumSpec) , 0 , 1            , MPI_INTEGER_INT_KIND , MPI_MAX , 0 , MPI_COMM_PICLAS , IERROR)
-  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SimNumSpec      , 0 , nSpecAnalyze , MPI_INTEGER_INT_KIND , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+  IF(CalcNumSpec_IN)    CALL MPI_REDUCE(NumSpec         , tmpNumSpec   , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SUM(SimNumSpec) , SimNumSpecMin, 1            , MPI_INTEGER_INT_KIND , MPI_MIN , 0 , MPI_COMM_PICLAS , IERROR)
+  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SUM(SimNumSpec) , SimNumSpecMax, 1            , MPI_INTEGER_INT_KIND , MPI_MAX , 0 , MPI_COMM_PICLAS , IERROR)
+  IF(CalcSimNumSpec_IN) CALL MPI_REDUCE(SimNumSpec      , tmpSimNumSpec, nSpecAnalyze , MPI_INTEGER_INT_KIND , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
 END IF
 #endif /*USE_MPI*/
 
