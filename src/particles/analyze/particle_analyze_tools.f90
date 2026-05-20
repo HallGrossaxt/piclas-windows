@@ -1394,14 +1394,14 @@ DO iPart=1,PDM%ParticleVecLength
 END DO
 
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,EVib ,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  CALL MPI_REDUCE(MPI_IN_PLACE,ERot ,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  IF(DSMC%ElectronicModel.GT.0) CALL MPI_REDUCE(MPI_IN_PLACE,Eelec,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-ELSE
-  CALL MPI_REDUCE(EVib        ,RD   ,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  CALL MPI_REDUCE(ERot        ,RD   ,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  IF(DSMC%ElectronicModel.GT.0) CALL MPI_REDUCE(Eelec       ,RD   ,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+CALL MPI_REDUCE(EVib ,RD,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+IF(MPIRoot) EVib = RD
+CALL MPI_REDUCE(ERot ,RD,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+IF(MPIRoot) ERot = RD
+IF(DSMC%ElectronicModel.GT.0) THEN
+  CALL MPI_REDUCE(Eelec,RD,nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  IF(MPIRoot) Eelec = RD
 END IF
 #endif /*USE_MPI*/
 
@@ -1791,6 +1791,10 @@ INTEGER           :: iSpec
 REAL              :: TempDirec(nSpecies,3)
 REAL              :: PartVandV2(nSpecies, 6), Mean_PartV2(nSpecies, 3), MeanPartV_2(nSpecies,3)
 INTEGER           :: i
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL              :: tmpPartVandV2(nSpecies, 6)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 ! Compute velocity averages
@@ -1811,11 +1815,8 @@ DO i=1,PDM%ParticleVecLength
 END DO
 
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,PartVandV2,nSpecies*6,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-ELSE
-  CALL MPI_REDUCE(PartVandV2  ,PartVandV2,nSpecies*6,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-END IF
+CALL MPI_REDUCE(PartVandV2,tmpPartVandV2,nSpecies*6,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
+IF(MPIRoot) PartVandV2 = tmpPartVandV2
 #endif /*USE_MPI*/
 
 IF(MPIRoot)THEN
@@ -2517,14 +2518,15 @@ REAL,INTENT(OUT)              :: CRate(:)
 ! LOCAL VARIABLES
 INTEGER                       :: iCase
 REAL                          :: dtVar
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                          :: tmpNumColl(CollInf%NumCase + 1)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%NumColl,CollInf%NumCase + 1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-ELSE
-  CALL MPI_REDUCE(DSMC%NumColl,DSMC%NumColl,CollInf%NumCase + 1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-END IF
+CALL MPI_REDUCE(DSMC%NumColl,tmpNumColl,CollInf%NumCase + 1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+IF(MPIRoot) DSMC%NumColl = tmpNumColl
 #endif /*USE_MPI*/
 
 IF(MPIRoot)THEN
@@ -2681,6 +2683,10 @@ REAL,INTENT(OUT),ALLOCATABLE  :: ElecRelaxRate(:,:)
 ! LOCAL VARIABLES
 INTEGER                       :: iCase, iLevel, MaxLevel
 REAL                          :: dtVar
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL, ALLOCATABLE             :: tmpElecRelaxRate(:,:)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 MaxLevel = MAXVAL(SpecXSec(:)%NumElecLevel)
@@ -2696,11 +2702,10 @@ DO iCase=1, CollInf%NumCase
 END DO
 
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,ElecRelaxRate,CollInf%NumCase*MaxLevel,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-ELSE
-  CALL MPI_REDUCE(ElecRelaxRate,ElecRelaxRate,CollInf%NumCase*MaxLevel,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-END IF
+ALLOCATE(tmpElecRelaxRate(CollInf%NumCase,MaxLevel))
+CALL MPI_REDUCE(ElecRelaxRate,tmpElecRelaxRate,CollInf%NumCase*MaxLevel,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+IF(MPIRoot) ElecRelaxRate = tmpElecRelaxRate
+DEALLOCATE(tmpElecRelaxRate)
 #endif /*USE_MPI*/
 
 IF(MPIRoot)THEN
@@ -2757,11 +2762,9 @@ REAL                            :: RD(1:ChemReac%NumOfReact)
 !===================================================================================================================================
 
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE    ,ChemReac%NumReac,ChemReac%NumOfReact,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-ELSE
-  CALL MPI_REDUCE(ChemReac%NumReac,RD              ,ChemReac%NumOfReact,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-END IF
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+CALL MPI_REDUCE(ChemReac%NumReac,RD,ChemReac%NumOfReact,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+IF(MPIRoot) ChemReac%NumReac = RD
 #endif /*USE_MPI*/
 
 IF(MPIRoot)THEN

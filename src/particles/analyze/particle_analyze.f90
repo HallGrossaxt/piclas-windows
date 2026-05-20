@@ -902,6 +902,10 @@ INTEGER             :: unit_index, iSpec, OutputCounter, iSF
 INTEGER(KIND=IK)    :: SimNumSpec(nSpecAnalyze)
 REAL                :: NumSpec(nSpecAnalyze), NumDens(nSpecAnalyze)
 REAL                :: Ekin(nSpecAnalyze), Temp(nSpecAnalyze)
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                :: tmpEkin(nSpecAnalyze)
+#endif /*USE_MPI*/
 REAL                :: EkinMax(nSpecies)
 #if (PP_TimeDiscMethod==2 || PP_TimeDiscMethod==4 || PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400 || (PP_TimeDiscMethod>=501 && PP_TimeDiscMethod<=509) || PP_TimeDiscMethod==120)
 REAL                :: ETotal
@@ -1421,11 +1425,8 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
       CALL CalcKineticEnergy(Ekin)
     END IF
 #if USE_MPI
-      IF(MPIRoot)THEN
-        CALL MPI_REDUCE(MPI_IN_PLACE , Ekin    , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
-      ELSE
-        CALL MPI_REDUCE(Ekin         , 0.      , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
-      END IF
+      CALL MPI_REDUCE(Ekin , tmpEkin , nSpecAnalyze , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+      IF(MPIRoot) Ekin = tmpEkin
 #endif /*USE_MPI*/
   END IF
   IF(CalcTemp(1)) CALL CalcTransTemp(NumSpec, Temp)
