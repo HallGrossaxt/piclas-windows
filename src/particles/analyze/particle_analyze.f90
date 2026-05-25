@@ -1588,7 +1588,9 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
       ! next MPI reduce call)
       PCouplAverage = 0.
     END IF ! MPIRoot
-  END IF
+#endif /*USE_MPI*/
+  END IF ! CalcCoupledPower
+#if USE_MPI
   IF (CalcPartBalance)THEN
     ALLOCATE(tmpNPartIn(nSpecAnalyze), tmpNPartOut(nSpecAnalyze))
     ALLOCATE(tmpPartEkinIn(nSpecAnalyze), tmpPartEkinOut(nSpecAnalyze))

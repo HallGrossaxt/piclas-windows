@@ -788,13 +788,15 @@ CHARACTER(LEN=255),INTENT(IN)  :: FileName
 INTEGER                        :: nVar,ElemID,SampleElemID
 INTEGER, ALLOCATABLE           :: AdaptBCAverageIndex(:)
 #if !USE_MPI_HDF5
+#if USE_MPI
 INTEGER                        :: gSpecIdx, gSendPerSpec
 INTEGER, ALLOCATABLE           :: gcounts(:), gdisps(:), gidxcounts(:), gidxdisps(:)
 REAL, ALLOCATABLE              :: gatheredAvg(:,:,:,:)
 INTEGER, ALLOCATABLE           :: gatheredIdx(:)
 REAL                           :: gDummyR
 INTEGER                        :: gDummyI
-#endif
+#endif /* USE_MPI */
+#endif /* !USE_MPI_HDF5 */
 !===================================================================================================================================
 
 IF(.NOT.DoRestart.AND.iter.EQ.0) RETURN
@@ -845,6 +847,7 @@ CALL CloseDataFile()
 ! Serial HDF5: gather to MPIRoot per-species (dim 3 of AdaptBCAverage is local-element index,
 ! not the last dim, so GatheredWriteArray cannot be used directly). Each species slice is
 ! contiguous in memory, so MPI_GATHERV works species-by-species.
+#if USE_MPI
 gSendPerSpec = nVar * AdaptBCSampIter * AdaptBCSampleElemNum
 ALLOCATE(gcounts(nProcessors), gdisps(nProcessors), gidxcounts(nProcessors), gidxdisps(nProcessors))
 CALL MPI_ALLGATHER(gSendPerSpec, 1, MPI_INTEGER, gcounts, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
@@ -917,7 +920,25 @@ IF(MPIRoot)THEN
   END ASSOCIATE
 END IF
 DEALLOCATE(gcounts, gdisps, gidxcounts, gidxdisps, gatheredAvg, gatheredIdx)
-#endif
+#else /* not USE_MPI: single process (LIBS_USE_MPI=OFF), local data IS global data */
+ASSOCIATE (&
+      AdaptBCSampleElemNumGlobal    => INT(AdaptBCSampleElemNumGlobal,IK)    ,&
+      nVar                          => INT(nVar,IK)            ,&
+      nSpecies                      => INT(nSpecies,IK)        ,&
+      AdaptBCSampIter               => INT(AdaptBCSampIter,IK) )
+  CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+  CALL WriteArrayToHDF5(DataSetName='AdaptiveRunningAverage',rank=4,                                         &
+                        nValGlobal=(/nVar,AdaptBCSampIter,AdaptBCSampleElemNumGlobal,nSpecies/),              &
+                        nVal      =(/nVar,AdaptBCSampIter,AdaptBCSampleElemNumGlobal,nSpecies/),              &
+                        offset    =(/0_IK,0_IK,0_IK,0_IK/),collective=.FALSE.,RealArray=AdaptBCAverage)
+  CALL WriteArrayToHDF5(DataSetName='AdaptiveRunningAverageIndex',rank=1,                                     &
+                        nValGlobal=(/AdaptBCSampleElemNumGlobal/),                                            &
+                        nVal      =(/AdaptBCSampleElemNumGlobal/),                                            &
+                        offset    =(/0_IK/),collective=.FALSE.,IntegerArray_i4=AdaptBCAverageIndex)
+  CALL CloseDataFile()
+END ASSOCIATE
+#endif /* USE_MPI */
+#endif /* USE_MPI_HDF5 */
 DEALLOCATE(AdaptBCAverageIndex)
 
 END SUBROUTINE WriteAdaptiveRunningAverageToHDF5
