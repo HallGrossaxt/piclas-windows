@@ -1,6 +1,6 @@
 # piclas-win 0.9.3 — Windows Port: Bug Fix Summary
 
-Generated: 2026-05-24  
+Generated: 2026-05-25  
 Source: `piclas_windows_guide.html` + session notes
 
 ---
@@ -14,6 +14,8 @@ Source: `piclas_windows_guide.html` + session notes
 | Fix C | `cmake/SetLibraries.cmake` + 3 HDF5 source files | New `USE_MPI_HDF5` flag; guards all `H5PSET_FAPL_MPIO_F` / `H5PSET_DXPL_MPIO_F` calls with `#if USE_MPI_HDF5` |
 | Fix D | `CMakeLists.txt` | Full path to `powershell.exe` in userblock pre-build step |
 | Fix E | `src/CMakeLists.txt`, `unitTests/CMakeLists.txt` | Link `${linkedlibs}` (MPI objects) directly to executables on Windows — DLL import stubs do not re-export transitive symbols |
+| Fix K1 | `src/io_hdf5/hdf5_output_particle.f90` | `WriteAdaptiveRunningAverageToHDF5`: MPI gather block in the serial HDF5 `#else`-branch was unguarded — `MPI_INTEGER`, `MPI_DOUBLE_PRECISION`, `MPI_COMM_PICLAS` are undefined for `LIBS_USE_MPI=OFF`. Added `#if USE_MPI` guard around gather + variable declarations; added `#else` path that writes local data directly (`single=.TRUE.`) since local == global on a single process. Unblocked all 5 serial Poisson builds. |
+| Fix K2 | `src/particles/analyze/particle_analyze.f90` | `CalculatePartEnergyAndAngle`: `IF(CalcCoupledPower) THEN` at line ~1555 had its `END IF` inside a `#if USE_MPI` block. With `USE_MPI=0` the preprocessor removed the `END IF`, leaving an unclosed IF block → `Error: Expecting END IF statement at (1)` at EOF. Moved `END IF ! CalcCoupledPower` outside the `#if USE_MPI` block. |
 
 ---
 
@@ -126,7 +128,8 @@ Files changed: `regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.
 | NIG_DVM, NIG_convtest_DVM | ✅ After Fix A + Fix A2/A3 |
 | WEK_Reservoir | ✅ 0 analyze failures (§16.14) |
 | CHE_DSMC | ✅ No OS freeze (§16.15–16.17) |
-| NIG_code_analyze, NIG_convtest_t_poisson | ⚠ Internal errors — FP reference mismatch vs Linux |
+| NIG_code_analyze | ⚠ Internal errors — FP reference mismatch vs Linux |
+| NIG_convtest_t_poisson (5 serial suites) | ✅ PASS:5 FAIL:0 SKIP:0 (Fix K1+K2, verified 2026-05-25) |
 | exchange_procs, mortar_exchange_procs | ❌ Bug G (high-MPI crash after load balance) |
 
 ---
@@ -137,12 +140,13 @@ Files changed: `regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.
 |-----|---------------|---------|-----------|---------------|
 | **G** | `exchange_procs` (MPI≥21), `mortar_exchange_procs` | Exit code 3 crash on highest-rank process; no error message | Heap corruption / MPI ordering race after load-balance restart; disappears under gdb and page-heap (Heisenbug) | Linux + Valgrind Helgrind; or audit non-blocking buffers reused before MPI_WAITALL in LB particle exchange path |
 | **surf_flux mismatch** | `surf_flux_2D_track` | `NumDens` ~33% below Linux reference on all proc counts; MPI=4 Adaptive=T crashes | Stochastic DSMC + axisymmetric radial weighting; platform-dependent RNG state diverges from Linux reference | Regenerate reference on Windows, or increase iteration count for statistical convergence |
-| **FP reference mismatch** | `NIG_code_analyze`, `NIG_convtest_t_poisson` and others | Analyze errors vs Linux-generated reference files | Windows/Linux GFortran FP accumulation differences in multi-step time integration | Widen tolerances or regenerate Windows reference files |
+| **FP reference mismatch** | `NIG_code_analyze` and others | Analyze errors vs Linux-generated reference files | Windows/Linux GFortran FP accumulation differences in multi-step time integration | Widen tolerances or regenerate Windows reference files |
 
 **RESOLVED (no longer open):**
 - **Bug B** (`mortar` PartInt mismatch) — re-attributed as benign Windows-vs-Linux FP boundary-sensitivity; analyze.ini replaced with energy-conservation invariants (§16.19). Now 0 analyze errors.
 - **emission_gyrotron analyze errors** — DivideByTimeStep trapezoid artifact for N=1,3 and Newton failure for N=9 MPI=1; fixed by restricting N=6,9 and MPI=2,10 (§16.20).
 - **3D_periodic_CVWM MPI oversubscription** — MPI=20,30 removed (§16.20).
+- **NIG_convtest_t_poisson 5× SKIP** — All 5 serial Poisson presets failed to compile due to Fix K1+K2 (unguarded MPI symbols + unbalanced IF); now all 5 suites PASS:5 FAIL:0 SKIP:0 (2026-05-25).
 
 ---
 
