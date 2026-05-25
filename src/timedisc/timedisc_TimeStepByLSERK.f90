@@ -180,10 +180,13 @@ DO iStage = 1,nRKStages
       DO iPart = 1, PDM%ParticleVecLength
         IsPushArr(iPart) = isPushParticle(iPart)
       END DO
+      ! Pt_temp may stay device-resident across stages only when no particle
+      ! migrates between stages, i.e. a single MPI rank (SendNbOfParticles is a
+      ! no-op). With >1 rank, Pt_temp is round-tripped every stage (§16.18 Ph3).
       CALL GPU_LSERKStageBatch(PartState, Pt_temp, Pt,                       &
                                 PDM%ParticleInside, PDM%IsNewPart, IsPushArr, &
                                 PDM%ParticleVecLength,                        &
-                                iStage,                                       &
+                                iStage, nRKStages, (nProcessors.EQ.1),       &
                                 MERGE(0., RK_a(MAX(iStage,2)), iStage.EQ.1), &
                                 b_dt(iStage))
     ELSE

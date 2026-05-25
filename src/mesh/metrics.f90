@@ -381,7 +381,8 @@ SmallestscaledJacRef=HUGE(1.)
   scaledJac(2)=MINVAL(NInfo(Nloc)%DetJac_N(1,:,:,:))/MAXVAL(NInfo(Nloc)%DetJac_N(1,:,:,:))
   IF(scaledJac(2).LT.0.01) THEN
     WRITE(Unit_StdOut,*) 'Too small scaled Jacobians found (CL/Gauss):', scaledJac
-    CALL abort(__STAMP__,'Scaled Jacobian lower then tolerance in global element:',iElem+offsetElem)
+    WRITE(Unit_StdOut,*) 'This check is optional. You can disable it by setting meshCheckRef = F'
+    IF(meshCheckRef) CALL abort(__STAMP__,'Scaled Jacobian lower then tolerance in global element:',iElem+offsetElem)
   END IF
 
   !2.a) Jacobi Matrix of d/dxi_dd(X_nn): dXCL_N(dd,nn,i,j,k))

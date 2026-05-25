@@ -319,6 +319,8 @@ IMPLICIT NONE
 #if USE_MPI
 INTEGER, PARAMETER :: lenArray=8
 INTEGER :: tmpArray(1:lenArray)
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+INTEGER :: tmpSendArray(1:lenArray)
 #endif /*USE_MPI*/
 !===================================================================================================================================
 
@@ -390,8 +392,9 @@ IF(CalcPointsPerDebyeLength.OR.CalcPICTimeStep.OR.CalcElectronEnergy)THEN
   tmpArray(8) = NbrOfElemsWithElectrons(2)
 
   ! Collect sum on MPIRoot
+  tmpSendArray = tmpArray
+  CALL MPI_REDUCE(tmpSendArray, tmpArray, lenArray, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
   IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE , tmpArray , lenArray , MPI_INTEGER , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
     IF(CalcPointsPerDebyeLength)THEN
        PPDCellResolved(1) = tmpArray(1)
        PPDCellResolved(2) = tmpArray(2)
@@ -402,8 +405,6 @@ IF(CalcPointsPerDebyeLength.OR.CalcPICTimeStep.OR.CalcElectronEnergy)THEN
     PICValidPlasmaCellSum = tmpArray(6)
     NbrOfElemsWithElectrons(1) = tmpArray(7)
     NbrOfElemsWithElectrons(2) = tmpArray(8)
-  ELSE
-    CALL MPI_REDUCE(tmpArray     , 0        , lenArray , MPI_INTEGER , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
   END IF ! MPIRoot
 END IF ! CalcPointsPerDebyeLength.OR.CalcPICTimeStep
 
@@ -1106,6 +1107,10 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 INTEGER                           :: iSpec,bgSpec,iElem,CNElemID
 REAL                              :: DistriNumDens(1:BGGas%NumberOfSpecies)
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                              :: tmpDistriNumDens(1:BGGas%NumberOfSpecies)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 ! Initialize
 DistriNumDens = 0.
@@ -1128,11 +1133,8 @@ END DO
 
 ! Communicate
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE , DistriNumDens, BGGas%NumberOfSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0,MPI_COMM_PICLAS ,IERROR)
-ELSE
-  CALL MPI_REDUCE(DistriNumDens, 0.           , BGGas%NumberOfSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0,MPI_COMM_PICLAS ,IERROR)
-END IF
+tmpDistriNumDens = DistriNumDens
+CALL MPI_REDUCE(tmpDistriNumDens, DistriNumDens, BGGas%NumberOfSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
 BGGas%DistributionNumDens = DistriNumDens
 
@@ -1173,6 +1175,7 @@ INTEGER             :: iSpec, iSF, ElemID, SampleElemID, SurfSideID, iSide, iSam
 REAL                :: dtVar
 #if USE_MPI
 INTEGER             :: MaxSurfaceFluxBCs
+REAL, ALLOCATABLE   :: tmpFlowRateSurfFlux(:,:), tmpPressureAdaptiveBC(:,:)
 #endif /*USE_MPI*/
 !===================================================================================================================================
 
@@ -1226,17 +1229,19 @@ END DO
 ! 2) Get the sum of the mass flow rate and the sum of the area-weighted area pressures (only in case of a cell-local pressure
 !    distribution at the BC, ie. NOT if AdaptBCAverageValBC = T)
 #if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer on root. Use explicit send/recv buffers.
 MaxSurfaceFluxBCs = MAXVAL(Species(:)%nSurfacefluxBCs)
-IF (MPIRoot) THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,FlowRateSurfFlux(1:nSpecAnalyze,1:MaxSurfaceFluxBCs),nSpecAnalyze*MaxSurfaceFluxBCs,&
+ALLOCATE(tmpFlowRateSurfFlux(nSpecAnalyze, MaxSurfaceFluxBCs))
+tmpFlowRateSurfFlux = FlowRateSurfFlux(1:nSpecAnalyze,1:MaxSurfaceFluxBCs)
+CALL MPI_REDUCE(tmpFlowRateSurfFlux,FlowRateSurfFlux(1:nSpecAnalyze,1:MaxSurfaceFluxBCs),nSpecAnalyze*MaxSurfaceFluxBCs,&
+                MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+DEALLOCATE(tmpFlowRateSurfFlux)
+IF(UseAdaptiveBC.AND.(.NOT.AdaptBCAverageValBC)) THEN
+  ALLOCATE(tmpPressureAdaptiveBC(nSpecAnalyze, MaxSurfaceFluxBCs))
+  tmpPressureAdaptiveBC = PressureAdaptiveBC(1:nSpecAnalyze,1:MaxSurfaceFluxBCs)
+  CALL MPI_REDUCE(tmpPressureAdaptiveBC,PressureAdaptiveBC(1:nSpecAnalyze,1:MaxSurfaceFluxBCs),nSpecAnalyze*MaxSurfaceFluxBCs,&
                   MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-  IF(UseAdaptiveBC.AND.(.NOT.AdaptBCAverageValBC)) THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,PressureAdaptiveBC(1:nSpecAnalyze,1:MaxSurfaceFluxBCs),nSpecAnalyze*MaxSurfaceFluxBCs,&
-                    MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-  END IF
-ELSE ! no Root
-  CALL MPI_REDUCE(FlowRateSurfFlux,FlowRateSurfFlux,nSpecAnalyze*MaxSurfaceFluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-  IF(UseAdaptiveBC.AND.(.NOT.AdaptBCAverageValBC)) CALL MPI_REDUCE(PressureAdaptiveBC,PressureAdaptiveBC,nSpecAnalyze*MaxSurfaceFluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+  DEALLOCATE(tmpPressureAdaptiveBC)
 END IF
 #endif /*USE_MPI*/
 
@@ -2270,6 +2275,11 @@ REAL,INTENT(OUT)                :: RotRelaxProb(2),VibRelaxProb(2)       !< outp
 ! LOCAL VARIABLES
 INTEGER                         :: iElem, iSpec
 REAL                            :: PartNum
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                            :: tmpRelaxProb(2)
+REAL, ALLOCATABLE               :: tmpCalcVibProb(:)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 IF(CollisMode.LT.2) RETURN
 
@@ -2288,14 +2298,10 @@ IF(DSMC%RotRelaxProb.GE.2) THEN
     RotRelaxProb(2) = 0
   END IF
 #if USE_MPI
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,RotRelaxProb(1),1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(MPI_IN_PLACE,RotRelaxProb(2),1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-    RotRelaxProb(2) = RotRelaxProb(2) / REAL(nProcessors)
-  ELSE
-    CALL MPI_REDUCE(RotRelaxProb(1),RotRelaxProb(1),1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(RotRelaxProb(2),RotRelaxProb(2),1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  END IF
+  tmpRelaxProb = RotRelaxProb
+  CALL MPI_REDUCE(tmpRelaxProb(1), RotRelaxProb(1), 1, MPI_DOUBLE_PRECISION, MPI_MAX, 0, MPI_COMM_PICLAS, IERROR)
+  CALL MPI_REDUCE(tmpRelaxProb(2), RotRelaxProb(2), 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+  IF(MPIRoot) RotRelaxProb(2) = RotRelaxProb(2) / REAL(nProcessors)
 #endif /*USE_MPI*/
 ELSE
   RotRelaxProb = DSMC%RotRelaxProb
@@ -2312,26 +2318,21 @@ IF(DSMC%VibRelaxProb.EQ.2) THEN
   END DO
   VibRelaxProb(2)=VibRelaxProb(2)/(REAL(nSpecies)*REAL(nGlobalElems))
 #if USE_MPI
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,VibRelaxProb(1),1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(MPI_IN_PLACE,VibRelaxProb(2),1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  ELSE
-    CALL MPI_REDUCE(VibRelaxProb(1),VibRelaxProb(1),1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(VibRelaxProb(2),VibRelaxProb(2),1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  END IF
+  tmpRelaxProb = VibRelaxProb
+  CALL MPI_REDUCE(tmpRelaxProb(1), VibRelaxProb(1), 1, MPI_DOUBLE_PRECISION, MPI_MAX, 0, MPI_COMM_PICLAS, IERROR)
+  CALL MPI_REDUCE(tmpRelaxProb(2), VibRelaxProb(2), 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
 ELSE
   VibRelaxProb = 0.
 #if USE_MPI
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%CalcVibProb(1:nSpecies,1),nSpecies,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%CalcVibProb(1:nSpecies,2),nSpecies,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%CalcVibProb(1:nSpecies,3),nSpecies,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  ELSE
-    CALL MPI_REDUCE(DSMC%CalcVibProb(1:nSpecies,1),DSMC%CalcVibProb(1:nSpecies,1),nSpecies,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(DSMC%CalcVibProb(1:nSpecies,2),DSMC%CalcVibProb(1:nSpecies,2),nSpecies,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-    CALL MPI_REDUCE(DSMC%CalcVibProb(1:nSpecies,3),DSMC%CalcVibProb(1:nSpecies,3),nSpecies,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  END IF
+  ALLOCATE(tmpCalcVibProb(nSpecies))
+  tmpCalcVibProb = DSMC%CalcVibProb(1:nSpecies,1)
+  CALL MPI_REDUCE(tmpCalcVibProb, DSMC%CalcVibProb(1:nSpecies,1), nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+  tmpCalcVibProb = DSMC%CalcVibProb(1:nSpecies,2)
+  CALL MPI_REDUCE(tmpCalcVibProb, DSMC%CalcVibProb(1:nSpecies,2), nSpecies, MPI_DOUBLE_PRECISION, MPI_MAX, 0, MPI_COMM_PICLAS, IERROR)
+  tmpCalcVibProb = DSMC%CalcVibProb(1:nSpecies,3)
+  CALL MPI_REDUCE(tmpCalcVibProb, DSMC%CalcVibProb(1:nSpecies,3), nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+  DEALLOCATE(tmpCalcVibProb)
 #endif /*USE_MPI*/
   IF(MPIRoot)THEN
     VibRelaxProb(1) = MAXVAL(DSMC%CalcVibProb(1:nSpecies,2))
@@ -2402,11 +2403,8 @@ REAL                           :: RD(nSpecies*4)
   END DO
 
 #if USE_MPI
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,PartVtrans ,4*nSpecies,MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  ELSE
-    CALL MPI_REDUCE(PartVtrans  ,RD         ,4*nSpecies,MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  END IF
+  RD = RESHAPE(PartVtrans, [4*nSpecies])
+  CALL MPI_REDUCE(RD, PartVtrans, 4*nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
 
   IF(MPIRoot)THEN
@@ -2459,11 +2457,8 @@ REAL                           :: RD(nSpecies*4)
   END DO
 
 #if USE_MPI
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,PartVtherm,4*nSpecies,MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  ELSE
-    CALL MPI_REDUCE(PartVtherm  ,RD        ,4*nSpecies,MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  END IF
+  RD = RESHAPE(PartVtherm, [4*nSpecies])
+  CALL MPI_REDUCE(RD, PartVtherm, 4*nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
 
   IF(MPIRoot)THEN
@@ -2571,14 +2566,17 @@ REAL,INTENT(OUT)              :: BackScatterRate(:)
 ! LOCAL VARIABLES
 INTEGER                       :: iCase
 REAL                          :: dtVar
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL, ALLOCATABLE             :: tmpBackNumColl(:)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 #if USE_MPI
-IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,SpecXSec(:)%BackNumColl,CollInf%NumCase,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-ELSE
-  CALL MPI_REDUCE(SpecXSec(:)%BackNumColl,SpecXSec(:)%BackNumColl,CollInf%NumCase,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-END IF
+ALLOCATE(tmpBackNumColl(CollInf%NumCase))
+tmpBackNumColl = SpecXSec(:)%BackNumColl
+CALL MPI_REDUCE(tmpBackNumColl, SpecXSec(:)%BackNumColl, CollInf%NumCase, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+DEALLOCATE(tmpBackNumColl)
 #endif /*USE_MPI*/
 
 IF(MPIRoot)THEN
@@ -2622,16 +2620,19 @@ REAL,INTENT(OUT)                :: VibRelaxProbCase(CollInf%NumCase)
 ! LOCAL VARIABLES
 INTEGER                         :: iSpec, iCase, jSpec
 REAL                            :: MPF_1, MPF_2, dtVar
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL, ALLOCATABLE               :: tmpVibCount(:)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 IF(CollisMode.LT.2) RETURN
 
 #if USE_MPI
 IF(XSec_Relaxation) THEN
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,SpecXSec(:)%VibCount,CollInf%NumCase,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  ELSE
-    CALL MPI_REDUCE(SpecXSec(:)%VibCount,SpecXSec(:)%VibCount,CollInf%NumCase,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-  END IF
+  ALLOCATE(tmpVibCount(CollInf%NumCase))
+  tmpVibCount = SpecXSec(:)%VibCount
+  CALL MPI_REDUCE(tmpVibCount, SpecXSec(:)%VibCount, CollInf%NumCase, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+  DEALLOCATE(tmpVibCount)
 END IF
 #endif /*USE_MPI*/
 VibRelaxProbCase = 0.

@@ -478,11 +478,17 @@ IF(DoVirtualDielectricLayer) CALL InitVirtualDielectricLayer()
 IF(.NOT. DoRestart) CALL CheckAndMayDeleteFIBGM()
 
 #if PICLAS_USE_GPU
-! Initialize GPU: locate device, allocate device buffers for all particles
+! Initialize GPU: bind this rank to a device by its node-local rank, allocate
+! device buffers for this rank's fair share of VRAM (§16.18).
 BLOCK
   USE MOD_GPU_Interface, ONLY: GPU_Init
   USE MOD_Particle_Vars, ONLY: PDM
-  CALL GPU_Init(PDM%maxAllowedParticleNumber)
+#if USE_MPI
+  USE MOD_MPI_Shared_Vars, ONLY: myComputeNodeRank, nComputeNodeProcessors
+  CALL GPU_Init(PDM%maxAllowedParticleNumber, myComputeNodeRank, nComputeNodeProcessors)
+#else
+  CALL GPU_Init(PDM%maxAllowedParticleNumber, 0, 1)
+#endif /*USE_MPI*/
 END BLOCK
 #endif /*PICLAS_USE_GPU*/
 
@@ -535,9 +541,29 @@ USE MOD_HDG_Vars               ,ONLY: UseCoupledPowerPotential
 ! LOCAL VARIABLES
 REAL              :: ManualTimeStepParticle ! temporary variable
 CHARACTER(32)     :: hilf
+INTEGER(KIND=8)   :: ramBytes, partCap          ! physical RAM (bytes) and derived particle-number cap
+INTEGER(KIND=8),PARAMETER :: BYTES_PER_PART = 1024_8 ! conservative per-particle footprint across all maxParticleNumber-sized arrays
+INTERFACE
+  FUNCTION piclas_total_physical_memory_c() BIND(C, NAME='piclas_total_physical_memory_c')
+    USE ISO_C_BINDING, ONLY: C_LONG_LONG
+    INTEGER(KIND=C_LONG_LONG) :: piclas_total_physical_memory_c ! total physical RAM in bytes (0 if unavailable)
+  END FUNCTION piclas_total_physical_memory_c
+END INTERFACE
 !===================================================================================================================================
 ! Read basic particle parameter
-WRITE(UNIT=hilf,FMT='(I0)') HUGE(PDM%maxAllowedParticleNumber)
+! Default cap for Part-maxParticleNumber: upstream uses HUGE(int) (~2.1e9), which effectively disables the
+! over-allocation ABORT in IncreaseMaxParticleNumber -> a runaway insertion exhausts RAM and freezes the OS
+! before the guard can fire. Derive a memory-based default (half of physical RAM / per-particle footprint) so
+! the existing clean ABORT triggers instead. ramBytes==0 (non-Windows / query failure) keeps the HUGE default.
+ramBytes = piclas_total_physical_memory_c()
+IF (ramBytes.GT.0_8) THEN
+  partCap = (ramBytes / 2_8) / BYTES_PER_PART
+  partCap = MAX(partCap, 1000000_8)                              ! floor: never cap below 1e6 particles
+  partCap = MIN(partCap, INT(HUGE(PDM%maxAllowedParticleNumber),8)) ! ceiling: must fit in default INTEGER
+  WRITE(UNIT=hilf,FMT='(I0)') INT(partCap)
+ELSE
+  WRITE(UNIT=hilf,FMT='(I0)') HUGE(PDM%maxAllowedParticleNumber)
+END IF
 PDM%maxAllowedParticleNumber = GETINT('Part-maxParticleNumber',TRIM(hilf))
 PDM%MaxPartNumIncrease = GETREAL('Part-MaxPartNumIncrease','0.1')
 PDM%RearrangePartIDs = GETLOGICAL('Part-RearrangePartIDs','.TRUE.')

@@ -19,18 +19,33 @@
 extern "C" {
 #endif
 
-/* Initialize CUDA device 0, print device info. */
-PICLAS_GPU_API void piclas_gpu_init(void);
+/* Initialize CUDA: bind this MPI rank to a GPU by its node-local rank, print
+   device info. localRank/localSize are the rank and size on the shared-memory
+   compute node (myComputeNodeRank / nComputeNodeProcessors); pass 0/1 for a
+   serial build. The bound device is localRank % deviceCount, and the number of
+   ranks sharing that device (ranksPerGPU) is used to partition the VRAM budget
+   in piclas_gpu_query_max_safe(). */
+PICLAS_GPU_API void piclas_gpu_init(int localRank, int localSize);
 
 /* Release all device resources and reset the device. */
 PICLAS_GPU_API void piclas_gpu_finalize(void);
 
-/* Allocate device-side PartState and isActive buffers for nMaxPart particles.
-   Must be called once after piclas_gpu_init(). */
-PICLAS_GPU_API void piclas_gpu_alloc_buffers(int nMaxPart);
+/* Allocate device-side buffers (cudaMalloc) for nMaxPart particles.
+   Must be called once after piclas_gpu_init().
+   Returns 0 on success, -1 on allocation failure (caller should fall back to
+   the CPU push rather than abort). */
+PICLAS_GPU_API int piclas_gpu_alloc_buffers(int nMaxPart);
 
 /* Free device-side buffers. */
 PICLAS_GPU_API void piclas_gpu_free_buffers(void);
+
+/* Query the maximum number of particles that can be safely allocated in this
+   rank's fair share of the bound GPU's VRAM.  The budget is VRAM-only
+   (managed-memory host-RAM spill does NOT work under the Windows WDDM driver),
+   partitioned by ranksPerGPU and reduced by a per-rank CUDA-context reserve.
+   Returns 0 on error or when no usable share remains (caller must handle
+   gracefully, e.g. fall back to the CPU push). */
+PICLAS_GPU_API int piclas_gpu_query_max_safe(void);
 
 /* Batch particle position push: pos += vel * dt for every active particle.
  *
@@ -60,6 +75,14 @@ PICLAS_GPU_API void piclas_gpu_push_particles(double *PartState, int *isActive,
  *   isNewPart[nPart]     — 1=newly inserted particle needing stage-1 treatment
  *
  * isStage1               — pass 1 for iStage==1, 0 for subsequent stages
+ * isLastStage            — pass 1 for iStage==nRKStages, 0 otherwise
+ * ptTempResident         — 1 = keep Pt_temp device-resident across the RK stages
+ *                          of this timestep (skip its per-stage H2D; download it
+ *                          only on the last stage). Safe ONLY when no particle
+ *                          migrates between stages, i.e. a single MPI rank — the
+ *                          caller passes 1 only for nProcessors==1. With multiple
+ *                          ranks, or when the live count exceeds the device buffer
+ *                          (chunked), Pt_temp is round-tripped every stage as before.
  * RK_a                   — RK_a(iStage); ignored when isStage1==1
  * b_dt                   — RK_b(iStage) * dt
  */
@@ -68,6 +91,7 @@ PICLAS_GPU_API void piclas_gpu_lserk_stage(double *PartState, double *Pt_temp,
                                            int *isActive, int *isPush,
                                            int *isNewPart,
                                            int nPart, int isStage1,
+                                           int isLastStage, int ptTempResident,
                                            double RK_a, double b_dt);
 
 #ifdef __cplusplus

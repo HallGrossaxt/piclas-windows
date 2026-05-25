@@ -91,6 +91,7 @@ INTEGER                           :: iElem, iSpec, iSF, iSide, ElemID, SampleEle
 INTEGER                           :: jSample, iSample, BCSideID, nSurfacefluxBCs, CNElemID
 #if USE_MPI
 INTEGER                           :: offSetElemAdaptBCSampleMPI(0:nProcessors-1)
+REAL, ALLOCATABLE                 :: tmpAdaptBCAreaSurfaceFlux(:,:), tmpAdaptBCVolSurfaceFlux(:,:)
 #endif
 !===================================================================================================================================
 
@@ -157,17 +158,22 @@ DO iSpec=1,nSpecies
 END DO
 
 #if USE_MPI
+! MS-MPI MPI_REDUCE/ALLREDUCE(MPI_IN_PLACE,...) drops root's contribution; use explicit send buffers.
 IF(UseCircularInflow) THEN
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,AdaptBCAreaSurfaceFlux,nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,iError)
-  ELSE
-    CALL MPI_REDUCE(AdaptBCAreaSurfaceFlux,0,nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,iError)
-  END IF
+  ALLOCATE(tmpAdaptBCAreaSurfaceFlux(nSpecies,nSurfacefluxBCs))
+  tmpAdaptBCAreaSurfaceFlux = AdaptBCAreaSurfaceFlux
+  CALL MPI_REDUCE(tmpAdaptBCAreaSurfaceFlux,AdaptBCAreaSurfaceFlux,nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,iError)
+  DEALLOCATE(tmpAdaptBCAreaSurfaceFlux)
 END IF
 #endif /*USE_MPI*/
 
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,AdaptBCVolSurfaceFlux,nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+! AdaptBCVolSurfaceFlux is a divisor for the BC-averaged number density; a corrupted value would skew
+! the adaptive response. Use an explicit send buffer instead of MPI_IN_PLACE.
+ALLOCATE(tmpAdaptBCVolSurfaceFlux(nSpecies,nSurfacefluxBCs))
+tmpAdaptBCVolSurfaceFlux = AdaptBCVolSurfaceFlux
+CALL MPI_ALLREDUCE(tmpAdaptBCVolSurfaceFlux,AdaptBCVolSurfaceFlux,nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+DEALLOCATE(tmpAdaptBCVolSurfaceFlux)
 #endif /*USE_MPI*/
 
 ! 1b) Add elements for the porous BCs
@@ -356,6 +362,9 @@ INTEGER                         :: RestartSampIter, nSurfacefluxBCs
 INTEGER                         :: BCSideID, currentBC, iSF, iSide
 REAL                            :: partWeight, TTrans_TempFac, RelaxationFactor
 REAL,ALLOCATABLE                :: AdaptBCMeanValues(:,:,:)
+#if USE_MPI
+REAL,ALLOCATABLE                :: tmpAdaptBCMeanValues(:,:,:)
+#endif /*USE_MPI*/
 LOGICAL                         :: initSampling, CalcValues, initTruncAverage
 #if USE_LOADBALANCE
 REAL                            :: tLBStart
@@ -486,11 +495,11 @@ IF(AdaptBCAverageValBC) THEN
     END DO
     ! MPI Communication
 #if USE_MPI
-    IF(MPIRoot)THEN
-      CALL MPI_REDUCE(MPI_IN_PLACE,AdaptBCMeanValues,8*nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,iError)
-    ELSE
-      CALL MPI_REDUCE(AdaptBCMeanValues,0.,8*nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,iError)
-    END IF
+    ! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) drops root's contribution; use an explicit send buffer.
+    ALLOCATE(tmpAdaptBCMeanValues(1:8,1:nSpecies,1:nSurfacefluxBCs))
+    tmpAdaptBCMeanValues = AdaptBCMeanValues
+    CALL MPI_REDUCE(tmpAdaptBCMeanValues,AdaptBCMeanValues,8*nSpecies*nSurfacefluxBCs,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,iError)
+    DEALLOCATE(tmpAdaptBCMeanValues)
 #endif /*USE_MPI*/
     IF(MPIRoot) THEN
       DO iSpec=1,nSpecies

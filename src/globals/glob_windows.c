@@ -121,6 +121,23 @@ int glob_expand_c(const char *pattern, char *results, int results_len)
     return n_found;
 }
 
+/*
+ * piclas_total_physical_memory_c()
+ *   Returns the total installed physical RAM in bytes, or 0 if it cannot be
+ *   determined.  Used by particle_init.f90 to derive a safe default cap for
+ *   Part-maxParticleNumber so that a runaway particle insertion aborts cleanly
+ *   (via IncreaseMaxParticleNumber) instead of exhausting RAM and freezing the
+ *   whole OS.
+ */
+long long piclas_total_physical_memory_c(void)
+{
+    MEMORYSTATUSEX statex;
+    statex.dwLength = sizeof(statex);
+    if (GlobalMemoryStatusEx(&statex))
+        return (long long)statex.ullTotalPhys;
+    return 0;
+}
+
 #else /* non-Windows stub */
 
 int glob_expand_c(const char *pattern, char *results, int results_len)
@@ -128,6 +145,12 @@ int glob_expand_c(const char *pattern, char *results, int results_len)
     (void)pattern;
     (void)results;
     (void)results_len;
+    return 0;
+}
+
+/* On Linux/macOS return 0 so the caller keeps the upstream HUGE() default. */
+long long piclas_total_physical_memory_c(void)
+{
     return 0;
 }
 

@@ -907,12 +907,21 @@ REAL                :: Ekin(nSpecAnalyze), Temp(nSpecAnalyze)
 REAL                :: tmpEkin(nSpecAnalyze)
 #endif /*USE_MPI*/
 REAL                :: EkinMax(nSpecies)
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                :: tmpEkinMax(nSpecies)
+#endif /*USE_MPI*/
 #if (PP_TimeDiscMethod==2 || PP_TimeDiscMethod==4 || PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400 || (PP_TimeDiscMethod>=501 && PP_TimeDiscMethod<=509) || PP_TimeDiscMethod==120)
 REAL                :: ETotal
 REAL                :: IntEn(nSpecAnalyze,3),IntTemp(nSpecies,3),TempTotal(nSpecAnalyze), Xi_Vib(nSpecies), Xi_Elec(nSpecies)
 REAL                :: MaxCollProb, MeanCollProb, MeanFreePath, MaxMCSoverMFP, ResolvedCellPercentage, ResolvedTimestep
 REAL                :: NumSpecTmp(nSpecAnalyze), RotRelaxProb(2), VibRelaxProb(2)
 INTEGER             :: bgSpec
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                :: tmpScalarReal
+INTEGER             :: tmpScalarInt
+#endif /*USE_MPI*/
 #endif
 #if (PP_TimeDiscMethod==4)
 INTEGER             :: jSpec, iCase, iLevel
@@ -924,9 +933,17 @@ INTEGER             :: dir
 #if USE_HDG
 REAL                :: EpotPart(nSpecies)
 INTEGER             :: iRegions
+#if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+REAL                :: tmpEpotPart(nSpecies)
+#endif /*USE_MPI*/
 #endif /*USE_HDG*/
 #if USE_MPI
 REAL                :: tmpArray(1:2)
+REAL                :: tmpArray2(1:2)
+INTEGER, ALLOCATABLE :: tmpNPartIn(:), tmpNPartOut(:)
+REAL, ALLOCATABLE    :: tmpPartEkinIn(:), tmpPartEkinOut(:)
+REAL, ALLOCATABLE    :: tmpESRVMPF(:,:)
 #endif /*USE_MPI*/
 #if USE_HDG
 REAL                :: PCouplDelta,SumEpotPart
@@ -1415,11 +1432,8 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
     IF(CalcLaserInteraction)THEN
       CALL CalcKineticEnergyAndMaximum(Ekin,EkinMax)
 #if USE_MPI
-      IF(MPIRoot)THEN
-        CALL MPI_REDUCE(MPI_IN_PLACE , EkinMax , nSpecies     , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
-      ELSE
-        CALL MPI_REDUCE(EkinMax      , 0.      , nSpecies     , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
-      END IF
+      tmpEkinMax = EkinMax
+      CALL MPI_REDUCE(tmpEkinMax, EkinMax, nSpecies, MPI_DOUBLE_PRECISION, MPI_MAX, 0, MPI_COMM_PICLAS, iError)
 #endif /*USE_MPI*/
     ELSE
       CALL CalcKineticEnergy(Ekin)
@@ -1441,11 +1455,8 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
   IF (CalcParticlePotentialEnergy) THEN
     CALL CalculateParticlePotentialEnergy(EpotPart)
 #if USE_MPI
-    IF(MPIRoot)THEN
-      CALL MPI_REDUCE(MPI_IN_PLACE , EpotPart , nSpecies , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
-    ELSE
-      CALL MPI_REDUCE(EpotPart     ,        0 , nSpecies , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
-    END IF
+    tmpEpotPart = EpotPart
+    CALL MPI_REDUCE(tmpEpotPart, EpotPart, nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, iError)
 #endif /*USE_MPI*/
   END IF ! CalcParticlePotentialEnergy
 #endif /*USE_HDG*/
@@ -1482,31 +1493,22 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
     IF(iter.GT.0) THEN
       ! MaxMCSoverMFP  for all processes:
 #if USE_MPI
-      IF(MPIRoot)THEN
-        CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%MaxMCSoverMFP,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-      ELSE
-        CALL MPI_REDUCE(DSMC%MaxMCSoverMFP,DSMC%MaxMCSoverMFP,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-      END IF
+      tmpScalarReal = DSMC%MaxMCSoverMFP
+      CALL MPI_REDUCE(tmpScalarReal, DSMC%MaxMCSoverMFP, 1, MPI_DOUBLE_PRECISION, MPI_MAX, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
       MaxMCSoverMFP = DSMC%MaxMCSoverMFP
       ! Maximum MaxCollProb for all processes:
 #if USE_MPI
-      IF(MPIRoot)THEN
-        CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%CollProbMaxProcMax,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-      ELSE
-        CALL MPI_REDUCE(DSMC%CollProbMaxProcMax,DSMC%CollProbMaxProcMax,1,MPI_DOUBLE_PRECISION,MPI_MAX,0,MPI_COMM_PICLAS, IERROR)
-      END IF
+      tmpScalarReal = DSMC%CollProbMaxProcMax
+      CALL MPI_REDUCE(tmpScalarReal, DSMC%CollProbMaxProcMax, 1, MPI_DOUBLE_PRECISION, MPI_MAX, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
       MaxCollProb = DSMC%CollProbMaxProcMax
       ! ResolvedCellPercentage:
 #if USE_MPI
-      IF(MPIRoot)THEN
-        CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%ResolvedCellCounter,1,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-        CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%ParticleCalcCollCounter,1,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-      ELSE
-        CALL MPI_REDUCE(DSMC%ResolvedCellCounter,DSMC%ResolvedCellCounter,1,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-        CALL MPI_REDUCE(DSMC%ParticleCalcCollCounter,DSMC%ParticleCalcCollCounter,1,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-      END IF
+      tmpScalarInt = DSMC%ResolvedCellCounter
+      CALL MPI_REDUCE(tmpScalarInt, DSMC%ResolvedCellCounter, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+      tmpScalarInt = DSMC%ParticleCalcCollCounter
+      CALL MPI_REDUCE(tmpScalarInt, DSMC%ParticleCalcCollCounter, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
       IF(DSMC%ParticleCalcCollCounter.GT.0) ResolvedCellPercentage = REAL(DSMC%ResolvedCellCounter) / REAL(DSMC%ParticleCalcCollCounter) * 100
       IF (DSMC%ReservoirSimu) THEN
@@ -1515,11 +1517,8 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
         MeanCollProb = DSMC%CollProbMean
       ELSE
 #if USE_MPI
-        IF(MPIRoot)THEN
-          CALL MPI_REDUCE(MPI_IN_PLACE,DSMC%ResolvedTimestepCounter,1,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-        ELSE
-          CALL MPI_REDUCE(DSMC%ResolvedTimestepCounter,DSMC%ResolvedTimestepCounter,1,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-        END IF
+        tmpScalarInt = DSMC%ResolvedTimestepCounter
+        CALL MPI_REDUCE(tmpScalarInt, DSMC%ResolvedTimestepCounter, 1, MPI_INTEGER, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
         IF(DSMC%ParticleCalcCollCounter.GT.0) ResolvedTimestep = REAL(DSMC%ResolvedTimestepCounter) / REAL(DSMC%ParticleCalcCollCounter) * 100
       END IF
@@ -1558,8 +1557,9 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
 #if USE_MPI
     ! Collect sum on MPIRoot
     tmpArray = (/PCoupl, PCouplAverage/)
+    tmpArray2 = tmpArray
+    CALL MPI_REDUCE(tmpArray2, tmpArray, 2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
     IF(MPIRoot)THEN
-      CALL MPI_REDUCE(MPI_IN_PLACE, tmpArray, 2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
       PCoupl        = tmpArray(1)
       PCouplAverage = tmpArray(2)
 #endif /*USE_MPI*/
@@ -1584,29 +1584,25 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
 #endif /*USE_HDG*/
 #if USE_MPI
     ELSE
-      CALL MPI_REDUCE(tmpArray, 0, 2, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
       ! Reset for all processes execpt the MPIRoot (this process keeps the old value, which is therefore considered only once in the
       ! next MPI reduce call)
       PCouplAverage = 0.
     END IF ! MPIRoot
   END IF
-  ! Switch between root and non-root processes
-  IF (MPIRoot) THEN
-    IF (CalcPartBalance)THEN
-      CALL MPI_REDUCE(MPI_IN_PLACE,nPartIn(1:nSpecAnalyze)    ,nSpecAnalyze,MPI_INTEGER         ,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-      CALL MPI_REDUCE(MPI_IN_PLACE,nPartOut(1:nSpecAnalyze)   ,nSpecAnalyze,MPI_INTEGER         ,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-      CALL MPI_REDUCE(MPI_IN_PLACE,PartEkinIn(1:nSpecAnalyze) ,nSpecAnalyze,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-      CALL MPI_REDUCE(MPI_IN_PLACE,PartEkinOut(1:nSpecAnalyze),nSpecAnalyze,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-    END IF
-  ELSE ! no Root
-    IF (CalcPartBalance)THEN
-      CALL MPI_REDUCE(nPartIn    ,0,nSpecAnalyze,MPI_INTEGER         ,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-      CALL MPI_REDUCE(nPartOut   ,0,nSpecAnalyze,MPI_INTEGER         ,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-      CALL MPI_REDUCE(PartEkinIn ,0,nSpecAnalyze,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-      CALL MPI_REDUCE(PartEkinOut,0,nSpecAnalyze,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
-    END IF
-#endif /*USE_MPI*/
+  IF (CalcPartBalance)THEN
+    ALLOCATE(tmpNPartIn(nSpecAnalyze), tmpNPartOut(nSpecAnalyze))
+    ALLOCATE(tmpPartEkinIn(nSpecAnalyze), tmpPartEkinOut(nSpecAnalyze))
+    tmpNPartIn    = nPartIn(1:nSpecAnalyze)
+    tmpNPartOut   = nPartOut(1:nSpecAnalyze)
+    tmpPartEkinIn = PartEkinIn(1:nSpecAnalyze)
+    tmpPartEkinOut= PartEkinOut(1:nSpecAnalyze)
+    CALL MPI_REDUCE(tmpNPartIn,   nPartIn(1:nSpecAnalyze),   nSpecAnalyze, MPI_INTEGER,         MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+    CALL MPI_REDUCE(tmpNPartOut,  nPartOut(1:nSpecAnalyze),  nSpecAnalyze, MPI_INTEGER,         MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+    CALL MPI_REDUCE(tmpPartEkinIn, PartEkinIn(1:nSpecAnalyze), nSpecAnalyze, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+    CALL MPI_REDUCE(tmpPartEkinOut,PartEkinOut(1:nSpecAnalyze),nSpecAnalyze, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+    DEALLOCATE(tmpNPartIn, tmpNPartOut, tmpPartEkinIn, tmpPartEkinOut)
   END IF
+#endif /*USE_MPI*/
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Analyze Routines that require MPI_REDUCE of other variables
 ! Moving Average of PCoupl:
@@ -1680,12 +1676,11 @@ END IF
 IF(usevMPF) THEN
   IF (CalcEnergyScalingRatioVMPF) THEN
 #if USE_MPI
-    IF(MPIRoot)THEN
-      CALL MPI_REDUCE(MPI_IN_PLACE,EnergyScalingRatioVMPF,2*nSpecies,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-    ELSE
-      CALL MPI_REDUCE(EnergyScalingRatioVMPF,0,2*nSpecies,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
-      EnergyScalingRatioVMPF = 0.
-    END IF
+    ALLOCATE(tmpESRVMPF(2,nSpecies))
+    tmpESRVMPF = EnergyScalingRatioVMPF
+    CALL MPI_REDUCE(tmpESRVMPF, EnergyScalingRatioVMPF, 2*nSpecies, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_PICLAS, IERROR)
+    DEALLOCATE(tmpESRVMPF)
+    IF(.NOT.MPIRoot) EnergyScalingRatioVMPF = 0.
 #endif /*USE_MPI*/
   END IF
 END IF ! CalcEnergyScalingRatioVMPF

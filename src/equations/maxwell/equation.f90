@@ -325,8 +325,8 @@ DO iRefState=1,nTmp
     IF((TEPolarization.NE.'x').AND.(TEPolarization.NE.'y').AND.(TEPolarization.NE.'r').AND.(TEPolarization.NE.'l'))THEN
       CALL abort(__STAMP__,' TEPolarization has to be x,y,l or r.')
     END IF
-    IF(TERadius.LT.0.0)THEN ! not set
-      TERadius=GETREAL('TERadius','0.0')
+    IF(TERadius.LE.0.0)THEN ! not set or auto-detection returned 0 (e.g. Windows Face_xGP issue)
+      TERadius=GETREAL('TERadius','-1.0')
       LBWRITE(UNIT_StdOut,*) ' TERadius not determined automatically. Set waveguide radius to ', TERadius
     ELSE
       LBWRITE(UNIT_StdOut,*) ' TERadius determined automatically: ', TERadius
