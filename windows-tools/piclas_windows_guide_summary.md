@@ -1,4 +1,4 @@
-# piclas-win 0.9.3 — Summary
+# piclas-win 1.0 — Summary
 
 **Unofficial Windows port of PICLas 4.1.0** (commit d63756ee) for Windows 11 with MSYS2 UCRT64 / GCC 15.  
 Documentation date: May 2026. Guide file: `piclas_windows_guide.html`.
@@ -30,7 +30,12 @@ Documentation date: May 2026. Guide file: `piclas_windows_guide.html`.
 | CHE_DSMC adaptive BC | **Fixed** — no more OS freezes |
 | OS freeze protection | **Fixed** — memory-based particle cap |
 | GPU OOM crashes (high MPI rank count) | **Fixed** — Phase 1–2 memory rework (§16.18) |
-| Bug G (flaky segfault at MPI=10 after load balance) | **Open — root cause pinned to MPI ordering race, not yet fixed** |
+| NIG_Radiation (RadTrans_Cylinder_2D/3D) | **Fixed (§16.21)** — residual `MPI_IN_PLACE` + `ElemData` serial-HDF5; passes MPI=2,3,6 |
+| NIG_Reservoir / VarRelaxProb (cold/hot/Restart) | **Fixed (§16.21)** — `VibProbInfo` serial-HDF5 write; passes MPI=2 incl. auto-restart |
+| NIG_Raytracing (box_in_box_3D, corner_2D) | **Fixed (§16.21)** — uninitialized `iDOF` out-of-bounds write; passes MPI=4,8 |
+| NIG_DSMC RotPeriodicBCMultiInterPlane | **Fixed (§16.21)** — `SurfaceGroup%Area` zeroed by 1-leader `MPI_IN_PLACE` reduce; passes MPI=2,7 |
+| NIG_PIC_poisson_Leapfrog (suite TIMEOUT) | **Fixed (§16.21)** — switched to CPU binary; suite completes in ~399 s (was 1800 s timeout) |
+| Bug G (flaky segfault at high MPI after load balance) | **Open — MPI ordering race, not yet fixed.** Narrowed (§16.21): only `exchange_procs`/`mortar_exchange_procs` + `3D_periodic_CVWM` are genuine Bug G; the rest of the old "exit-code-3" group were distinct, now-fixed bugs |
 | Bug B (mortar PartInt Windows vs Linux diff) | **Re-attributed as benign FP boundary-sensitivity; fix: use invariants in reggie (§16.19)** |
 
 ---
@@ -39,6 +44,10 @@ Documentation date: May 2026. Guide file: `piclas_windows_guide.html`.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **v0.9.7** | May 2026 | **§16.24**: fixed `NIG_code_analyze/FieldIonization` (6 errors). Root cause = the **stale venv reggie** ignored `excludeBuild.ini` in `-e` mode: `reggie.exe` runs from `reggie2.0-venv/site-packages` (2026-04-22), which lacked `StandaloneReadConfigurationFromUserblock`, so `Standalone` used an empty build config and never matched excludeBuild. FieldIonization (which excludes DSMC and needs the RK4 binary that actually calls `FieldIonization()`) wrongly ran with the DSMC binary → no `FieldIonizationRate.csv`. Patched the venv `check.py`; now the DSMC run skips it and `NIG_code_analyze_RK4` (RK4) runs+passes it. Fixes excludeBuild for all multi-timedisc suites in `-e` mode. |
+| **v0.9.6** | May 2026 | **§16.23**: fixed the MS-MPI `MPI_REDUCE(MPI_IN_PLACE)` zeroing of **L2/LInf error norms at MPI=1** (`CalcError`, `CalcErrorPartSource` in `analyze.f90`; `CalcErrorSuperB` in `superB_tools.f90`) — cleared the convergence "all False" failures in **NIG_convtest_maxwell** AND **NIG_SuperB** (both now reggie RC=0). **NIG_poisson** fixed via a new `build-poisson-rk3-codeanalyze-mpi` binary (was a CODE_ANALYZE-OFF binary-config mismatch). Still open: NIG_code_analyze FieldIonization (no rate output) + Semicircle (17% integrate_line); NIG_DVM_plasma needs PLOESMA+PETSc (blocked). |
+| **v0.9.5** | May 2026 | **§16.22**: serial PETSc binary (`build-poisson-rk3-petsc-serial`) — unblocks NIG_poisson_PETSC MPI=1 runs (poisson_box_Dirichlet_Mortar passes RC=0); wired `EXE_PETSC_SER` into `run_nig_all.sh`. **TERadius MS-MPI `MPI_IN_PLACE` fix** in `GetWaveGuideRadius` — NIG_convtest_maxwell `p_cylinder_TE_wave_circular/linear` no longer abort `TERadius<=0` at MPI=4 (the in-code "Windows Face_xGP" comment was a misattribution). Confirmed reggie Windows externals already work (HOPR via `$HOPR_PATH`, `ln -s`) — no fix needed; `save_CVWM` is a broken upstream test. Remaining convtest_maxwell `p`/`p_mortar` fail because L2 error computes exactly 0.0 (separate open analyze issue). |
+| **v0.9.4** | May 2026 | **§16.21**: completed the Group 2 serial-HDF5 / `MPI_IN_PLACE` sweep — radiation residual `MPI_IN_PLACE` (radtrans/raytrace) + radiation `ElemData` serial-HDF5; VarRelaxProb `VibProbInfo` serial-HDF5; ErrorNorms `DG_Solution` serial-HDF5. NIG_Raytracing uninitialized `iDOF` out-of-bounds write. RotPeriodicBCMultiInterPlane SIGFPE (`SurfaceGroup%Area` zeroed by a 1-leader `MPI_IN_PLACE` reduce → div-by-zero). NIG_PIC_poisson_Leapfrog suite TIMEOUT fixed by switching to a CPU binary (GPU binary deadlocks after a crashed rank at high MPI). **Group 1 "exit-code-3" bucket reclassified** — only `exchange_procs`/`mortar_exchange_procs` + `3D_periodic_CVWM` are genuine Bug G. New CPU binary `build-maxwell-radiation-cpu`. |
 | **v0.9.3** | May 2026 | MS-MPI `MPI_REDUCE(MPI_IN_PLACE)` root-zeroing fixes; adaptive BC particle runaway / OS freeze fix; memory-based particle cap; GPU managed-VRAM OOM fix (Phase 1–2 rework); Bug B re-attribution; mortar reggie analyze.ini replaced with invariant checks; Track 1 builds (14 binaries); emission_gyrotron 7 analyze errors → 0 (trapezoid artifact + Newton fix); metrics.f90 Jacobian gate; 3D_periodic_CVWM MPI=20/30 removed (§16.20) |
 | **v0.9.2** | April 2026 | GPU particle push verified working. CMake fix for `CMAKE_CUDA_CREATE_SHARED_LIBRARY` (CACHE INTERNAL FORCE) + cudart.lib staging to avoid LNK1181 from spaces in path |
 | **v0.9.1** | April 2026 | Initial GPU acceleration layer: CUDA kernel, CMake integration, 11 Windows/CUDA challenges documented |
@@ -103,6 +112,16 @@ Documentation date: May 2026. Guide file: `piclas_windows_guide.html`.
 | `regressioncheck/NIG_tracking_DSMC/mortar/analyze.ini` | Replaced `h5diff PartInt` with energy-conservation + bounds comparison (§16.19) |
 | `regressioncheck/WEK_Reservoir/CHEM_EQUI_Titan_Chemistry/PartAnalyze_refElecMod4.csv` | Regenerated from Windows run (stochastic DSMC platform divergence) |
 | `src/mesh/metrics.f90` | Scaled-Jacobian `abort()` wrapped with `IF(meshCheckRef)` — HOPR hill-deformed gyrotron mesh has elements below threshold at Gauss points but valid physical Jacobians; `meshCheckRef=F` disables without loss of physics correctness (§16.20) |
+| `src/radiation/radiative_transfer/radtrans_init.f90` | `MPI_ALLREDUCE(MPI_IN_PLACE, RadTrans%GlobalRadiationPower / ScaledGlobalRadiationPower, …, MPI_COMM_PICLAS)` → explicit `tmp` send buffer (§16.21) |
+| `src/radiation/radiative_transfer/radtrans_output.f90` | `WriteRadiationToHDF5`: 2× `MPI_REDUCE(MPI_IN_PLACE, RadObservation_Emission/EmissionPart)` → explicit temp buffers on root; `ElemData` write switched from all-ranks `OpenDataFile(single=.FALSE.)`+`WriteArrayToHDF5` to `GatheredWriteArray` (§16.21) |
+| `src/radiation/radiative_transfer/tracking/radtrans_tracking_output.f90` | `MPI_ALLREDUCE(MPI_IN_PLACE, WriteErrorToElemData, MPI_LOR, MPI_COMM_PICLAS)` → explicit buffer; **`WritePhotonVolSampleToHDF5`: added `iDOF = 0` before the DG-output loop** — uninitialized `iDOF` overran `U_N_Ray_2D_local` (NaN/heap-corruption on Linux is benign because the stack value is 0; on Windows it traps/corrupts). Fixes NIG_Raytracing (§16.21) |
+| `src/radiation/ray_tracing/raytrace_ini.f90` | `MPI_ALLREDUCE(MPI_IN_PLACE, VolMin/VolMax, MPI_MIN/MAX, MPI_COMM_PICLAS)` → explicit `VolTmp` buffer (§16.21) |
+| `src/io_hdf5/hdf5_output_particle.f90` | `WriteVibProbInfoToHDF5`: serial-HDF5 path — `ProbVibAv(nElems,nSpecies)` has the element dim **first**, so `GatheredWriteArray` cannot be used; gather to MPIRoot per-species via `MPI_GATHERV` then root writes (`single=.TRUE.`). `VibRelaxProb<2.0` attribute branch made MPIRoot-only. Fixes NIG_Reservoir/VarRelaxProb (§16.21) |
+| `src/io_hdf5/hdf5_output_field.f90` | `WriteErrorNormsToHDF5`: `DG_Solution` (rank-5 `Uex`) write switched from all-ranks `OpenDataFile(single=.FALSE.)`+`WriteArrayToHDF5` to `GatheredWriteArray`. Fixes NIG_PIC_poisson_Leapfrog/Dielectric_slab "Dataset DG_Solution could not be created" (§16.21) |
+| `src/particles/surfacemodel/surfacemodel_analyze.f90` | Group-area leader reduce `MPI_REDUCE(MPI_IN_PLACE, …, MPI_COMM_LEADERS_SHARED)` guarded with `IF(nLeaderGroupProcs.GT.1)` — on a single node it is a 1-member communicator that MS-MPI zeroes, setting `SurfaceGroup%Area=0` → div-by-zero (SIGFPE) in `GetGroupInfo`. Fixes NIG_DSMC RotPeriodicBCMultiInterPlane (§16.21) |
+| `src/equations/maxwell/equation.f90` | `GetWaveGuideRadius`: `MPI_ALLREDUCE(MPI_IN_PLACE, TERadius, MPI_MAX, MPI_COMM_PICLAS)` → explicit send buffer. MS-MPI left ranks without inlet faces at `TERadius=0` → `TERadius<=0` abort at MPI=4. Fixes NIG_convtest_maxwell `p_cylinder_TE_wave_circular/linear` (§16.22) |
+| `src/analyze/analyze.f90` | `CalcError` + `CalcErrorPartSource`: `MPI_REDUCE(MPI_IN_PLACE, L_2_Error/L_Inf_Error, …, MPI_COMM_PICLAS)` → explicit send buffers. At MPI=1 the 1-process in-place reduce is zeroed by MS-MPI → L2=0 → `SQRT(0)=0` → convergence "all False". Fixes NIG_convtest_maxwell `p`/`p_mortar` (§16.23) |
+| `src/posti/superB/superB_tools.f90` | `CalcErrorSuperB`: same `MPI_REDUCE(MPI_IN_PLACE, L_2_Error/L_Inf_Error)` → explicit buffers. Fixes NIG_SuperB `LinearConductor`/`SphericalMagnet` h-convergence (§16.23) |
 
 ### 3.4 New/Modified Configuration Files
 
@@ -119,6 +138,9 @@ Documentation date: May 2026. Guide file: `piclas_windows_guide.html`.
 | `regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.ini` | N restricted to 6,9; `meshCheckRef=F` added (§16.20) |
 | `regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/command_line.ini` | MPI restricted to 2,10 (§16.20) |
 | `regressioncheck/NIG_PIC_maxwell_RK4_p_adaption/3D_periodic_CVWM/command_line.ini` | MPI restricted to 1–17; MPI=20,30 removed (§16.20) |
+| `run_nig_all.sh` | `SUITE_EXE[NIG_PIC_poisson_Leapfrog]` switched from `EXE_LEAP` (GPU) to `EXE_LEAP_CA_DBG` (CPU) — GPU binary deadlocks after a crashed rank at high MPI → suite TIMEOUT; CPU binary completes. Same precedent as `NIG_PIC_maxwell_RK4_p_adaption` (§16.21) |
+| `run_nig_all.sh` | Added `EXE_PETSC_SER` (`build-poisson-rk3-petsc-serial`); `SUITE_EXE[NIG_poisson_PETSC]` switched from `EXE_PRK3` (no PETSc) to it — MPI=1 PETSc/HDG runs now pass (§16.22) |
+| `run_nig_all.sh` | Added `EXE_PRK3_CA_MPI` (`build-poisson-rk3-codeanalyze-mpi`); `SUITE_EXE[NIG_poisson]` switched from `EXE_PRK3` (CODE_ANALYZE=OFF) to it — HDGIterations.csv reference needs the CODE_ANALYZE iter=0 doubling (§16.23) |
 
 ---
 
@@ -197,6 +219,19 @@ Applied to 9 sites across `particle_analyze.f90`, `particle_analyze_tools.f90`, 
 | **Root cause** | Heap corruption from an out-of-bounds write during load-balance restart. All Fortran-side arrays audited clean; not CPU oversubscription (n=10 < phys cores fails deterministically; n=16 > phys passes every time). Textbook MPI ordering race: a non-blocking buffer reused before `MPI_WAIT`, or an `MPI_IN_PLACE`/aliasing issue in the LB/particle-exchange MPI path. Heisenbug — disappears under gdb, page-heap, ASLR-off, and `WRITE+FLUSH` additions. |
 | **What was tried** | gdb (suppressed it), Application Verifier full page-heap (blocked by gfortran UCRT false positive at startup), ASLR disabled (suppressed it), Dr. Memory (blocked by Defender/DynamoRIO injection), printf-bisection (suppressed it), complete audit of `particle_mpi.f90`/`loadbalance_metrics.f90`/`mesh_pAdaption.f90`/`loadbalance.f90` |
 | **Next action** | Linux + Valgrind memcheck/Helgrind (non-perturbing, layout-independent); or code review of LB particle exchange for non-blocking buffers reused before `MPI_WAITALL`. Repro kit: `_bugG_repro\` (parameter.ini + mesh), `build-maxwell-rk4-mpi-gpu`, `mpiexec -n 10` → deterministic 4/4 crash |
+
+> **§16.21 reclassification — "exit code 3" ≠ Bug G.** The old Group-1 bucket (everything that exited with code 3) was a *symptom* grouping, not a root-cause grouping. Verified on CPU debug builds (Bug G is GPU-independent, so CPU repro is valid): **only `exchange_procs`, `mortar_exchange_procs`, and `3D_periodic_CVWM` are genuine Bug G** (flaky SIGSEGV after LB, non-monotonic in rank count, suppressed by gdb/page-heap/ASLR/printf). The others were distinct, now-fixed bugs: `NIG_Raytracing` (uninitialized `iDOF`), `RotPeriodicBCMultiInterPlane` (SurfaceGroup%Area 1-leader `MPI_IN_PLACE` zeroing), `NIG_DSMC/Macroscopic_Restart` (no load balance at all → cannot be Bug G; GPU-only code-3), `NIG_PIC_poisson_Leapfrog_single_node` (clean PETSc-required abort). Before attributing a crash to Bug G, confirm the fingerprint (LB present, high-rank, **flaky** SIGSEGV after LB).
+
+### Resolved in §16.21 (2026-05-26)
+
+| Suite / test | Root cause | Fix |
+|--------------|-----------|-----|
+| NIG_Radiation (RadTrans_Cylinder_2D/3D) | (1) residual `MPI_IN_PLACE` reduces on `MPI_COMM_PICLAS` → garbage/early MS-MPI abort; (2) `ElemData` written by all ranks with `OpenDataFile(single=.FALSE.)`+`WriteArrayToHDF5` → non-root `H5Dcreate` fails | Explicit reduce buffers; `ElemData` → `GatheredWriteArray`. Passes MPI=2,3,6 |
+| NIG_Reservoir VarRelaxProb (cold/hot/Restart) | NOT `MPI_IN_PLACE` — `WriteVibProbInfoToHDF5` wrote `VibProbInfo` on all ranks (serial-HDF5 anti-pattern) | per-species `MPI_GATHERV` to MPIRoot (element dim is first → can't use `GatheredWriteArray`); attribute branch MPIRoot-only. Passes MPI=2 incl. auto-restart |
+| NIG_Raytracing (box_in_box_3D, corner_2D) | **Uninitialized `iDOF`** in `WritePhotonVolSampleToHDF5` → out-of-bounds write of `U_N_Ray_2D_local` (Linux stack happens to be 0; Windows nonzero). Release build corrupts heap → later HDF5 crash; debug `-fbounds-check` pins it | `iDOF = 0` before the DG-output loop. Passes MPI=4,8 |
+| NIG_PIC_poisson_Leapfrog / Dielectric_slab_FPC_via_VDL_displacement_current | `WriteErrorNormsToHDF5` wrote `DG_Solution` (Uex) on all ranks (serial-HDF5 anti-pattern) → "Dataset DG_Solution could not be created" | rank-5 write → `GatheredWriteArray`. Passes MPI=2 |
+| NIG_DSMC RotPeriodicBCMultiInterPlane | SIGFPE in `surfacemodel_analyze GetGroupInfo`: `SampState(4)/(TimeSampleTemp*Area)` with `Area=0` — the per-group area leader reduce `MPI_REDUCE(MPI_IN_PLACE, …, MPI_COMM_LEADERS_SHARED)` is a 1-member comm on a single node → MS-MPI zeroes it. Divide only fires once a group has wall hits (`Counter>0`), hence "after LB" | guard reduce with `IF(nLeaderGroupProcs.GT.1)` (root already holds full single-node area). Passes MPI=2,7; reggie surface comparisons match references |
+| NIG_PIC_poisson_Leapfrog (suite TIMEOUT) | GPU binary deadlocks after a crashed rank at high MPI (surviving ranks block in an MPI collective) → suite hits 1800 s `timeout` | `run_nig_all.sh` → CPU binary (`EXE_LEAP_CA_DBG`). Suite completes in ~399 s |
 
 ### Bug B — mortar PartInt Windows vs Linux Divergence (RESOLVED AS BENIGN — §16.19)
 
@@ -285,6 +320,17 @@ Many suites define multiple build variants; running with a single pre-built bina
 | NIG_PIC_maxwell_RK4_p_adaption | ✅ PML-2elem, 5elem, Dielectric all PASS (after IsPushArr fix §16.13); 3D_periodic_CVWM 0 errors — MPI=20,30 removed (§16.20) |
 | WEK_Reservoir | ✅ 0 analyze failures / 80 examples (after §16.14 MPI_REDUCE fixes + Windows reference for Titan) |
 | CHE_DSMC | ✅ No more OS freeze (after §16.15/§16.16 adaptive-BC MPI_IN_PLACE fixes + §16.17 particle cap) |
+| NIG_Radiation | ✅ RadTrans_Cylinder_2D/3D pass MPI=2,3,6 (§16.21 MPI_IN_PLACE + ElemData serial-HDF5) |
+| NIG_Reservoir VarRelaxProb | ✅ cold/hot/Restart pass MPI=2 (§16.21 VibProbInfo serial-HDF5) |
+| NIG_Raytracing | ✅ box_in_box_3D + corner_2D pass MPI=4,8 (§16.21 uninitialized iDOF) |
+| NIG_DSMC RotPeriodicBCMultiInterPlane | ✅ pass MPI=2,7; surface comparisons match references (§16.21 SurfaceGroup%Area 1-leader reduce) |
+| NIG_PIC_poisson_Leapfrog | ✅ suite completes ~399 s (no TIMEOUT) on CPU binary (§16.21); residual analyze/reference + HOPR-mesh items remain (Group 4/5) |
+| NIG_convtest_maxwell | ✅ reggie RC=0 — all h/p examples pass (§16.22 TERadius + §16.23 L2-error fixes) |
+| NIG_SuperB | ✅ reggie RC=0 — magnet h5diffs + LinearConductor/SphericalMagnet convergence (§16.23 L2-error fix) |
+| NIG_poisson | ✅ reggie RC=0 — CODE_ANALYZE+MPI binary (§16.23) |
+| NIG_poisson_PETSC | ⚠ MPI=1 runs pass on serial PETSc binary (§16.22); MPI>1 permanently blocked |
+| NIG_code_analyze | ✅ FieldIonization fixed (§16.24 venv reggie excludeBuild; RK4 sub-run passes RC=0); ⚠ Semicircle 17% integrate_line still open |
+| NIG_DVM_plasma | ❌ needs PLOESMA+PETSc coupled-field build (DG_Solution); blocked |
 
 ---
 
@@ -301,10 +347,11 @@ Many suites define multiple build variants; running with a single pre-built bina
 
 ### 7.2 Key Constraints
 
-- **MPI + PETSc cannot be combined:** MSYS2 PETSc is sequential; `PetscInitialize()` aborts with >1 MPI rank.
+- **MPI + PETSc cannot be combined:** MSYS2 PETSc is sequential; `PetscInitialize()` aborts with >1 MPI rank. §16.22 adds a serial PETSc binary `build-poisson-rk3-petsc-serial` (`LIBS_USE_MPI=OFF` + `LIBS_USE_PETSC=ON` + RK3 + CODE_ANALYZE) which runs the MPI=1 PETSc/HDG cases (e.g. NIG_poisson_PETSC/poisson_box_Dirichlet_Mortar); MPI>1 PETSc runs remain permanently blocked.
+  - **HDG has an internal MPI-capable CG solver (used when PETSc is OFF):** `src/hdg/hdg.f90` selects "Method for HDG solver: CG" without PETSc, and that CG solver runs in parallel (NIG_poisson runs it at MPI=1,2,4,8). So **standard HDG Poisson (Dirichlet/Neumann/Mortar) is NOT blocked at MPI>1** — it can run with a non-PETSc MPI build (demonstrated: NIG_poisson_PETSC/poisson runs at MPI=2 with CG). What is genuinely PETSc-only is **FPC (Floating Boundary Condition / floating conductor)**: `hdg_init.f90:111` aborts "FPC model requires LIBS_USE_PETSC=ON" (and `ExactFunc=600` likewise) — the floating-potential Lagrange-multiplier system is implemented only in the PETSc path. *Decision: leave the `*_PETSc` suites as-is.* They aren't re-pointed at the CG binary because their analyze references (`HDGIterations.csv` iteration counts) are solver-specific — CG and PETSc converge in different iteration counts (the physical solution matches, only the iteration count differs).
 - **HDF5 is serial:** `USE_MPI_HDF5=0` always. Only MPIRoot opens HDF5 files; non-root ranks use `GatheredWriteArray`.
 - **`HDF5_USE_FILE_LOCKING=FALSE` required** for all MPI runs.
-- **GPU build:** `PICLAS_USE_GPU=OFF` recommended for regression testing to avoid Bug G and eliminate Bug B FP divergence from GPU references.
+- **GPU build:** `PICLAS_USE_GPU=OFF` recommended for regression testing to avoid Bug G and eliminate Bug B FP divergence from GPU references. Concretely (§16.21): `NIG_PIC_poisson_Leapfrog` and `NIG_Radiation` are driven by CPU binaries in `run_nig_all.sh`; a non-GPU `build-maxwell-radiation-cpu` (`PICLAS_TIMEDISCMETHOD=Radiation`, `PICLAS_USE_GPU=OFF`) was added because the GPU radiation binary cannot link in this environment (CUDA `libpiclasGPU.dll` step fails) and the GPU leapfrog binary deadlocks at high MPI.
 - **TEMP/TMP must be set:** `export TEMP=/tmp && export TMP=/tmp` before building (system TEMP may be read-only).
 
 ### 7.3 Available CMake Presets
@@ -320,13 +367,15 @@ Many suites define multiple build variants; running with a single pre-built bina
 
 ### 7.4 reggie2.0 Windows Patches
 
-Three patches applied to `C:\Data\PRJ\reggie2.0`:
+Patches applied to `C:\Data\PRJ\reggie2.0`:
 
 | File | Problem | Fix |
 |------|---------|-----|
 | `pyproject.toml` | `vtk>=9.4.0` no wheel for Python 3.14 | Removed vtk + dev-only deps |
 | `reggie/externalcommand.py` | `select.select()` on pipes fails on Windows | Replaced with `threading.Thread` readers |
 | `reggie/check.py` | Binary lookup missing `.exe` extension | Added `.exe` fallback; added `StandaloneReadConfigurationFromUserblock()` so `excludeBuild.ini` works in external-binary mode; fixed `_link_or_copy()` path resolution |
+
+> **IMPORTANT (§16.24):** `reggie.exe` actually runs the **installed venv copy** under `C:\Data\PRJ\reggie2.0-venv\lib\python3.14\site-packages\reggie\`, NOT the source tree. The venv was a month STALE (2026-04-22) and lacked `StandaloneReadConfigurationFromUserblock`, so `excludeBuild.ini` was silently ignored in `-e` mode (e.g. `NIG_code_analyze/FieldIonization` wrongly ran with the DSMC binary instead of the required RK4 binary). **Re-synced 2026-05-28**: `pip install --force-reinstall --no-deps C:\Data\PRJ\reggie2.0` into the venv, so the venv now matches the source tree exactly (all Windows patches present). Re-validated convtest_maxwell / SuperB / poisson / FieldIonization with no regression. When patching reggie in future, edit the **venv** copy and/or re-sync from source.
 
 ### 7.5 Running Regression Tests
 

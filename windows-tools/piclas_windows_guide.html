@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 0.9.3 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
+<title>piclas-win 1.0 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -94,7 +94,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 
 <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <nav>
-  <div class="nav-title">piclas-win 0.9.3 Guide</div>
+  <div class="nav-title">piclas-win 1.0 Guide</div>
 
   <div class="nav-section">
     <a href="#changelog">Release History</a>
@@ -186,6 +186,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     <a class="nav-sub" href="#s16-19-reggie">Recommended reggie change</a>
 
     <a href="#s16-20">§16.20 Track 1 Builds &amp; Emission Gyrotron / p_adaption Fixes</a>
+    <a href="#s16-21">§16.21 Group 2 serial-HDF5 / MPI_IN_PLACE completion, Raytracing &amp; RotPeriodic fixes, Bug G reclassification</a>
+    <a href="#s16-22">§16.22 Serial PETSc binary, TERadius MPI_IN_PLACE fix, reggie externals verification</a>
+    <a href="#s16-23">§16.23 L2-error-norm MPI_IN_PLACE fix (convtest_maxwell + SuperB), NIG_poisson CODE_ANALYZE binary</a>
+    <a href="#s16-24">§16.24 reggie excludeBuild in -e mode (stale venv) &mdash; NIG_code_analyze/FieldIonization</a>
     <a class="nav-sub" href="#s16-20-track1">Track 1 Builds (14 binaries)</a>
     <a class="nav-sub" href="#s16-20-gyrotron">Emission Gyrotron Analyze Fix</a>
     <a class="nav-sub" href="#s16-20-metrics">metrics.f90 Jacobian Gate</a>
@@ -199,7 +203,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <main>
 
 <div class="hero">
-  <h1>piclas-win 0.9.3</h1>
+  <h1>piclas-win 1.0</h1>
   <div class="subtitle">Unofficial Windows port of PICLas 4.1.0 &mdash; complete setup, build, and distribution guide for Windows 11 with MSYS2 UCRT64</div>
   <p style="margin-top:10px;font-size:0.85rem;color:var(--yellow);">
     &#9888; This is an <strong>unofficial</strong> Windows port. It is not affiliated with or endorsed by the PICLas development team.
@@ -218,6 +222,94 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <h2 id="changelog">Release History</h2>
 <table>
   <tr><th>Version</th><th>Date</th><th>Highlights</th></tr>
+  <tr>
+    <td><strong>v0.9.7</strong></td>
+    <td>May 2026</td>
+    <td>
+      <strong>reggie excludeBuild now works in <code>-e</code> mode &mdash; NIG_code_analyze/FieldIonization fixed (&sect;16.24).</strong>
+      <code>FieldIonization</code> produced no <code>FieldIonizationRate.csv</code> because it was run with the DSMC
+      binary, whose timestep never calls <code>FieldIonization()</code> (only the RK4 <code>ByLSERK</code> timestep
+      does; its <code>excludeBuild.ini</code> excludes DSMC). It should have been skipped, but the
+      <strong>venv reggie was stale</strong> (the one <code>reggie.exe</code> actually runs,
+      <code>reggie2.0-venv/site-packages</code>, 2026-04-22) and lacked
+      <code>StandaloneReadConfigurationFromUserblock</code>, so <code>Standalone</code> used an empty build config and
+      excludeBuild never matched. Patched the venv <code>check.py</code> (added the function + wired it into
+      <code>Standalone.__init__</code>). Now the DSMC run skips FieldIonization and
+      <code>NIG_code_analyze_RK4</code> (RK4 binary) runs and passes it (RC=0). Fixes excludeBuild for all
+      multi-timedisc suites in <code>-e</code> mode. (Semicircle 17% integrate_line remains open.)
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v0.9.6</strong></td>
+    <td>May 2026</td>
+    <td>
+      <strong>L2-error-norm MS-MPI fix &amp; two more suites green (&sect;16.23).</strong>
+      <ul style="margin-top:4px;">
+        <li><b>L2/LInf error norms zeroed at MPI=1</b>: <code>MPI_REDUCE(MPI_IN_PLACE, L_2_Error,&hellip;)</code> on a
+            1-process communicator is zeroed by MS-MPI &rarr; <code>SQRT(0)=0</code> &rarr; convergence tests report
+            "all False". Fixed with explicit send buffers in <code>analyze.f90</code> (<code>CalcError</code>,
+            <code>CalcErrorPartSource</code>) and <code>superB_tools.f90</code> (<code>CalcErrorSuperB</code>).
+            <strong>NIG_convtest_maxwell</strong> and <strong>NIG_SuperB</strong> now both reggie RC=0.</li>
+        <li><b>NIG_poisson</b>: was a binary-config mismatch (reference <code>HDGIterations.csv</code> has 26 entries =
+            13 MPI combos &times;2 from the CODE_ANALYZE iter=0 doubling; <code>EXE_PRK3</code> is CODE_ANALYZE=OFF).
+            Built <code>build-poisson-rk3-codeanalyze-mpi</code>, wired <code>EXE_PRK3_CA_MPI</code> &rarr; reggie RC=0.</li>
+        <li><em>Still open:</em> <code>NIG_code_analyze/FieldIonization</code> (no <code>FieldIonizationRate.csv</code>
+            output) and <code>/Semicircle</code> (integrate_line off 17%, both tracking methods agreeing);
+            <code>NIG_DVM_plasma</code> needs a PLOESMA+PETSc coupled-field build (blocked).</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v0.9.5</strong></td>
+    <td>May 2026</td>
+    <td>
+      <strong>Tier 2/3 follow-ups (&sect;16.22).</strong>
+      <ul style="margin-top:4px;">
+        <li>Serial PETSc binary <code>build-poisson-rk3-petsc-serial</code> (<code>LIBS_USE_MPI=OFF</code> +
+            <code>LIBS_USE_PETSC=ON</code>): unblocks the MPI=1 runs of <code>NIG_poisson_PETSC</code>
+            (<code>poisson_box_Dirichlet_Mortar</code> passes RC=0). Wired <code>EXE_PETSC_SER</code> into
+            <code>run_nig_all.sh</code>. MPI&gt;1 PETSc remains permanently blocked.</li>
+        <li><b>TERadius <code>MPI_IN_PLACE</code> fix</b> in <code>GetWaveGuideRadius</code>
+            (<code>equation.f90</code>): <code>MPI_ALLREDUCE(MPI_IN_PLACE,TERadius,MPI_MAX,&hellip;)</code> left
+            ranks without inlet faces at 0 &rarr; <code>TERadius&le;0</code> abort at MPI=4. Explicit-buffer fix;
+            <code>NIG_convtest_maxwell/p_cylinder_TE_wave_circular,linear</code> now pass (the in-code
+            &ldquo;Windows Face_xGP&rdquo; comment was a misattribution).</li>
+        <li>Verified reggie Windows externals already work (HOPR via <code>$HOPR_PATH</code>, <code>ln -s</code>) &mdash;
+            no fix needed; <code>save_CVWM</code> is a broken upstream test (references a never-generated
+            <code>Box_mesh.h5</code>).</li>
+        <li><em>Still open:</em> <code>NIG_convtest_maxwell/p</code> &amp; <code>p_mortar</code> p-convergence fails
+            because the L2 error computes exactly 0.0 for all N (separate Windows analyze-L2 issue; the
+            <code>h_*</code> examples pass).</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v0.9.4</strong></td>
+    <td>May 2026</td>
+    <td>
+      <strong>Completed the Group&nbsp;2 serial-HDF5 / <code>MPI_IN_PLACE</code> sweep and reclassified the
+      "exit-code-3" bucket (&sect;16.21).</strong>
+      <ul style="margin-top:4px;">
+        <li><code>NIG_Radiation</code>: residual <code>MPI_IN_PLACE</code> reduces on <code>MPI_COMM_PICLAS</code>
+            (radtrans/raytrace) &rarr; explicit buffers; <code>ElemData</code> written via
+            <code>GatheredWriteArray</code>. Passes MPI=2,3,6.</li>
+        <li><code>NIG_Reservoir/VarRelaxProb</code>: <code>WriteVibProbInfoToHDF5</code> serial-HDF5 write
+            (per-species <code>MPI_GATHERV</code> to root; element dim is first). Passes MPI=2 incl. auto-restart.</li>
+        <li><code>NIG_Raytracing</code>: uninitialized <code>iDOF</code> out-of-bounds write in
+            <code>WritePhotonVolSampleToHDF5</code> (Linux stack is 0, Windows nonzero). Passes MPI=4,8.</li>
+        <li><code>Dielectric_slab</code>: <code>WriteErrorNormsToHDF5</code> <code>DG_Solution</code> serial-HDF5
+            write &rarr; <code>GatheredWriteArray</code>. Passes MPI=2.</li>
+        <li><code>RotPeriodicBCMultiInterPlane</code>: SIGFPE from <code>SurfaceGroup%Area=0</code> &mdash; a
+            1-leader <code>MPI_REDUCE(MPI_IN_PLACE,&hellip;,MPI_COMM_LEADERS_SHARED)</code> zeroed by MS-MPI;
+            guarded with <code>IF(nLeaderGroupProcs.GT.1)</code>. Passes MPI=2,7.</li>
+        <li><code>NIG_PIC_poisson_Leapfrog</code> suite TIMEOUT: GPU binary deadlocks after a crashed rank at
+            high MPI &rarr; switched to a CPU binary in <code>run_nig_all.sh</code>. Suite completes ~399&nbsp;s.</li>
+        <li><strong>Bug&nbsp;G reclassification</strong>: only <code>exchange_procs</code>/<code>mortar_exchange_procs</code>
+            and <code>3D_periodic_CVWM</code> are genuine Bug&nbsp;G; the rest of the old exit-code-3 group were
+            distinct, now-fixed bugs. New CPU binary <code>build-maxwell-radiation-cpu</code>.</li>
+      </ul>
+    </td>
+  </tr>
   <tr>
     <td><strong>v0.9.3</strong></td>
     <td>May 2026</td>
@@ -3803,10 +3895,13 @@ DoCalcErrorNorms = .FALSE.   ! DSMC/BGK/FP: L_2 norms not computed
     </tr>
     <tr>
       <td><strong>Bug G</strong></td>
-      <td>exchange_procs (MPI&ge;21),<br>mortar_exchange_procs</td>
-      <td>Exit code&nbsp;3 crash on highest-rank process; no error message</td>
-      <td>Debug build with <code>-ffpe-trap=invalid,overflow</code>;
-          run <code>mpiexec -n 21 piclas.exe</code> to capture stack trace</td>
+      <td>exchange_procs (MPI&ge;21),<br>mortar_exchange_procs,<br>3D_periodic_CVWM (n=10,11,15)</td>
+      <td>Flaky exit-code-3 SIGSEGV on highest-rank process after load balance; no error message.
+          <b>&sect;16.21:</b> scope narrowed to exactly these &mdash; the rest of the old exit-code-3 group were
+          distinct, now-fixed bugs (NIG_Raytracing iDOF, RotPeriodic Area, etc.). Confirm the <em>flaky</em>
+          fingerprint before attributing a new crash to Bug&nbsp;G.</td>
+      <td>Linux + Valgrind Helgrind (non-perturbing); or audit non-blocking buffers reused before
+          <code>MPI_WAITALL</code> in the LB particle-exchange path</td>
     </tr>
     <tr>
       <td><strong>Bug D1</strong> <span class="badge fix">FIXED 2026-05-11</span></td>
@@ -5040,6 +5135,342 @@ regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.ini
   To make the source code changes permanent and shareable, commit the five modified/new files to a Git branch.
   The changes are fully backward-compatible â€” on Linux and macOS the <code>glob_windows.c</code> compiles to
   a no-op and all other behaviour is identical to upstream PICLas.
+</div>
+
+<!-- ─────────────────── §16.21 ─────────────────── -->
+<h2 id="s16-21">§16.21 Group 2 serial-HDF5 / MPI_IN_PLACE Completion, Raytracing &amp; RotPeriodic Fixes, Bug G Reclassification</h2>
+<p>
+  This round closed out the remaining Group&nbsp;2 failures (the suites that aborted early with an MS-MPI
+  <code>aborting (comm=&hellip;), error 2</code>), fixed two further crashes that had been mis-bucketed as Bug&nbsp;G,
+  resolved the <code>NIG_PIC_poisson_Leapfrog</code> suite timeout, and reclassified the old
+  &ldquo;exit-code-3&rdquo; group. All fixes were verified on CPU builds (Bug&nbsp;G is GPU-independent, so CPU
+  repro is valid and avoids the GPU/CUDA link failure in this environment).
+</p>
+
+<h3 id="s16-21-1">§16.21.1 Radiation &mdash; residual MPI_IN_PLACE + ElemData serial-HDF5</h3>
+<p>
+  <code>NIG_Radiation/RadTrans_Cylinder_2D/3D</code> crashed on all multi-rank runs. Two stacked causes:
+</p>
+<ul>
+  <li><b>Residual <code>MPI_IN_PLACE</code> reduces on <code>MPI_COMM_PICLAS</code></b> (the &sect;16.14 class, not
+      yet swept in the radiation tree): <code>RadTrans%GlobalRadiationPower</code> /
+      <code>ScaledGlobalRadiationPower</code> (<span class="mod-file">radtrans_init.f90</span>),
+      <code>RadObservation_Emission</code> / <code>EmissionPart</code> (<span class="mod-file">radtrans_output.f90</span>),
+      <code>WriteErrorToElemData</code> (<span class="mod-file">radtrans_tracking_output.f90</span>),
+      <code>VolMin</code>/<code>VolMax</code> (<span class="mod-file">raytrace_ini.f90</span>) &mdash; all replaced
+      with explicit send buffers.</li>
+  <li><b><code>ElemData</code> serial-HDF5 write</b>: <code>WriteRadiationToHDF5</code> opened the file with
+      <code>single=.FALSE.</code> on every rank and called <code>WriteArrayToHDF5</code> directly &rarr; non-root
+      <code>H5Dcreate</code> fails (&ldquo;Dataset ElemData could not be created&rdquo;). The element dimension is
+      last, so this was switched to <code>GatheredWriteArray</code> (same as <code>PartInt</code>).</li>
+</ul>
+<p>Verified: RadTrans_Cylinder_2D passes MPI=2,3,6.</p>
+
+<h3 id="s16-21-2">§16.21.2 VarRelaxProb &mdash; VibProbInfo serial-HDF5 (element dim first)</h3>
+<p>
+  <code>NIG_Reservoir/VarRelaxProb_{cold,hot,Restart}</code> aborted &mdash; <em>not</em> an <code>MPI_IN_PLACE</code>
+  bug (<code>VarVibRelaxProb</code> is purely per-element local). The cause was the serial-HDF5 anti-pattern in
+  <code>WriteVibProbInfoToHDF5</code>. Because <code>ProbVibAv(nElems,nSpecies)</code> has the <strong>element
+  dimension first</strong>, <code>GatheredWriteArray</code> (which concatenates the last dim) cannot be used; the
+  fix gathers to MPIRoot <em>per species</em> via <code>MPI_GATHERV</code> (the same pattern as
+  <code>WriteAdaptiveRunningAverageToHDF5</code>), then root writes with <code>single=.TRUE.</code>. The
+  <code>VibRelaxProb&lt;2.0</code> attribute branch was also made MPIRoot-only. Verified MPI=2 incl. the
+  <code>DoInitialAutoRestart</code> read-back.
+</p>
+
+<h3 id="s16-21-3">§16.21.3 NIG_Raytracing &mdash; uninitialized iDOF (not serial-HDF5, not Bug G)</h3>
+<div class="note">
+  <b>Root cause: uninitialized integer.</b> <code>WritePhotonVolSampleToHDF5</code> builds the 2D output array
+  with <code>iDOF = iDOF + 1</code> inside the DG loop <em>without initializing <code>iDOF</code></em>. On Linux the
+  stack happens to hold 0 (works); on Windows it is nonzero &rarr; a one-past-the-end write of
+  <code>U_N_Ray_2D_local</code>. A release/old binary corrupts the heap and the crash surfaces later inside an
+  HDF5 call (which initially <em>looked</em> like the serial-HDF5 anti-pattern); the <code>-fbounds-check</code>
+  debug build pinned it exactly: <code>Index '1913' of dimension 2 &hellip; outside of expected range (1:1912)</code>.
+  <b>Fix:</b> add <code>iDOF = 0</code> before the loop. Verified box_in_box_3D + corner_2D pass MPI=4,8.
+</div>
+
+<h3 id="s16-21-4">§16.21.4 Dielectric_slab &mdash; ErrorNorms DG_Solution serial-HDF5</h3>
+<p>
+  <code>NIG_PIC_poisson_Leapfrog/Dielectric_slab_FPC_via_VDL_displacement_current</code> aborted with
+  &ldquo;Dataset DG_Solution could not be created&rdquo; during &ldquo;WRITE Analytic solution and L2/LInf
+  norms&rdquo;. <code>WriteErrorNormsToHDF5</code> (<span class="mod-file">hdf5_output_field.f90</span>) wrote the
+  rank-5 <code>Uex</code> <code>DG_Solution</code> on all ranks; switched to <code>GatheredWriteArray</code>
+  (element dim last). Verified MPI=2.
+</p>
+
+<h3 id="s16-21-5">§16.21.5 RotPeriodicBCMultiInterPlane &mdash; SIGFPE from a 1-leader MPI_IN_PLACE reduce</h3>
+<p>
+  <code>NIG_DSMC/RotPeriodicBCMultiInterPlane</code> SIGFPE'd deterministically at MPI=2 and 7, right after the
+  first load balance &mdash; which previously got it mis-filed as Bug&nbsp;G. gdb (deterministic crash &rarr;
+  gdb catches it) pinned it to <code>surfacemodel_analyze.f90 GetGroupInfo</code>:
+  <code>SampState(4,iGroup) / (TimeSampleTemp * SurfaceGroup%Area(iGroup))</code> with <code>Area=0</code>.
+</p>
+<p>
+  Every rank computes the full single-node group area (the area loop covers all
+  <code>nComputeNodeSurfTotalSides</code>). The follow-up
+  <code>MPI_REDUCE(MPI_IN_PLACE, &hellip;, MPI_COMM_LEADERS_SHARED)</code> &mdash; intended only to combine areas
+  across <em>multiple</em> compute nodes &mdash; runs on a <strong>1-member communicator on a single node</strong>,
+  where MS-MPI zeroes the <code>MPI_IN_PLACE</code> buffer (the &sect;13.1 bug), setting <code>Area=0</code>. The
+  divide only fires once a group has wall hits (<code>Counter&gt;0</code>), hence the &ldquo;after load balance&rdquo;
+  timing (really: after particles reach the rotating wall). <b>Fix:</b> guard the reduce with
+  <code>IF(nLeaderGroupProcs.GT.1)</code> (root already holds the full area). Verified MPI=2,7; reggie surface
+  comparisons (<code>GroupID</code>, <code>Group_Symmetry_fac</code>, <code>InterPlanePosition</code>) match references.
+</p>
+
+<h3 id="s16-21-6">§16.21.6 NIG_PIC_poisson_Leapfrog suite TIMEOUT &mdash; GPU deadlock &rarr; CPU binary</h3>
+<p>
+  No example hangs on a CPU binary at any rank count (MPI=2&hellip;12). The suite timeout is the <strong>GPU
+  binary</strong> deadlocking: a crashed rank at high MPI (Bug-G / CUDA-context race) leaves the surviving ranks
+  blocked in an MPI collective &rarr; one run hangs &rarr; the suite hits the 1800&nbsp;s <code>timeout</code>.
+  <b>Fix:</b> <code>SUITE_EXE[NIG_PIC_poisson_Leapfrog]</code> in <code>run_nig_all.sh</code> &rarr;
+  <code>EXE_LEAP_CA_DBG</code> (CPU), the same precedent already used for
+  <code>NIG_PIC_maxwell_RK4_p_adaption</code>. The full suite via reggie then completes in ~399&nbsp;s
+  (RC&ne;124). Residual <code>RC=1</code> is pre-existing analyze/reference mismatches + a missing HOPR mesh, not
+  the timeout.
+</p>
+
+<h3 id="s16-21-7">§16.21.7 &ldquo;Exit code 3&rdquo; &ne; Bug G &mdash; reclassification</h3>
+<p>
+  The old Group&nbsp;1 bucket lumped everything that exited with code&nbsp;3. Bug&nbsp;G has a specific fingerprint:
+  <strong>flaky</strong> SIGSEGV (not a bounds/FP trap, no PICLas <code>ABORT</code> message) <em>after load
+  balance</em>, non-monotonic in rank count, suppressed by gdb/page-heap/ASLR/printf, requires
+  <code>DoLoadBalance=T</code>. Verified breakdown:
+</p>
+<table>
+  <tr><th>Test</th><th>Verdict</th><th>Evidence</th></tr>
+  <tr><td><code>exchange_procs</code>, <code>mortar_exchange_procs</code>, <code>3D_periodic_CVWM</code></td>
+      <td><b>genuine Bug&nbsp;G</b></td><td>flaky high-rank SIGSEGV after LB</td></tr>
+  <tr><td><code>NIG_DSMC/Macroscopic_Restart</code></td><td>NOT Bug&nbsp;G</td>
+      <td>has <em>no load balance</em> &rarr; structurally impossible; runs clean on CPU. GPU code-3 is a separate/GPU issue</td></tr>
+  <tr><td><code>RotPeriodicBCMultiInterPlane</code></td><td>NOT Bug&nbsp;G (fixed &sect;16.21.5)</td>
+      <td>deterministic SIGFPE, not flaky SIGSEGV</td></tr>
+  <tr><td><code>NIG_Raytracing</code></td><td>NOT Bug&nbsp;G (fixed &sect;16.21.3)</td>
+      <td>deterministic uninitialized-variable crash</td></tr>
+  <tr><td><code>NIG_PIC_poisson_Leapfrog_single_node</code></td><td>NOT Bug&nbsp;G</td>
+      <td>clean &ldquo;p-adaption needs PETSc&rdquo; abort (MPI+PETSc constraint)</td></tr>
+</table>
+
+<h3 id="s16-21-8">§16.21.8 Files changed in §16.21</h3>
+<div class="files">
+  <span class="dir">src\radiation\radiative_transfer\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">radtrans_init.f90</span> &nbsp;<em>GlobalRadiationPower/ScaledGlobalRadiationPower ALLREDUCE &rarr; explicit buffer</em><br>
+  &nbsp;&nbsp;<span class="mod-file">radtrans_output.f90</span> &nbsp;<em>RadObservation reduces &rarr; explicit buffers; ElemData &rarr; GatheredWriteArray</em><br>
+  &nbsp;&nbsp;<span class="mod-file">tracking\radtrans_tracking_output.f90</span> &nbsp;<em>WriteErrorToElemData reduce &rarr; explicit buffer; <b>iDOF = 0</b> before DG-output loop</em><br>
+  &nbsp;&nbsp;<span class="mod-file">..\ray_tracing\raytrace_ini.f90</span> &nbsp;<em>VolMin/VolMax ALLREDUCE &rarr; explicit buffer</em><br>
+  <br>
+  <span class="dir">src\io_hdf5\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">hdf5_output_particle.f90</span> &nbsp;<em>WriteVibProbInfoToHDF5: per-species MPI_GATHERV to root (serial HDF5); attribute branch MPIRoot-only</em><br>
+  &nbsp;&nbsp;<span class="mod-file">hdf5_output_field.f90</span> &nbsp;<em>WriteErrorNormsToHDF5: DG_Solution &rarr; GatheredWriteArray</em><br>
+  <br>
+  <span class="dir">src\particles\surfacemodel\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">surfacemodel_analyze.f90</span> &nbsp;<em>group-area leader reduce guarded with IF(nLeaderGroupProcs.GT.1)</em><br>
+  <br>
+  <span class="dir">C:\Data\PRJ\piclas-win\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">run_nig_all.sh</span> &nbsp;<em>SUITE_EXE[NIG_PIC_poisson_Leapfrog] &rarr; CPU binary EXE_LEAP_CA_DBG</em><br>
+</div>
+
+<h3 id="s16-21-9">§16.21.9 surf_flux_2D_track &ldquo;NumDens mismatch&rdquo; &mdash; re-verified, no longer open (no code change)</h3>
+<p>
+  The long-standing <code>NIG_tracking_DSMC/surf_flux_2D_track</code> &ldquo;surf_flux mismatch&rdquo;
+  (&ldquo;NumDens ~33&nbsp;% below reference; MPI=4 Adaptive=T crashes&rdquo;, see the §16.9/§16.10 remaining-bug
+  tables above) <strong>does not reproduce on the current build</strong>. Two earlier attributions were wrong:
+</p>
+<ul>
+  <li><b>The reference is not Linux-specific.</b> <code>PartAnalyze_ref.csv</code> is simply
+      <code>NumDens-Spec-001 = 7.243E19</code> &mdash; the <em>physical input</em>
+      <code>Part-Species1-Init1-PartDensity</code>. So &ldquo;regenerate the reference on Windows&rdquo; would
+      have baked in the bug; the correct answer is the input value.</li>
+  <li><b>Not RNG divergence.</b> PICLas&rsquo;s RNG (GFortran <code>xoshiro256**</code>) is platform-independent and
+      the seeds are fixed (<code>RandomSeed1/2</code>), so the result is deterministic, not a stochastic
+      Windows-vs-Linux drift.</li>
+</ul>
+<p>
+  Re-verified 2026-05-26 via reggie on three binaries &mdash; <code>build-maxwell-dsmc-debug-mpi</code>,
+  <code>build-maxwell-dsmc-cpu</code> (release), and <code>build-maxwell-dsmc-release-mpi-gpu</code>: <strong>all 4
+  combinations (<code>Adaptive=F,T</code> &times; <code>MPI=1,4</code>) pass within the 5&nbsp;% tolerance, 0 run
+  errors, no crash</strong> (including MPI=4 Adaptive=T). Measured NumDens 7.29 / 7.37 / 6.98 / 7.19&nbsp;&times;10¹⁹
+  vs the 7.243&times;10¹⁹ input. The historical deficit/crash was resolved by the §16.14&ndash;16.16 adaptive-BC
+  <code>MPI_IN_PLACE</code> fixes (which govern adaptive surface-flux insertion); the open-bug entry was simply
+  stale.
+</p>
+
+<!-- ─────────────────── §16.22 ─────────────────── -->
+<h2 id="s16-22">§16.22 Serial PETSc Binary, TERadius MPI_IN_PLACE Fix, reggie Externals Verification</h2>
+<p>Tier-2/3 follow-ups after the §16.21 code-bug sweep. Recurring lesson reconfirmed: several &ldquo;FP-mismatch&rdquo;
+   entries were either test-infrastructure issues or one more MS-MPI <code>MPI_IN_PLACE</code> bug.</p>
+
+<h3 id="s16-22-1">§16.22.1 NIG_poisson_PETSC &mdash; serial PETSc binary</h3>
+<p>
+  The suite needs PETSc, but MPI+PETSc cannot be combined on MSYS2 (sequential PETSc). Built
+  <code>build-poisson-rk3-petsc-serial</code> (<code>LIBS_USE_MPI=OFF</code>, <code>LIBS_USE_PETSC=ON</code>, RK3,
+  <code>PICLAS_CODE_ANALYZE=ON</code>; PETSc 3.24.5 <code>dso</code> variant). <code>poisson_box_Dirichlet_Mortar</code>
+  (MPI=1 only) passes reggie RC=0 incl. the restart post-externals + <code>HDGIterations.csv</code> compare; the MPI=1
+  runs of the other examples pass. Wired <code>EXE_PETSC_SER</code> into <code>run_nig_all.sh</code>. MPI&gt;1 PETSc
+  runs remain a permanent Windows limitation (the shared <code>command_line.ini</code> files were left unchanged so
+  Linux coverage is preserved).
+</p>
+<div class="note">
+  <b>Nuance (2026-05-28): MPI&gt;1 is blocked only for the PETSc <em>backend</em>, not for HDG itself.</b> PICLas's HDG
+  Poisson selects an <strong>internal MPI-capable CG solver</strong> when PETSc is OFF ("Method for HDG solver: CG",
+  <code>hdg.f90</code>) &mdash; <code>NIG_poisson</code> runs it at MPI=1,2,4,8, and <code>NIG_poisson_PETSC/poisson</code>
+  was demonstrated to run at MPI=2 with CG (no PETSc). The genuinely PETSc-only feature is <strong>FPC (Floating
+  Boundary Condition / floating conductor)</strong>: <code>hdg_init.f90:111</code> aborts
+  &ldquo;FPC model requires LIBS_USE_PETSC=ON&rdquo; (and <code>ExactFunc=600</code> likewise); the floating-potential
+  Lagrange-multiplier matrix exists only in <code>hdg_petsc.f90</code>. The <code>*_PETSc</code> suites are
+  <strong>left as-is</strong>: re-pointing them at the CG binary would fail their <code>HDGIterations.csv</code>
+  compares (CG and PETSc converge in different iteration counts; the field solution matches).
+</div>
+
+<h3 id="s16-22-2">§16.22.2 TERadius &mdash; MS-MPI MPI_IN_PLACE in GetWaveGuideRadius</h3>
+<p>
+  <code>NIG_convtest_maxwell/p_cylinder_TE_wave_circular</code> and <code>_linear</code> aborted with
+  <code>TERadius &le; 0</code> at MPI=4 (Procs&nbsp;1&ndash;3). Root cause:
+  <code>GetWaveGuideRadius</code> (<code>equation.f90</code>) computes the inlet-plane waveguide radius locally, then
+  <code>MPI_ALLREDUCE(MPI_IN_PLACE, TERadius, MPI_MAX, MPI_COMM_PICLAS)</code>. Ranks that own no inlet face have a
+  local <code>TERadius=0</code>; MS-MPI mishandles the in-place reduction so those ranks never receive the global MAX
+  &rarr; stay 0 &rarr; abort. <b>Fix:</b> explicit send buffer (<code>Radius=TERadius; MPI_ALLREDUCE(Radius,TERadius,&hellip;)</code>).
+  Both examples now pass (0 run errors, &ldquo;p-convergence successful&rdquo;). The pre-existing in-code comment
+  blaming a &ldquo;Windows Face_xGP issue&rdquo; was a misattribution &mdash; it is the same MS-MPI
+  <code>MPI_IN_PLACE</code> class as §16.9/§16.14/§16.21.
+</p>
+<div class="note">
+  <b>Still open:</b> <code>NIG_convtest_maxwell/p</code> and <code>/p_mortar</code> fail p-convergence because the
+  reported L2 error is <strong>exactly 0.0 for every N</strong> (the convergence order cannot be formed from zeros).
+  This is Windows-specific and NOT general &mdash; <code>h_N2</code>/<code>h_N4</code> use the same
+  <code>IniExactFunc=12</code> and <code>NAnalyze=10</code> yet produce nonzero L2 and pass. Likely a
+  <code>CalcError</code>/over-integration edge case for these p-convergence meshes; needs a Linux L2 baseline to
+  pin down.
+</div>
+
+<h3 id="s16-22-3">§16.22.3 reggie Windows externals &mdash; already working (no fix)</h3>
+<p>
+  reggie already resolves the HOPR binary via <code>$HOPR_PATH</code> (<code>check.py</code>; the resolved path is
+  stored in <code>binary_path</code> and used at execution) and <code>ln -s</code> works under MSYS2;
+  <code>run_nig_all.sh</code> already exports <code>HOPR_PATH</code>. Verified
+  <code>parallel_plates_fixed_power_input</code> passes reggie RC=0 (HOPR generates the meshes, the <code>ln -s</code>
+  pre-step succeeds). Earlier &ldquo;externals&rdquo; failures were from validation runs that did not set
+  <code>HOPR_PATH</code>, not a reggie defect. <code>Dielectric_slab_FPC_via_VDL_save_CVWM</code> remains broken
+  <em>upstream</em>: it references <code>Box_mesh.h5</code>, which nothing in the suite generates (its
+  <code>hopr.ini</code> produces <code>Box_deformed_mesh.h5</code>).
+</p>
+
+<h3 id="s16-22-4">§16.22.4 Files changed in §16.22</h3>
+<div class="files">
+  <span class="dir">src\equations\maxwell\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">equation.f90</span> &nbsp;<em>GetWaveGuideRadius: TERadius ALLREDUCE(MPI_IN_PLACE) &rarr; explicit buffer</em><br>
+  <br>
+  <span class="dir">C:\Data\PRJ\piclas-win\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">run_nig_all.sh</span> &nbsp;<em>added EXE_PETSC_SER; SUITE_EXE[NIG_poisson_PETSC] &rarr; serial PETSc binary</em><br>
+  <br>
+  <span class="new-file">build-poisson-rk3-petsc-serial\</span> &nbsp;<em>new serial PETSc build (LIBS_USE_MPI=OFF, LIBS_USE_PETSC=ON, RK3, CODE_ANALYZE)</em><br>
+</div>
+
+<!-- ─────────────────── §16.23 ─────────────────── -->
+<h2 id="s16-23">§16.23 L2-Error-Norm MPI_IN_PLACE Fix (convtest_maxwell + SuperB), NIG_poisson CODE_ANALYZE Binary</h2>
+<p>Tier-3 triage (the "FP-mismatch" suites). Outcome: one more MS-MPI <code>MPI_IN_PLACE</code> bug — this time
+   zeroing the L2 error norms — was clearing the convergence tests in <em>two</em> suites; plus a binary-config fix
+   for NIG_poisson.</p>
+
+<h3 id="s16-23-1">§16.23.1 L2/LInf error norms reported as exactly 0.0 at MPI=1</h3>
+<p>
+  <code>NIG_convtest_maxwell/p</code>, <code>/p_mortar</code> and <code>NIG_SuperB/LinearConductor</code>,
+  <code>/SphericalMagnet</code> failed their convergence analysis with "all False". The reported L2 error was
+  <strong>exactly 0.0</strong> for every refinement level — so no convergence order can be formed. Root cause is the
+  recurring MS-MPI bug: the error-reduction
+  <code>MPI_REDUCE(MPI_IN_PLACE, L_2_Error, MPI_SUM, 0, MPI_COMM_PICLAS)</code> (and the <code>MPI_MAX</code> LInf
+  counterpart) on a <strong>1-process communicator</strong> (these examples run at MPI=1) is zeroed by MS-MPI, and
+  <code>L_2_Error = SQRT(0/MeshVolume) = 0</code>. At MPI&gt;1 the bug only drops the root rank's contribution
+  (L2 stays nonzero) &mdash; which is why the MPI&gt;1 <code>h_N2</code>/<code>h_N4</code> examples kept passing and
+  only the MPI=1 examples failed.
+</p>
+<p>
+  <b>Fix:</b> explicit send buffers in <code>analyze.f90</code> (<code>CalcError</code>,
+  <code>CalcErrorPartSource</code>) and <code>superB_tools.f90</code> (<code>CalcErrorSuperB</code>), e.g.
+  <code>L_2_Error_tmp = L_2_Error; MPI_REDUCE(L_2_Error_tmp, L_2_Error, &hellip;)</code>. Verified:
+  <strong>NIG_convtest_maxwell reggie RC=0</strong> (combined with the §16.22 TERadius fix) and
+  <strong>NIG_SuperB reggie RC=0</strong> (the magnet h5diffs were already passing). The
+  <code>PPWCellMin/Max</code> reduce in <code>analyze.f90</code> has the same pattern but is cosmetic
+  (points-per-wavelength display, gates no test) and was left unchanged.
+</p>
+
+<h3 id="s16-23-2">§16.23.2 NIG_poisson &mdash; CODE_ANALYZE binary mismatch</h3>
+<p>
+  <code>poisson_box_Dirichlet</code> failed the <code>HDGIterations.csv</code> compare with a shape mismatch
+  (13 vs 26). The reference has 26 entries = 13 MPI combinations &times; 2, where the CODE_ANALYZE build performs a
+  second <code>FieldAnalyze</code> at restart (iter=0). The suite was driven by <code>EXE_PRK3</code>
+  (<code>CODE_ANALYZE=OFF</code> &rarr; 13 entries). Built <code>build-poisson-rk3-codeanalyze-mpi</code>
+  (<code>PICLAS_CODE_ANALYZE=ON</code> + MPI + <code>PARTICLES=OFF</code> + no PETSc, matching the suite
+  <code>builds.ini</code>) and wired <code>EXE_PRK3_CA_MPI</code> into <code>run_nig_all.sh</code>. <strong>reggie
+  RC=0.</strong> Not a code bug.
+</p>
+
+<h3 id="s16-23-3">§16.23.3 Remaining Tier-3 items</h3>
+<ul>
+  <li><b>NIG_code_analyze/FieldIonization</b> (6 errors): the run is "Successful" but does not emit
+      <code>FieldIonizationRate.csv</code> &mdash; a field-ionization rate-output issue (not the L2 bug).</li>
+  <li><b>NIG_code_analyze/Semicircle</b> (2 errors): integrate_line off by 17% (−2.579e‑10 vs ref −2.198e‑10), with
+      <em>both</em> refmapping and tracing giving the same Windows value &mdash; self-consistent, so likely a
+      stale/different reference (Bug-B-like) or a real weighting difference; 17% is too large for FP.</li>
+  <li><b>NIG_DVM_plasma</b>: the h5diff wants <code>DG_Solution</code> but the <code>edvm</code> build writes only
+      <code>DVM_Solution</code>; it needs the PLOESMA+PETSc coupled-field build &mdash; blocked (MPI+PETSc
+      incompatible on MSYS2).</li>
+</ul>
+
+<h3 id="s16-23-4">§16.23.4 Files changed in §16.23</h3>
+<div class="files">
+  <span class="dir">src\analyze\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">analyze.f90</span> &nbsp;<em>CalcError + CalcErrorPartSource: L_2/L_Inf MPI_REDUCE(MPI_IN_PLACE) &rarr; explicit buffers</em><br>
+  <br>
+  <span class="dir">src\posti\superB\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">superB_tools.f90</span> &nbsp;<em>CalcErrorSuperB: same L_2/L_Inf reduce &rarr; explicit buffers</em><br>
+  <br>
+  <span class="dir">C:\Data\PRJ\piclas-win\</span><br>
+  &nbsp;&nbsp;<span class="mod-file">run_nig_all.sh</span> &nbsp;<em>added EXE_PRK3_CA_MPI; SUITE_EXE[NIG_poisson] &rarr; CODE_ANALYZE+MPI poisson binary</em><br>
+  <br>
+  <span class="new-file">build-poisson-rk3-codeanalyze-mpi\</span> &nbsp;<em>new (poisson RK3 + CODE_ANALYZE=ON + MPI + PARTICLES=OFF + no PETSc)</em><br>
+</div>
+
+<!-- ─────────────────── §16.24 ─────────────────── -->
+<h2 id="s16-24">§16.24 reggie excludeBuild in <code>-e</code> Mode (Stale Venv) &mdash; NIG_code_analyze/FieldIonization</h2>
+<p>
+  <code>NIG_code_analyze/FieldIonization</code> failed with 6 analyze errors: the run was "Successful" but produced
+  no <code>FieldIonizationRate.csv</code>. The reference comparison then could not find the output file.
+</p>
+<h3 id="s16-24-1">§16.24.1 Root cause</h3>
+<p>
+  <code>FieldIonization()</code> (which writes the rate file, under <code>#ifdef CODE_ANALYZE</code>) is only called
+  from <strong>PIC timedisc methods</strong> &mdash; <code>timedisc_TimeStepByLSERK</code> (maxwell RK4/LSERK),
+  <code>timedisc_TimeStepPoissonByLSERK</code>, <code>timedisc_TimeStep_ExplicitFV</code>. The <strong>DSMC</strong>
+  timestep never calls it. Accordingly the example's <code>excludeBuild.ini</code> excludes
+  <code>PICLAS_TIMEDISCMETHOD=DSMC</code> &mdash; it must run with the <strong>RK4</strong> binary. Verified: with
+  <code>build-maxwell-rk4-codeanalyze-debug-mpi</code> it passes (RC=0, all 6 references match).
+</p>
+<p>
+  But the Windows harness ran <code>NIG_code_analyze</code> with the DSMC binary, and the example was <em>not</em>
+  skipped. The reason: <strong><code>reggie.exe</code> runs the installed venv copy</strong> under
+  <code>C:\Data\PRJ\reggie2.0-venv\lib\python3.14\site-packages\reggie\</code>, <em>not</em> the source tree. That
+  venv copy was a month stale (2026-04-22) and lacked <code>StandaloneReadConfigurationFromUserblock</code>, so
+  <code>class Standalone</code> passed an <em>empty</em> build-configuration dict and
+  <code>anyIsSubset(excludes, {})</code> always returned False &rarr; excludeBuild was silently ignored in
+  <code>-e</code> mode.
+</p>
+<h3 id="s16-24-2">§16.24.2 Fix</h3>
+<p>
+  Added <code>StandaloneReadConfigurationFromUserblock</code> to the venv <code>check.py</code> (parses the
+  <code>{[( CMAKE )]}</code> block of the binary's <code>userblock.txt</code> into the real cmake flags) and wired
+  it into <code>Standalone.__init__</code>. Verified: the DSMC binary now <strong>skips</strong> FieldIonization
+  (excludeBuild matches <code>PICLAS_TIMEDISCMETHOD=DSMC</code>), and <code>NIG_code_analyze_RK4</code> (the RK4
+  binary, already wired in <code>run_nig_all.sh</code>) <strong>runs and passes</strong> it (RC=0). This also makes
+  excludeBuild work for <em>all</em> multi-timedisc suites in standalone mode.
+</p>
+<div class="note">
+  <b>Maintenance note:</b> the venv reggie lags the source tree (<code>C:\Data\PRJ\reggie2.0</code>). When debugging
+  reggie behavior, inspect/patch the <strong>venv</strong> copy, or re-sync it from source
+  (<code>pip install --force-reinstall --no-deps</code>). <b>Re-synced 2026-05-28</b> &mdash; the venv now matches
+  the source tree exactly (all Windows patches present); re-validated convtest_maxwell / SuperB / poisson /
+  FieldIonization with no regression. <b>Still open:</b>
+  <code>NIG_code_analyze/Semicircle</code> integrate_line is off by 17% (both tracking methods agree &rarr; likely a
+  stale reference or a real weighting difference).
 </div>
 
 <hr>

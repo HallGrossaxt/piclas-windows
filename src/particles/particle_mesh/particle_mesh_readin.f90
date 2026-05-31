@@ -179,7 +179,9 @@ IF (PerformLoadBalance) THEN
     ! Arrays for the compute node to hold the elem offsets
     ALLOCATE(displsElem(   0:nLeaderGroupProcs-1), recvcountElem(0:nLeaderGroupProcs-1))
     displsElem(myLeaderGroupRank) = offsetComputeNodeElem
-    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsElem,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+    ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+    IF (nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsElem,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
     DO iProc=1,nLeaderGroupProcs-1
       recvcountElem(iProc-1) = displsElem(iProc)-displsElem(iProc-1)
     END DO
@@ -194,7 +196,9 @@ IF (PerformLoadBalance) THEN
     ! Arrays for the compute node to hold the side offsets
     ALLOCATE(displsSide(   0:nLeaderGroupProcs-1), recvcountSide(0:nLeaderGroupProcs-1))
     displsSide(myLeaderGroupRank) = offsetComputeNodeSide
-    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsSide,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+    ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+    IF (nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsSide,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
     DO iProc=1,nLeaderGroupProcs-1
       recvcountSide(iProc-1) = displsSide(iProc)-displsSide(iProc-1)
     END DO
@@ -225,7 +229,9 @@ IF (myComputeNodeRank.EQ.0) THEN
   ! Arrays for the compute node to hold the elem offsets
   ALLOCATE(displsElem(   0:nLeaderGroupProcs-1), recvcountElem(0:nLeaderGroupProcs-1))
   displsElem(myLeaderGroupRank) = offsetComputeNodeElem
-  CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsElem,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+  ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+  IF (nLeaderGroupProcs.GT.1) &
+    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsElem,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
   DO iProc=1,nLeaderGroupProcs-1
     recvcountElem(iProc-1) = displsElem(iProc)-displsElem(iProc-1)
   END DO
@@ -240,7 +246,9 @@ IF (myComputeNodeRank.EQ.0) THEN
   ! Arrays for the compute node to hold the side offsets
   ALLOCATE(displsSide(   0:nLeaderGroupProcs-1), recvcountSide(0:nLeaderGroupProcs-1))
   displsSide(myLeaderGroupRank) = offsetComputeNodeSide
-  CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsSide,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+  ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+  IF (nLeaderGroupProcs.GT.1) &
+    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsSide,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
   DO iProc=1,nLeaderGroupProcs-1
     recvcountSide(iProc-1) = displsSide(iProc)-displsSide(iProc-1)
   END DO
@@ -255,7 +263,9 @@ IF (myComputeNodeRank.EQ.0) THEN
   ! Arrays for the compute node to hold the node offsets
   ALLOCATE(displsNode(   0:nLeaderGroupProcs-1), recvcountNode(0:nLeaderGroupProcs-1))
   displsNode(myLeaderGroupRank) = offsetComputeNodeNode
-  CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsNode,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+  ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+  IF (nLeaderGroupProcs.GT.1) &
+    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsNode,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
   DO iProc=1,nLeaderGroupProcs-1
     recvcountNode(iProc-1) = displsNode(iProc)-displsNode(iProc-1)
   END DO

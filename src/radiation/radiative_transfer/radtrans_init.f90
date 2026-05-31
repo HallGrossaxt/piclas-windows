@@ -455,9 +455,12 @@ DO iElem = firstElem, lastElem
   END IF
 END DO
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,RadTrans%GlobalRadiationPower,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+! MS-MPI corrupts MPI_IN_PLACE reductions on MPI_COMM_PICLAS: use explicit send buffer
+tmp = RadTrans%GlobalRadiationPower
+CALL MPI_ALLREDUCE(tmp,RadTrans%GlobalRadiationPower,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
 IF (DoRadialWeighting) THEN
-  CALL MPI_ALLREDUCE(MPI_IN_PLACE,RadTrans%ScaledGlobalRadiationPower,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+  tmp = RadTrans%ScaledGlobalRadiationPower
+  CALL MPI_ALLREDUCE(tmp,RadTrans%ScaledGlobalRadiationPower,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
 END IF
 #endif /*USE_MPI*/
 RadTrans%GlobalPhotonNum = RadTrans%NumPhotonsPerCell * nGlobalElems

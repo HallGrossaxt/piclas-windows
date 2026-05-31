@@ -44,7 +44,7 @@ SUBROUTINE WriteRadiationToHDF5()
 USE MOD_Globals
 USE MOD_PreProc
 USE MOD_io_HDF5
-USE MOD_HDF5_output         ,ONLY: WriteArrayToHDF5,WriteAttributeToHDF5,WriteHDF5Header
+USE MOD_HDF5_output         ,ONLY: WriteArrayToHDF5,WriteAttributeToHDF5,WriteHDF5Header,GatheredWriteArray
 USE MOD_Mesh_Vars           ,ONLY: offsetElem,nGlobalElems, MeshFile
 USE MOD_RadiationTrans_Vars ,ONLY: RadObservationPointMethod, RadObservation_Emission, RadObservationPoint
 USE MOD_RadiationTrans_Vars ,ONLY: Radiation_Emission_Spec_Total, RadTransPhotPerCell, RadObservation_EmissionPart
@@ -76,6 +76,10 @@ REAL, ALLOCATABLE                   :: TempOutput(:,:)
 CHARACTER(LEN=255), ALLOCATABLE     :: StrVarNames(:)
 REAL                                :: tmpPartNum, tmpEmission(2)
 INTEGER                             :: iWavetmp(2)
+#if USE_MPI
+REAL, ALLOCATABLE                   :: RadObsEmissionTmp(:)
+INTEGER, ALLOCATABLE                :: RadObsEmissionPartTmp(:)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 SWRITE(UNIT_stdOut,'(a)',ADVANCE='NO') ' WRITE Radiation TO HDF5 FILE...'
 FileString=TRIM(ProjectName)//'_RadiationState.h5'
@@ -121,8 +125,6 @@ END IF
 #if USE_MPI
 CALL MPI_ExchangeRadiationInfo()
 #endif /*USE_MPI*/
-
-CALL OpenDataFile(FileString,create=.false.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
 
 #if USE_MPI
 ASSOCIATE( RadiationElemAbsEnergySpec => RadiationElemAbsEnergySpec_Shared,&
@@ -187,31 +189,39 @@ END ASSOCIATE
 #endif /*USE_MPI*/
 
 nVal=nGlobalElems  ! For the MPI case this must be replaced by the global number of elements (sum over all procs)
+! Use GatheredWriteArray so non-root ranks gather to MPIRoot (serial HDF5: only root may create datasets)
 ASSOCIATE (&
     nVar         => INT(nVar,IK) ,&
     nGlobalElems => INT(nGlobalElems,IK)     ,&
     offsetElem   => INT(offsetElem,IK)        ,&
     PP_nElems    => INT(PP_nElems,IK))
-  CALL WriteArrayToHDF5(DataSetName='ElemData', rank=2,&
+  CALL GatheredWriteArray(FileString, create=.FALSE.,&
+                        DataSetName='ElemData', rank=2,&
                         nValGlobal=(/nVar, nGlobalElems/),&
                         nVal=      (/nVar,   PP_nElems/),&
                         offset=    (/0_IK, offsetElem /),&
                         collective=.TRUE., RealArray=TempOutput(:,:))
 END ASSOCIATE
-CALL CloseDataFile()
 SWRITE(*,*) 'DONE'
 
 CALL WritePhotonSurfSampleToHDF5()
 
 IF (RadObservationPointMethod.GT.0) THEN
 #if USE_MPI
+  ! MS-MPI drops root's contribution in MPI_REDUCE(MPI_IN_PLACE,...): use explicit send buffer on root
   IF (myRank.EQ.0) THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,RadObservation_Emission,RadiationParameter%WaveLenDiscrCoarse,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+    ALLOCATE(RadObsEmissionTmp(RadiationParameter%WaveLenDiscrCoarse))
+    RadObsEmissionTmp = RadObservation_Emission
+    CALL MPI_REDUCE(RadObsEmissionTmp,RadObservation_Emission,RadiationParameter%WaveLenDiscrCoarse,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+    DEALLOCATE(RadObsEmissionTmp)
   ELSE
     CALL MPI_REDUCE(RadObservation_Emission,0                   ,RadiationParameter%WaveLenDiscrCoarse,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
   ENDIF
   IF (myRank.EQ.0) THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,RadObservation_EmissionPart,RadiationParameter%WaveLenDiscrCoarse,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+    ALLOCATE(RadObsEmissionPartTmp(RadiationParameter%WaveLenDiscrCoarse))
+    RadObsEmissionPartTmp = RadObservation_EmissionPart
+    CALL MPI_REDUCE(RadObsEmissionPartTmp,RadObservation_EmissionPart,RadiationParameter%WaveLenDiscrCoarse,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+    DEALLOCATE(RadObsEmissionPartTmp)
   ELSE
     CALL MPI_REDUCE(RadObservation_EmissionPart,0                   ,RadiationParameter%WaveLenDiscrCoarse,MPI_INTEGER,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
   ENDIF

@@ -156,6 +156,9 @@ REAL                 :: Coords_NAnalyze(3,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                 :: J_NAnalyze(1,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                 :: J_N(1,0:Nmax,0:Nmax,0:Nmax)
 REAL                 :: IntegrationWeight
+#if USE_MPI
+REAL                 :: L_2_Error_tmp(4), L_Inf_Error_tmp(4)
+#endif /*USE_MPI*/
 TYPE tVdm_GL_N
   REAL, ALLOCATABLE                     :: Vdm(:,:)
 END TYPE tVdm_GL_N
@@ -202,9 +205,14 @@ DO iElem=1,PP_nElems
    CALL ChangeBasis3D(3,NAnalyze,Nloc,Vdm_GL_N(Nloc)%Vdm,U_NAnalyze_tmp(1:3,:,:,:),N_BG(iElem)%BGFieldAnalytic(1:3,:,:,:))
 END DO ! iElem=1,PP_nElems
 #if USE_MPI
+! MS-MPI drops the root's contribution in MPI_REDUCE(MPI_IN_PLACE,...) and zeroes the buffer on a 1-process
+! communicator (e.g. MPI=1) -> L_2_Error would become 0 and SQRT(0)=0, breaking the convergence analysis.
+! Use explicit send buffers (cf. §16.14).
 IF(MPIroot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE , L_2_Error   , 4 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
-  CALL MPI_REDUCE(MPI_IN_PLACE , L_Inf_Error , 4 , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
+  L_2_Error_tmp   = L_2_Error
+  L_Inf_Error_tmp = L_Inf_Error
+  CALL MPI_REDUCE(L_2_Error_tmp   , L_2_Error   , 4 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
+  CALL MPI_REDUCE(L_Inf_Error_tmp , L_Inf_Error , 4 , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
 ELSE
   CALL MPI_REDUCE(L_2_Error   , 0            , 4 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
   CALL MPI_REDUCE(L_Inf_Error , 0            , 4 , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)

@@ -1174,6 +1174,10 @@ CHARACTER(LEN=255),ALLOCATABLE :: StrVarNames(:)
 CHARACTER(LEN=255)             :: H5_Name
 CHARACTER(LEN=255)             :: SpecID
 INTEGER                        :: iSpec
+#if USE_MPI
+INTEGER, ALLOCATABLE           :: vpbCounts(:), vpbDisps(:)
+REAL, ALLOCATABLE              :: vpbGathered(:,:)
+#endif
 !===================================================================================================================================
 IF(CollisMode.GT.1) THEN
   IF(DSMC%VibRelaxProb.EQ.2.0) THEN
@@ -1190,6 +1194,7 @@ IF(CollisMode.GT.1) THEN
     END IF
 
     WRITE(H5_Name,'(A)') 'VibProbInfo'
+#if USE_MPI_HDF5
     CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
 
     ! Associate construct for integer KIND=8 possibility
@@ -1205,15 +1210,66 @@ IF(CollisMode.GT.1) THEN
                             collective  = .FALSE.        , RealArray = VarVibRelaxProb%ProbVibAv)
     END ASSOCIATE
     CALL CloseDataFile()
+#else
+#if USE_MPI
+    ! Serial HDF5 + MPI: only MPIRoot may open/write the file. The element index is the FIRST
+    ! dimension of ProbVibAv (not the last), so GatheredWriteArray cannot be used. Each species
+    ! column is contiguous in memory, so gather to MPIRoot species-by-species, then root writes.
+    ALLOCATE(vpbCounts(nProcessors), vpbDisps(nProcessors))
+    CALL MPI_ALLGATHER(nElems    , 1, MPI_INTEGER, vpbCounts, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+    CALL MPI_ALLGATHER(offsetElem, 1, MPI_INTEGER, vpbDisps , 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+    IF(MPIRoot)THEN
+      ALLOCATE(vpbGathered(nGlobalElems, nSpecies))
+    ELSE
+      ALLOCATE(vpbGathered(1,1))
+    END IF
+    DO iSpec = 1, nSpecies
+      IF(MPIRoot)THEN
+        CALL MPI_GATHERV(VarVibRelaxProb%ProbVibAv(1,iSpec), nElems, MPI_DOUBLE_PRECISION, &
+                         vpbGathered(1,iSpec), vpbCounts, vpbDisps, MPI_DOUBLE_PRECISION, 0, MPI_COMM_PICLAS, iError)
+      ELSE
+        CALL MPI_GATHERV(VarVibRelaxProb%ProbVibAv(1,iSpec), nElems, MPI_DOUBLE_PRECISION, &
+                         vpbGathered, vpbCounts, vpbDisps, MPI_DOUBLE_PRECISION, 0, MPI_COMM_PICLAS, iError)
+      END IF
+    END DO
+    IF(MPIRoot)THEN
+      ASSOCIATE (&
+            nGlobalElems => INT(nGlobalElems,IK) ,&
+            nSpecies     => INT(nSpecies,IK)     )
+        CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+        CALL WriteArrayToHDF5(DataSetName = H5_Name        , rank = 2    , &
+                              nValGlobal  = (/nGlobalElems , nSpecies /) , &
+                              nVal        = (/nGlobalElems , nSpecies /) , &
+                              offset      = (/0_IK         , 0_IK     /) , &
+                              collective  = .FALSE.        , RealArray = vpbGathered)
+        CALL CloseDataFile()
+      END ASSOCIATE
+    END IF
+    DEALLOCATE(vpbCounts, vpbDisps, vpbGathered)
+#else /* not USE_MPI: single process, local data IS global data */
+    ASSOCIATE (&
+          nGlobalElems    => INT(nGlobalElems,IK)    ,&
+          nElems          => INT(nElems,IK)          ,&
+          nSpecies        => INT(nSpecies,IK)        ,&
+          offsetElem      => INT(offsetElem,IK)      )
+      CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+      CALL WriteArrayToHDF5(DataSetName = H5_Name        , rank = 2    , &
+                            nValGlobal  = (/nGlobalElems , nSpecies /) , &
+                            nVal        = (/nElems       , nSpecies /) , &
+                            offset      = (/offsetElem   , 0_IK     /) , &
+                            collective  = .FALSE.        , RealArray = VarVibRelaxProb%ProbVibAv)
+      CALL CloseDataFile()
+    END ASSOCIATE
+#endif /*USE_MPI*/
+#endif /*USE_MPI_HDF5*/
     SDEALLOCATE(StrVarNames)
   ELSE ! DSMC%VibRelaxProb < 2.0
-#if USE_MPI
-    CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-#else
-    CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
-#endif
-    CALL WriteAttributeToHDF5(File_ID,'VibProbConstInfo',1,RealScalar=DSMC%VibRelaxProb)
-    CALL CloseDataFile()
+    ! Attribute-only write: serial HDF5 requires that only MPIRoot opens the file
+    IF(MPIRoot)THEN
+      CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+      CALL WriteAttributeToHDF5(File_ID,'VibProbConstInfo',1,RealScalar=DSMC%VibRelaxProb)
+      CALL CloseDataFile()
+    END IF
   END IF
 ELSE ! CollisMode <= 1
   IF(MPIRoot)THEN

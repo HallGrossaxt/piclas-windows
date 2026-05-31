@@ -1342,7 +1342,10 @@ DO iSide=1,nSides
 END DO
 
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,TERadius,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_PICLAS,iError)
+! MS-MPI corrupts MPI_IN_PLACE reductions: use an explicit send buffer so ranks without inlet faces
+! (local TERadius=0) correctly receive the global MAX. Otherwise TERadius stays 0 on those ranks -> abort.
+Radius = TERadius
+CALL MPI_ALLREDUCE(Radius,TERadius,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_PICLAS,iError)
 #endif /*USE_MPI*/
 
 LBWRITE(UNIT_StdOut,*) ' Found waveguide radius of ', TERadius

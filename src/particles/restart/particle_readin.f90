@@ -166,7 +166,16 @@ IF (PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance)) THEN
     ! Store in Nmax^3 array
     ALLOCATE(PartSource(1:4,0:NMax,0:NMax,0:NMax,nElemsOld))
     DO iElem = 1, nElemsOld
-      Nloc = N_DG_Mapping(2,iElem+offsetElemOld)
+      ! BUGG-FIX (Move-2, 2026-05-30): Bug G root cause was here.
+      ! Original loop bound used `Nloc = N_DG_Mapping(2, iElem+offsetElemOld)`, but PS_N(iElem)%PartSource
+      ! was allocated at first InitializeDeposition with possibly different Nloc. When N_DG_Mapping
+      ! returns Nloc > UBOUND(PS_N(iElem)%PartSource, 2) — which happens for some iElem under p-adaption
+      ! after DoInitialAutoRestart shifts the layout — the read at the inner loop went past the
+      ! allocated bound (silent OOB without -fbounds-check; fbounds-check confirms via
+      ! 'Index ... outside of expected range'). Source-of-truth for the actual stored data shape
+      ! is the array's own UBOUND. Whole-array branch also matched on N_DG_Mapping's value which is
+      ! the wrong invariant.
+      Nloc = UBOUND(PS_N(iElem)%PartSource,2)
       IF(Nloc.EQ.Nmax)THEN
         PartSource(:,:,:,:,iElem) = PS_N(iElem)%PartSource(:,:,:,:)
       ELSE

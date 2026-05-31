@@ -85,6 +85,7 @@ REAL, ALLOCATABLE                   :: Vdm_GaussN_Nloc(:,:)    !< for interpolat
 REAL, ALLOCATABLE                   :: U_N_Ray_2D_local(:,:)   !< for output as 1D array per variable
 REAL, PARAMETER                     :: tolerance=1e-2
 LOGICAL                             :: WriteErrorToElemData
+LOGICAL                             :: WriteErrorToElemDataTmp
 REAL                                :: StartT,EndT
 !===================================================================================================================================
 SWRITE(UNIT_stdOut,'(a)',ADVANCE='NO') ' WRITE RADIATION VOLSTATE TO HDF5 FILE...'
@@ -266,7 +267,8 @@ END ASSOCIATE
 
 ! Output of errors if any detected (requires for every processor to add the array to the output, otherwise deadlock)
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,WriteErrorToElemData,1,MPI_LOGICAL,MPI_LOR,MPI_COMM_PICLAS,iError)
+WriteErrorToElemDataTmp = WriteErrorToElemData
+CALL MPI_ALLREDUCE(WriteErrorToElemDataTmp,WriteErrorToElemData,1,MPI_LOGICAL,MPI_LOR,MPI_COMM_PICLAS,iError)
 #endif /*USE_MPI*/
 
 IF(WriteErrorToElemData) THEN
@@ -296,6 +298,7 @@ nDOFTotalOutput = SUM((N_DG_Ray(1:nGlobalElems)+1)**3)
 ! Allocate local 2D array
 ALLOCATE(U_N_Ray_2D_local(1:nVarRay,1:nDOFOutput))
 ! Write into 2D array
+iDOF = 0
 DO iElem = 1, PP_nElems
   Nloc = N_DG_Ray_loc(iElem)
   DO m=0,Nloc

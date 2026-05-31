@@ -1344,7 +1344,7 @@ USE MOD_Particle_Mesh_Vars        ,ONLY: SideInfo_Shared, NodeCoords_Shared
 USE MOD_Particle_Mesh_Vars        ,ONLY: ElemSideNodeID_Shared, ElemMidPoint_Shared
 #if USE_MPI
 USE MOD_MPI_Shared_Vars           ,ONLY: myComputeNodeRank
-USE MOD_MPI_Shared_Vars           ,ONLY: MPI_COMM_LEADERS_SHARED
+USE MOD_MPI_Shared_Vars           ,ONLY: MPI_COMM_LEADERS_SHARED, nLeaderGroupProcs
 #endif /*USE_MPI*/
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
@@ -1470,11 +1470,17 @@ IF(myComputeNodeRank.EQ.0) THEN
     counter = counter + 1
     SendBuff(counter) = SurfaceGroup%Area(iGroup)
   END DO
-  ! Node leaders communicate group surface area to the root
-  IF(MPIRoot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE,SendBuff,SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_LEADERS_SHARED,IERROR)
-  ELSE
-    CALL MPI_REDUCE(SendBuff,SendBuff,SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_LEADERS_SHARED,IERROR)
+  ! Node leaders communicate group surface area to the root. Every rank already summed the full
+  ! compute-node area (loop over all nComputeNodeSurfTotalSides), so this reduce is only needed to
+  ! combine areas across multiple compute nodes. Guard with nLeaderGroupProcs.GT.1: on a single node
+  ! MS-MPI zeroes the MPI_IN_PLACE buffer of a 1-member communicator (cf. Bug 13.1), which would set
+  ! SurfaceGroup%Area=0 and cause a divide-by-zero (SIGFPE) in GetGroupInfo once a group has hits.
+  IF(nLeaderGroupProcs.GT.1)THEN
+    IF(MPIRoot)THEN
+      CALL MPI_REDUCE(MPI_IN_PLACE,SendBuff,SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_LEADERS_SHARED,IERROR)
+    ELSE
+      CALL MPI_REDUCE(SendBuff,SendBuff,SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_LEADERS_SHARED,IERROR)
+    END IF
   END IF
   counter = 0
   DO iGroup = 1, SurfaceGroup%nGroups
