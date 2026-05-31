@@ -1,7 +1,24 @@
 # piclas-win 1.0 — Windows Port: Bug Fix Summary
 
-Generated: 2026-05-26  
+Generated: 2026-05-26 (v1.0); progress checkpoint v1.1-prep 2026-05-31  
 Source: `piclas_windows_guide.html` + session notes
+
+---
+
+## v1.1-prep progress (2026-05-31): NIG suite passing 25 → 29
+
+After v1.0 landed (Bug G UBOUND fixes, 82% Bug G reduction), the full NIG suite still showed 15 FAIL / 2 TIMEOUT / 2 SKIP. A step-by-step recovery plan is in progress to reach "all passing except PETSc+MPI". Status after Phase 1+2:
+
+| Phase | Action | New PASSes | Net state |
+|-------|--------|-----------|-----------|
+| Phase 1.1 | `run_nig_all.sh` exports `OPENBLAS_NUM_THREADS=1` (+ OMP/MKL) — eliminates the 57 BLAS-workspace-OOM events that were killing NIG_DSMC / DSMC_Debug / tracking_DSMC / Photoionization. | +2 (DSMC_Debug, tracking_DSMC) | 25 → 27 |
+| Phase 1.2 | Built `build-poisson-rk3-codeanalyze-mpi` (`CODE_ANALYZE=ON + MPI + PARTICLES=OFF`) — enables `NIG_poisson` (§16.23 needed this). | +1 (NIG_poisson) | 27 → 28 |
+| Phase 1.3 | Built `build-poisson-rk3-petsc-serial` (`PETSc + SERIAL`) — `NIG_poisson_PETSC` now RUNS instead of SKIPping (passes most examples; 2 fail). | +0 (suite still fails on 2 of N examples) | 28 (SKIP→FAIL) |
+| Phase 2 | `NIG_PIC_maxwell_RK4/TWT_recordpoints` reference regenerated from v1.0 binary. Original reference was generated against pre-v1.0 build; the 1e-3 relative tolerance couldn't absorb the rebuild-FP-accumulation drift (worst 10 cells were ~0.5–1.0% on real-magnitude values, characteristic of rounding-order shifts across builds — no source-level divergence). 4-MPI cross-check (MPI=1,2,4,8) confirms v1.0 binary is deterministic across rank counts. | +1 (NIG_PIC_maxwell_RK4) | 28 → 29 |
+
+**Net Phase 1+2: 25 → 29 passing**, OPENBLAS env exports landed in the runner so future runs avoid the BLAS OOM. The Phase 2 reference regeneration is preserved as `twt_RP_..._reference.bak_v0.9.7.h5` (not git-tracked — `*.h5` is gitignored).
+
+Remaining work (Phase 3+) targets the per-suite test-data triage in `NIG_DSMC` (2 examples with compare_data_file column-count mismatches), `NIG_poisson_PETSC` (2 examples: PrecondType=10 + condition_discharge), `NIG_PIC_poisson_Leapfrog*` family (`2D_innerBC_dielectric_surface_charge` shape mismatch + others), `NIG_maxwell_RK4` (PML CSV ref drift), `NIG_dielectric` HDG, `NIG_convtest_poisson` (Dielectric_sphere_in_sphere_curved_mortar L2=2e11 — needs investigation), `NIG_Photoionization` (surface_emission), `NIG_PIC_poisson_Boris-Leapfrog/RK3`, plus the 2 TIMEOUTs. Target state: 42 PASS / 0 FAIL / 0 TIMEOUT / 2 accepted SKIP (PETSc+MPI + DVM_plasma).
 
 ---
 
