@@ -177,6 +177,18 @@ Remaining 4 SKIPs (platform-blocked):
 3. **WEK_Raytracing** — needs Debug+CODE_ANALYZE in a specific cmake config not currently built.
 4. **WEK_DVM** — `lid_driven_cavity` runs >60 min on EDVM (runtime, not build).
 
+### NIG Phase 2 — 3 SKIPs converted to PASS (2026-06-03)
+
+After the Boris-SuperB build proved out on WEK_PIC_poisson, the same approach + two new serial builds reduced NIG SKIPs from 6 → 3:
+
+1. **NIG_PIC_poisson_Boris-Leapfrog** — restored the suite with the existing `build-poisson-boris-superb-mpi` (non-GPU, PICLAS_BUILD_POSTI=ON, no PETSc). Six original examples re-failed in this binary (2D_HET_Liu2010, 2D_Landmark, 3D_HET_Liu2010, EBeam_2D-axisym-with-B-field — all with the long-standing exit-3 during "WRITE PIC EM-FIELD TO HDF5" pattern; 2D_Landmark with the integrated-line ~50% analyze drift). Those 6 stay disabled in `_disabled_windows/`. The remaining three — `2D_axisymmetricHDG_OConner_PETSc` (6 sub-runs, ~2h15m), `EBeam_3D_and_2D-axisym` (2 sub-runs), `MCC_EBeam_SpeciesSpecificTimestep` (1 sub-run) — all PASS, 9 total runs. The `OConner_PETSc` example carries "PETSc" in the name but runs fine through PICLas's internal HDG-CG when PETSc isn't compiled in.
+
+2. **NIG_PIC_poisson_Leapfrog_single_node** — built `build-poisson-leapfrog-petsc-serial` (`PICLAS_TIMEDISCMETHOD=Leapfrog, LIBS_USE_PETSC=ON, LIBS_USE_MPI=OFF, PICLAS_CODE_ANALYZE=ON, PICLAS_DEBUG_MEMORY=T`). The single example `box_VDL_and_linPhi` had `MPI=1,2,3,9,12` in command_line.ini — trimmed to MPI=1 only (MSYS2 PETSc-serial blocks MPI>1). All 4 sub-runs PASS in 9s total.
+
+3. **NIG_sanitize** — built two Sanitize-serial variants: `build-maxwell-rk3-sanitize-serial` and `build-poisson-rk3-sanitize-serial` (both `CMAKE_BUILD_TYPE=Sanitize, LIBS_USE_MPI=OFF, PICLAS_READIN_CONSTANTS=ON`). Split the single `NIG_sanitize` runner entry into two virtual suites (`NIG_sanitize_maxwell`, `NIG_sanitize_poisson`) via the existing `SUITE_CHECKDIR` override pattern, each pointing at its subdir and the matching binary. Both PASS in <1 sec — the Sanitize binary doesn't show the dreaded 10× slowdown for these short test cases (maxwell tend=12 → 1 step, poisson tend=1e-10 → ~2 steps).
+
+**Updated NIG tally (post Phase 2): 42 PASS / 1 flaky-PASS / 3 SKIP out of 45 entries** (`NIG_sanitize` now expands to 2 virtual entries). The 3 remaining SKIPs are all PETSc+MPI on MSYS2 (`NIG_drift_diffusion_explicit-FV`, `NIG_DVM_plasma`) plus `NIG_PIC_poisson_Leapfrog_not_implemented` which is structurally unrunnable on any binary by design.
+
 Remaining work (Phase 5+) targets the per-suite test-data triage in `NIG_DSMC` (2 examples with compare_data_file column-count mismatches), `NIG_poisson_PETSC` (2 examples: PrecondType=10 + condition_discharge), `NIG_PIC_poisson_Leapfrog*` family (`2D_innerBC_dielectric_surface_charge` shape mismatch + others), `NIG_dielectric` HDG, `NIG_convtest_poisson` (Dielectric_sphere_in_sphere_curved_mortar L2=2e11 — needs investigation), `NIG_Photoionization` (surface_emission), `NIG_PIC_poisson_Boris-Leapfrog/RK3`, plus the 2 TIMEOUTs. Target state: 42 PASS / 0 FAIL / 0 TIMEOUT / 2 accepted SKIP (PETSc+MPI + DVM_plasma).
 
 ---
