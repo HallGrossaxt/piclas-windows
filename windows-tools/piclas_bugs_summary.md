@@ -335,6 +335,81 @@ Files changed: `regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.
 
 ---
 
+## §16.26 — DSMC-GPU push extension + linear-weighting/vMPF crash fix (2026-06-06, AgNozzle work)
+
+Two source changes driven by the silver-vapor nozzle DSMC study at
+`C:\Data\PRJ\AgNozzle` (2D-axisymmetric, adaptive const-pressure inlet,
+linear particle weighting along the axial coordinate).
+
+### A) GPU push: surface flux + axisymmetric support
+
+**Files:** `src/gpu/particle_push.cu`, `src/gpu/gpu_memory.cu`,
+`src/gpu/piclas_gpu.h`, `src/gpu/gpu_loader.c`, `src/gpu/gpu_vars.f90`,
+`src/gpu/gpu_interface.f90`, `src/timedisc/timedisc_TimeStep_DSMC.f90`.
+
+Previously the `UseGPUPush` guard in `TimeStep_DSMC` disqualified any
+run with `DoSurfaceFlux=T` or `Symmetry%Axisymmetric=T`. The kernel
+only did `pos += vel * dt`, so neither fractional-dt freshly-inserted
+particles nor the axisymmetric (y,z)/(x,z) rotation were supported.
+
+Patch:
+- `particle_push_kernel` now takes `dtFracPush[nPart]`,
+  `dtFracRand[nPart]`, and `symmetryOrder`. For fresh surface-flux
+  particles it scales `dt` by the host-supplied uniform random number
+  (generated in iPart order so the global RANDOM_NUMBER sequence
+  stays bit-identical to the CPU per-particle loop). For
+  `symmetryOrder = 2` or `3` it rotates the (y,z) or (x,z) components
+  per `CalcPartSymmetryPos`. The on-axis `|r| < eps` case keeps
+  velocities unchanged.
+- `piclas_gpu_push_particles` signature extended; new device buffers
+  `d_dtFracPush`, `d_dtFracRand` allocated alongside `d_PartState`.
+- `GPU_PushParticlesBatch` (gpu_interface.f90) gains arguments
+  `DtFracPush(:)` and `symmetryOrder`. Draws the RandVal host-side
+  in iPart order; resets the `PDM%dtFracPush` flag after the call.
+- `UseGPUPush` guard in `TimeStep_DSMC` relaxed: dropped
+  `.NOT.DoSurfaceFlux` and `.NOT.Symmetry%Axisymmetric`; added
+  `.NOT.VarTimeStep%UseSpeciesSpecific` and `.NOT.DSMC%DoAmbipolarDiff`
+  (those two paths are still CPU-only).
+
+Smoke-tested on `tutorials/dsmc-cone-3D` (exercises the new
+`dtFracPush` code path because the tutorial uses a non-adaptive
+surface flux): `PICLAS FINISHED [ 589.82 sec ]`, no errors.
+
+### B) `Part-Weight-Type=linear` + `Part-vMPF=T` crash fix
+
+**Files:** `src/particles/particle_vMPF.f90`,
+`src/particles/particle_init.f90`.
+
+**Symptom:** With both linear (or radial) particle weighting AND vMPF
+split/merge thresholds enabled, an axisymmetric DSMC run aborts within
+~6 iterations with `ERROR in Radial Weighting of 2D/Axisymmetric: The
+deletion probability is higher than 0.5!`. Some configurations SIGSEGV
+instead.
+
+**Root cause:** `SplitParticles` (particle_vMPF.f90:627) halves
+`PartMPF` cell-by-cell when a cell falls below the split threshold.
+`AdjustParticleWeight` (dsmc_symmetry.f90) — invoked by linear/radial
+weighting — then compares this halved `PartMPF` against the
+position-based linear MPF and, after two halvings, the ratio exceeds
+the 0.5 deletion-probability safety. The two cloning mechanisms both
+write to `PartMPF` for different reasons and fight each other.
+
+**Fix:**
+- `SplitAndMerge` early-returns when `DoLinearWeighting` or
+  `DoRadialWeighting` is true. The linear/radial mechanism is the
+  position-driven one and the vMPF mechanism is redundant in that
+  mode.
+- `InitializeVariablesvMPF` emits a startup `WARNING` when the user
+  sets vMPF thresholds while linear/radial weighting is also on, so
+  the silent skip is visible in the log.
+
+Verified: the exact previously-crashing config now finishes clean
+(`PICLAS FINISHED [ 4.67 sec ]`). The full 10 ms silver-vapor 2D
+axisymmetric run completes in 68 s on 4 MPI ranks with the patched
+GPU build.
+
+---
+
 ## Regression Test Score (after all fixes above)
 
 **NIG_tracking_DSMC (13 sub-tests): 11 / 13 PASS** — as of §16.10; mortar fixed via invariant analyze (§16.19).
