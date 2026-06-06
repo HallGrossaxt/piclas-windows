@@ -69,15 +69,15 @@ jobs:
           dir "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC" 2>nul
 
       # ------------------------------------------------------------------ #
-      # CUDA Toolkit — needed for nvcc.  Must be 13.x because the build
-      # hardcodes "cudart64_13.dll" (src/CMakeLists.txt staging + gpu_loader.c
-      # LoadLibrary error message).  RTX 3060 ⇒ compute capability 8.6.
+      # CUDA Toolkit — needed for nvcc.  Any 12.x or 13.x version works; the
+      # CMake build resolves the matching cudart runtime DLL via
+      # CUDAToolkit_VERSION_MAJOR.  RTX 3060 ⇒ compute capability 8.6.
       # ------------------------------------------------------------------ #
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.21
         id: cuda-toolkit
         with:
-          cuda: '13.0.0'
+          cuda: '12.4.1'
           method: 'network'
           sub-packages: '["nvcc", "cudart", "thrust"]'
           use-github-cache: true
@@ -149,3 +149,9 @@ jobs:
             build-maxwell-dsmc-release-mpi-gpu/bin/cudart64_*.dll
           if-no-files-found: error
           retention-days: 14
+
+      # ------------------------------------------------------------------ #
+      # Note: gpu_loader.c's "cannot load libpiclasGPU.dll" error message
+      # mentions cudart64_13.dll explicitly.  That's a cosmetic mismatch
+      # when built against CUDA 12.x — the actual import name is whatever
+      # the linked cudart runtime uses, picked up automatically by the IAT.

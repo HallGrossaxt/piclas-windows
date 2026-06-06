@@ -727,19 +727,23 @@ IF(PICLAS_USE_GPU)
     # Trigger PICLAS_GPU_API = __declspec(dllexport) in piclas_gpu.h for our 5 API functions.
     TARGET_COMPILE_DEFINITIONS(piclasGPU PRIVATE PICLAS_BUILDING_GPU_DLL)
 
-    # Locate cudart64_13.dll for the POST_BUILD copy.
-    # libpiclasGPU.dll imports cudart64_13.dll via its PE IAT ("-cudart shared" in the
-    # link template); Windows must find it when LoadLibraryA("libpiclasGPU.dll") runs.
-    SET(_CUDART_DLL "${CUDAToolkit_BIN_DIR}/cudart64_13.dll")
+    # Locate cudart64_<MAJOR>.dll for the POST_BUILD copy.
+    # libpiclasGPU.dll imports the cudart runtime DLL via its PE IAT
+    # ("-cudart shared" in the link template); the exact name depends on
+    # which CUDA toolkit nvcc linked against — cudart64_12.dll for CUDA 12.x,
+    # cudart64_13.dll for CUDA 13.x, and so on.  Resolve from
+    # CUDAToolkit_VERSION_MAJOR so the build works with any installed toolkit.
+    SET(_CUDART_NAME "cudart64_${CUDAToolkit_VERSION_MAJOR}.dll")
+    SET(_CUDART_DLL "${CUDAToolkit_BIN_DIR}/${_CUDART_NAME}")
     IF(NOT EXISTS "${_CUDART_DLL}")
-      SET(_CUDART_DLL "${CUDAToolkit_BIN_DIR}/x64/cudart64_13.dll")
+      SET(_CUDART_DLL "${CUDAToolkit_BIN_DIR}/x64/${_CUDART_NAME}")
     ENDIF()
     IF(NOT EXISTS "${_CUDART_DLL}")
-      MESSAGE(FATAL_ERROR "cudart64_13.dll not found; searched ${CUDAToolkit_BIN_DIR} and x64/")
+      MESSAGE(FATAL_ERROR "${_CUDART_NAME} not found; searched ${CUDAToolkit_BIN_DIR} and x64/")
     ENDIF()
     ADD_CUSTOM_COMMAND(TARGET piclasGPU POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_CUDART_DLL}" "${CMAKE_BINARY_DIR}/bin/"
-      COMMENT "Copying cudart64_13.dll to bin/")
+      COMMENT "Copying ${_CUDART_NAME} to bin/")
 
     # piclasGPULoader: MinGW-compiled C stub library linked into libpiclas.dll.
     # Provides piclas_gpu_load_library() + forwarding stubs (piclas_gpu_init etc.)
