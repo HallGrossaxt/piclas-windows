@@ -44,6 +44,7 @@ USE MOD_PARTICLE_Vars         ,ONLY: vMPFMergeThreshold, vMPFSplitThreshold, PEM
 USE MOD_Mesh_Vars             ,ONLY: nElems
 USE MOD_part_tools            ,ONLY: UpdateNextFreePosition
 USE MOD_TimeDisc_Vars         ,ONLY: iter
+USE MOD_DSMC_Vars             ,ONLY: DoLinearWeighting, DoRadialWeighting
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Timers    ,ONLY: LBStartTime, LBElemSplitTime
 #endif /*USE_LOADBALANCE*/
@@ -61,6 +62,14 @@ INTEGER, ALLOCATABLE  :: iPartIndx_Node(:,:), nPart(:)
 REAL                  :: tLBStart
 #endif /*USE_LOADBALANCE*/
 !===================================================================================================================================
+
+! Linear/radial particle weighting manage PartMPF through their own per-step
+! Clone-Delete mechanism (AdjustParticleWeight, dsmc_symmetry.f90).  vMPF
+! SplitAndMerge halves PartMPF cell-by-cell, which de-syncs the particle's
+! stored MPF from the position-driven MPF expected by linear weighting and
+! triggers the "deletion probability > 0.5" abort.  Skip in that case — the
+! linear/radial mechanism is the right tool when its weighting type is on.
+IF (DoLinearWeighting .OR. DoRadialWeighting) RETURN
 
 IF(MOD(iter,INT(vMPFSplitAndMergeStep,8)).NE.0) RETURN
 

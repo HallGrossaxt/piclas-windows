@@ -1053,6 +1053,7 @@ USE MOD_ReadInTools
 USE MOD_Particle_Vars
 USE MOD_Mesh_Vars              ,ONLY: nElems
 USE MOD_Particle_Emission_Init ,ONLY: InitializeEmissionSpecificMPF
+USE MOD_DSMC_Vars              ,ONLY: DoLinearWeighting, DoRadialWeighting
 ! IMPLICIT VARIABLE HANDLING
  IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1086,6 +1087,17 @@ IF (usevMPF) THEN
   CellEvib_vMPF = 0.0
   UseSplitAndMerge = .FALSE.
   IF(ANY(vMPFMergeThreshold.GT.0).OR.ANY(vMPFSplitThreshold.GT.0)) UseSplitAndMerge = .TRUE.
+  ! Linear / radial weighting manage PartMPF through their own per-particle
+  ! Clone-Delete mechanism (AdjustParticleWeight in dsmc_symmetry.f90).
+  ! vMPF SplitAndMerge halves PartMPF cell-by-cell, which de-syncs the stored
+  ! MPF from the position-driven MPF and triggers the "deletion probability
+  ! > 0.5" abort. The two cloning mechanisms cannot coexist; SplitAndMerge
+  ! is short-circuited at runtime when linear/radial weighting is on.
+  IF(UseSplitAndMerge.AND.(DoLinearWeighting.OR.DoRadialWeighting)) THEN
+    SWRITE(UNIT_StdOut,'(A)') ' WARNING: vMPF split/merge thresholds are set but linear/radial weighting is also on.'
+    SWRITE(UNIT_StdOut,'(A)') '          SplitAndMerge will be skipped at runtime - the two mechanisms modify'
+    SWRITE(UNIT_StdOut,'(A)') '          PartMPF in incompatible ways. Use one or the other, not both.'
+  END IF
   ! Get split limit (smallest MPF until splitting is stopped)
   IF(ANY(vMPFSplitThreshold.GT.0))THEN
     vMPFSplitLimit = GETREAL('Part-vMPFSplitLimit')
