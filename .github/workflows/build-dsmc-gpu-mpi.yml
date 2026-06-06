@@ -102,8 +102,12 @@ jobs:
           which gfortran
           gfortran --version | head -1
           PREFIX=$(cygpath -m "$MINGW_PREFIX")
+          NVCC=$(cygpath -m "$CUDA_PATH")/bin/nvcc.exe
           echo "MSYS2 UCRT64 prefix (Windows form): $PREFIX"
+          echo "nvcc                              : $NVCC"
+          test -x "$NVCC" || { echo "nvcc not at expected path"; ls "$(cygpath -m "$CUDA_PATH")/bin/"; exit 1; }
           cmake --preset windows-maxwell-dsmc-release-mpi-gpu \
+            -DCMAKE_CUDA_COMPILER="$NVCC"                                   \
             -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"                    \
             -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"                        \
             -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"                      \
