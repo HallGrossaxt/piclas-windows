@@ -69,15 +69,15 @@ jobs:
           dir "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Tools\MSVC" 2>nul
 
       # ------------------------------------------------------------------ #
-      # CUDA Toolkit — needed for nvcc.  The Jimver action handles caching.
-      # Pin sub_version=2 (i.e. 12.4.2) — newer toolkits work too but pinning
-      # gives reproducibility.  RTX 3060 ⇒ compute capability 8.6.
+      # CUDA Toolkit — needed for nvcc.  Must be 13.x because the build
+      # hardcodes "cudart64_13.dll" (src/CMakeLists.txt staging + gpu_loader.c
+      # LoadLibrary error message).  RTX 3060 ⇒ compute capability 8.6.
       # ------------------------------------------------------------------ #
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.21
         id: cuda-toolkit
         with:
-          cuda: '12.4.1'
+          cuda: '13.0.0'
           method: 'network'
           sub-packages: '["nvcc", "cudart", "thrust"]'
           use-github-cache: true
