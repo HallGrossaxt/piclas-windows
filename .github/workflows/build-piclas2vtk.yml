@@ -1,0 +1,105 @@
+name: Build piclas2vtk (HDF5 → VTK POSTI tool)
+
+# Verify the repo contains everything needed to build the piclas2vtk
+# POSTI tool — converts PICLas State / DSMCState / PartStateBoundary
+# HDF5 files to VTK so they can be opened in ParaView.  The build
+# inherits the same DSMC settings as the AgNozzle binary so the
+# resulting piclas2vtk can post-process the silver-vapor case output.
+# CPU-only, no CUDA needed.
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.github/workflows/build-piclas2vtk.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: piclas2vtk (Windows / MSYS2-UCRT64 + MS-MPI)
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-gcc-libgfortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-hdf5
+            mingw-w64-ucrt-x86_64-openblas
+            mingw-w64-ucrt-x86_64-msmpi
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+
+      # Override the C:/msys64/... hardcoded developer paths in the base
+      # preset with the runner's actual MSYS2 install prefix.
+      - name: CMake configure
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          which gfortran
+          gfortran --version | head -1
+          PREFIX=$(cygpath -m "$MINGW_PREFIX")
+          echo "MSYS2 UCRT64 prefix (Windows form): $PREFIX"
+          cmake --preset windows-maxwell-dsmc-release-mpi-posti \
+            -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"                    \
+            -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"                        \
+            -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"                      \
+            -DCMAKE_Fortran_COMPILER="$PREFIX/bin/gfortran.exe"             \
+            -DCMAKE_PREFIX_PATH="$PREFIX"                                   \
+            -DHDF5_ROOT="$PREFIX"                                           \
+            -DHDF5_DIR="$PREFIX/lib/cmake/hdf5"                             \
+            -DHDF5_Fortran_INCLUDE_DIR="$PREFIX/include"                    \
+            -DLAPACK_ROOT="$PREFIX"                                         \
+            -DMPI_HOME="$PREFIX"                                            \
+            -DMPI_C_COMPILER="$PREFIX/bin/mpicc"                            \
+            -DMPI_CXX_COMPILER="$PREFIX/bin/mpicxx"                         \
+            -DMPI_Fortran_COMPILER="$PREFIX/bin/mpifort"
+
+      - name: Build piclas2vtk target
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          cmake --build build-maxwell-dsmc-release-mpi-posti --target piclas2vtk -j
+
+      - name: Verify binary exists
+        shell: cmd
+        run: |
+          dir build-maxwell-dsmc-release-mpi-posti\bin
+          if not exist build-maxwell-dsmc-release-mpi-posti\bin\piclas2vtk.exe (exit /b 1)
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: piclas2vtk-win64-${{ github.sha }}
+          path: |
+            build-maxwell-dsmc-release-mpi-posti/bin/piclas2vtk.exe
+            build-maxwell-dsmc-release-mpi-posti/bin/libpiclas.dll
+          if-no-files-found: error
+          retention-days: 14

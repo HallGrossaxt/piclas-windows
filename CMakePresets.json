@@ -260,6 +260,19 @@
       }
     },
     {
+      "name": "windows-maxwell-dsmc-release-mpi-posti",
+      "displayName": "Windows - maxwell + DSMC + MPI + POSTI (piclas2vtk build)",
+      "description": "DSMC + MPI + POSTI tools (piclas2vtk).  Same equation/timedisc as the AgNozzle DSMC build so the resulting piclas2vtk can post-process State / DSMCState / PartStateBoundary files from that run.",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-release-mpi-posti",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "DSMC",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
       "name": "windows-maxwell-rk4-nopart-mpi",
       "displayName": "Windows - maxwell + RK4 + MPI (no particles)",
       "description": "PARTICLES=OFF, no DMD. Required by NIG_convtest_maxwell and NIG_maxwell_dipole_dielectric (builds.ini: PICLAS_PARTICLES=OFF).",
