@@ -63,19 +63,33 @@ INTERFACE
   END FUNCTION
 
   !-------------------------------------------------------------------------------------------------------------------------------
-  ! Batch position push: pos += vel * dt for all active particles.
+  ! Batch position push: pos += vel * dt * scale for all active particles,
+  ! followed by optional axisymmetric (y,z) or (x,z) rotation.
+  !
   !   PartState(*) — Fortran PartState(1:6, 1:nPart) passed as flat C array
   !   isActive(*)  — INTEGER(C_INT) mask (1 = active, 0 = empty slot)
+  !   dtFracPush(*)— INTEGER(C_INT) mask (1 = fresh surface-flux particle,
+  !                  scale = dtFracRand(i); 0 = scale = 1)
+  !   dtFracRand(*)— REAL(C_DOUBLE) per-particle dt scaling (1.0 for non-fresh
+  !                  particles, uniform [0,1] for fresh ones — caller fills it
+  !                  in iPart order so the host RNG state stays in lock-step
+  !                  with the CPU loop)
   !   nPart        — PDM%ParticleVecLength
   !   dt           — constant time step
+  !   symmetryOrder— 0 = no rotation, 2 = rotate (y,z), 3 = rotate (x,z)
   !-------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE piclas_gpu_push_particles(PartState, isActive, nPart, dt) &
+  SUBROUTINE piclas_gpu_push_particles(PartState, isActive,        &
+                                       dtFracPush, dtFracRand,     &
+                                       nPart, dt, symmetryOrder)   &
       BIND(C, NAME='piclas_gpu_push_particles')
     IMPORT :: C_DOUBLE, C_INT
     REAL(C_DOUBLE), INTENT(INOUT) :: PartState(*)
     INTEGER(C_INT), INTENT(IN)    :: isActive(*)
+    INTEGER(C_INT), INTENT(IN)    :: dtFracPush(*)
+    REAL(C_DOUBLE), INTENT(IN)    :: dtFracRand(*)
     INTEGER(C_INT), VALUE         :: nPart
     REAL(C_DOUBLE), VALUE         :: dt
+    INTEGER(C_INT), VALUE         :: symmetryOrder
   END SUBROUTINE
 
   !-------------------------------------------------------------------------------------------------------------------------------
@@ -180,24 +194,40 @@ END SUBROUTINE GPU_Finalize
 !> GPU_PushParticlesBatch
 !> Upload PartState to GPU, run the position-push kernel, download results.
 !>
-!> Handles the simple constant-dt case:
-!>   PartState(1:3,iPart) += PartState(4:6,iPart) * dt
-!> for all active particles (ParticleInside(iPart) = .TRUE.).
+!> Handles the DSMC constant-dt push:
+!>   PartState(1:3,iPart) += PartState(4:6,iPart) * dt * scale(iPart)
+!>     scale(iPart) = RandVal(iPart) if dtFracPush(iPart) else 1
+!> followed by an optional axisymmetric (y,z)/(x,z) rotation (symmetryOrder).
+!>
+!> The caller is responsible for:
+!>   - filling LastPartPos / LastGlobalElemID on the host for non-fresh
+!>     particles BEFORE this call (the kernel only updates PartState);
+!>   - resetting PDM%dtFracPush=.FALSE. for processed particles AFTER this
+!>     call (mirroring the per-particle CPU loop);
+!>   - skipping the CPU CalcPartSymmetryPos loop when symmetryOrder > 0.
 !>
 !> Called from timedisc_TimeStep_DSMC when:
 !>   - GPUInitialized = .TRUE.
 !>   - UseVarTimeStep = .FALSE.
 !>   - UseRotRefFrame = .FALSE.
-!>   - DoSurfaceFlux  = .FALSE. (no fractional-dt push particles)
+!>   - UseGranularSpecies = .FALSE.
+!>   - DSMC%DoAmbipolarDiff = .FALSE.
 !=================================================================================================================================
-SUBROUTINE GPU_PushParticlesBatch(PartState, ParticleInside, nPart, dt)
+SUBROUTINE GPU_PushParticlesBatch(PartState, ParticleInside, DtFracPush, &
+                                  nPart, dt, symmetryOrder)
+  USE MOD_Globals
+  USE MOD_Particle_Vars,  ONLY: PDM
   REAL,    INTENT(INOUT) :: PartState(1:6, 1:*)   !< particle state array
   LOGICAL, INTENT(IN)    :: ParticleInside(1:*)   !< PDM%ParticleInside
+  LOGICAL, INTENT(IN)    :: DtFracPush(1:*)       !< PDM%dtFracPush (per-particle fresh flag)
   INTEGER, INTENT(IN)    :: nPart                 !< PDM%ParticleVecLength
   REAL,    INTENT(IN)    :: dt                    !< time step
+  INTEGER, INTENT(IN)    :: symmetryOrder         !< 0, 2, or 3
   ! Local
-  INTEGER(C_INT) :: nPart_c
+  INTEGER        :: iPart
+  INTEGER(C_INT) :: nPart_c, symm_c
   REAL(C_DOUBLE) :: dt_c
+  REAL           :: rnd
 
   IF (nPart <= 0) RETURN
 
@@ -210,16 +240,34 @@ SUBROUTINE GPU_PushParticlesBatch(PartState, ParticleInside, nPart, dt)
     CALL GPU_AllocActiveMask(nPart)
   END IF
 
-  ! Convert Fortran LOGICAL to C int (Fortran LOGICAL is not C bool)
-  WHERE (ParticleInside(1:nPart))
-    GPU_ActiveMask(1:nPart) = 1_C_INT
-  ELSEWHERE
-    GPU_ActiveMask(1:nPart) = 0_C_INT
-  END WHERE
+  ! Convert Fortran LOGICAL → C_INT, default RandVal to 1.0; then draw RandVal
+  ! ONLY for fresh particles, in iPart order. This matches the CPU per-particle
+  ! loop's RANDOM_NUMBER consumption order exactly, so the global RNG sequence
+  ! is the same regardless of CPU vs GPU push path.
+  DO iPart = 1, nPart
+    IF (ParticleInside(iPart)) THEN
+      GPU_ActiveMask(iPart) = 1_C_INT
+      IF (DtFracPush(iPart)) THEN
+        GPU_DtFracMask(iPart) = 1_C_INT
+        CALL RANDOM_NUMBER(rnd)
+        GPU_DtFracRand(iPart) = REAL(rnd, C_DOUBLE)
+      ELSE
+        GPU_DtFracMask(iPart) = 0_C_INT
+        GPU_DtFracRand(iPart) = 1.0_C_DOUBLE
+      END IF
+    ELSE
+      GPU_ActiveMask(iPart) = 0_C_INT
+      GPU_DtFracMask(iPart) = 0_C_INT
+      GPU_DtFracRand(iPart) = 1.0_C_DOUBLE
+    END IF
+  END DO
 
-  nPart_c = INT(nPart, C_INT)
-  dt_c    = REAL(dt,   C_DOUBLE)
-  CALL piclas_gpu_push_particles(PartState, GPU_ActiveMask, nPart_c, dt_c)
+  nPart_c = INT(nPart,         C_INT)
+  dt_c    = REAL(dt,           C_DOUBLE)
+  symm_c  = INT(symmetryOrder, C_INT)
+  CALL piclas_gpu_push_particles(PartState, GPU_ActiveMask,         &
+                                 GPU_DtFracMask, GPU_DtFracRand,    &
+                                 nPart_c, dt_c, symm_c)
 END SUBROUTINE GPU_PushParticlesBatch
 
 !=================================================================================================================================

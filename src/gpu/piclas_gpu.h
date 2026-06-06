@@ -53,11 +53,24 @@ PICLAS_GPU_API int piclas_gpu_query_max_safe(void);
  *                            PartState[iPart*6 + 0..2] = x,y,z
  *                            PartState[iPart*6 + 3..5] = vx,vy,vz
  *  isActive[nPart]       — 1 = particle inside domain, 0 = empty slot
+ *  dtFracPush[nPart]     — 1 = fresh surface-flux particle (push by random
+ *                          fraction of dt); 0 = full dt.  Pass NULL to
+ *                          disable the fractional-dt path entirely.
+ *  dtFracRand[nPart]     — per-particle dt scaling (1.0 for non-fresh
+ *                          particles; uniform [0,1] RNG draw for fresh
+ *                          ones, generated host-side in iPart order so the
+ *                          host RNG state stays synchronised with the CPU
+ *                          per-particle loop).  Ignored when dtFracPush is
+ *                          NULL.
  *  nPart                 — PDM%ParticleVecLength (highest occupied index)
  *  dt                    — constant time step
+ *  symmetryOrder         — 0 = none, 2 = axisymmetric (rotate y,z),
+ *                          3 = axisymmetric (rotate x,z).
  */
 PICLAS_GPU_API void piclas_gpu_push_particles(double *PartState, int *isActive,
-                                              int nPart, double dt);
+                                              int *dtFracPush, double *dtFracRand,
+                                              int nPart, double dt,
+                                              int symmetryOrder);
 
 /* LSERK4 per-stage particle push (PP_TimeDiscMethod 2 and 6).
  *

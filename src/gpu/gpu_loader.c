@@ -30,7 +30,7 @@ typedef void (*pfn_void)(void);
 typedef void (*pfn_init)(int, int);
 typedef int  (*pfn_alloc)(int);
 typedef int  (*pfn_query_max)(void);
-typedef void (*pfn_push)(double *, int *, int, double);
+typedef void (*pfn_push)(double *, int *, int *, double *, int, double, int);
 typedef void (*pfn_lserk)(double *, double *, double *,
                            int *, int *, int *,
                            int, int, int, int, double, double);
@@ -118,9 +118,11 @@ int piclas_gpu_query_max_safe(void)
     return g_gpu_query_max();
 }
 
-void piclas_gpu_push_particles(double *PartState, int *isActive, int nPart, double dt)
+void piclas_gpu_push_particles(double *PartState, int *isActive,
+                               int *dtFracPush, double *dtFracRand,
+                               int nPart, double dt, int symmetryOrder)
 {
-    g_gpu_push(PartState, isActive, nPart, dt);
+    g_gpu_push(PartState, isActive, dtFracPush, dtFracRand, nPart, dt, symmetryOrder);
 }
 
 void piclas_gpu_lserk_stage(double *PartState, double *Pt_temp, double *Pt,

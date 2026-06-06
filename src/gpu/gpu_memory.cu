@@ -35,6 +35,8 @@ static double *d_Pt_temp    = nullptr;   // [6 * g_nMaxPart] — LSERK RK stagin
 static double *d_Pt         = nullptr;   // [3 * g_nMaxPart] — acceleration (Lorentz force), per stage
 static int    *d_isPush     = nullptr;   // [g_nMaxPart]     — 1=charged particle
 static int    *d_isNewPart  = nullptr;   // [g_nMaxPart]     — 1=newly inserted particle
+static int    *d_dtFracPush = nullptr;   // [g_nMaxPart]     — 1=fresh surface-flux particle (DSMC push)
+static double *d_dtFracRand = nullptr;   // [g_nMaxPart]     — per-particle dt scaling (1.0 for non-fresh)
 static int     g_nMaxPart   = 0;
 
 // ---------------------------------------------------------------------------
@@ -47,7 +49,9 @@ int g_gpuDeviceId = 0;   // CUDA device index this rank is bound to
 
 // Forward declarations: kernel launchers
 extern void launch_particle_push(double *d_PartState, const int *d_isActive,
-                                 int nPart, double dt);
+                                 const int *d_dtFracPush,
+                                 const double *d_dtFracRand,
+                                 int nPart, double dt, int symmetryOrder);
 extern void launch_lserk_stage(double *d_PartState, double *d_Pt_temp,
                                const double *d_Pt, const int *d_isActive,
                                const int *d_isPush, const int *d_isNewPart,
@@ -85,6 +89,8 @@ int piclas_gpu_alloc_buffers(int nMaxPart)
     if (e == cudaSuccess) e = cudaMalloc((void**)&d_Pt,        (size_t)3 * nMaxPart * sizeof(double));
     if (e == cudaSuccess) e = cudaMalloc((void**)&d_isPush,    (size_t)nMaxPart * sizeof(int));
     if (e == cudaSuccess) e = cudaMalloc((void**)&d_isNewPart, (size_t)nMaxPart * sizeof(int));
+    if (e == cudaSuccess) e = cudaMalloc((void**)&d_dtFracPush,(size_t)nMaxPart * sizeof(int));
+    if (e == cudaSuccess) e = cudaMalloc((void**)&d_dtFracRand,(size_t)nMaxPart * sizeof(double));
 
     if (e != cudaSuccess) {
         fprintf(stderr, "[GPU] cudaMalloc for %d particles failed: %s — "
@@ -97,6 +103,8 @@ int piclas_gpu_alloc_buffers(int nMaxPart)
         if (d_Pt)        { cudaFree(d_Pt);        d_Pt        = nullptr; }
         if (d_isPush)    { cudaFree(d_isPush);    d_isPush    = nullptr; }
         if (d_isNewPart) { cudaFree(d_isNewPart); d_isNewPart = nullptr; }
+        if (d_dtFracPush){ cudaFree(d_dtFracPush);d_dtFracPush= nullptr; }
+        if (d_dtFracRand){ cudaFree(d_dtFracRand);d_dtFracRand= nullptr; }
         return -1;
     }
 
@@ -131,6 +139,8 @@ void piclas_gpu_free_buffers(void)
     if (d_Pt)        { CUDA_CHECK(cudaFree(d_Pt));         d_Pt         = nullptr; }
     if (d_isPush)    { CUDA_CHECK(cudaFree(d_isPush));     d_isPush     = nullptr; }
     if (d_isNewPart) { CUDA_CHECK(cudaFree(d_isNewPart));  d_isNewPart  = nullptr; }
+    if (d_dtFracPush){ CUDA_CHECK(cudaFree(d_dtFracPush)); d_dtFracPush = nullptr; }
+    if (d_dtFracRand){ CUDA_CHECK(cudaFree(d_dtFracRand)); d_dtFracRand = nullptr; }
     g_nMaxPart = 0;
 }
 
@@ -188,13 +198,30 @@ int piclas_gpu_query_max_safe(void)
 }
 
 // ---------------------------------------------------------------------------
-// piclas_gpu_push_particles
-//   Upload PartState + isActive → run kernel → download updated PartState.
+// piclas_gpu_push_particles  —  DSMC position push (Time-Step DSMC)
+//
+//   Upload PartState + isActive (+ optional dtFracPush/dtFracRand) → run
+//   kernel → download updated PartState.
+//
+//   dtFracPush[i]  : 1 = fresh surface-flux particle (pushed by random
+//                    fraction of dt); 0 = use full dt.   Pass nullptr to
+//                    disable the fractional-dt feature for every particle.
+//   dtFracRand[i]  : per-particle dt scaling.  Caller fills 1.0 for non-
+//                    fresh particles and a uniform RNG draw for fresh ones,
+//                    in iPart order, so the host RNG state advances exactly
+//                    as in the CPU per-particle loop.  Ignored when
+//                    dtFracPush is nullptr.
+//   symmetryOrder  : 0 = no axisymmetric post-rotation;
+//                    2 = rotate (y, z) so y' = ±sqrt(y²+z²), z' = 0;
+//                    3 = rotate (x, z) so x' =  sqrt(x²+z²), z' = 0.
 // ---------------------------------------------------------------------------
 void piclas_gpu_push_particles(double *PartState, int *isActive,
-                               int nPart, double dt)
+                               int *dtFracPush, double *dtFracRand,
+                               int nPart, double dt, int symmetryOrder)
 {
     if (nPart <= 0 || g_nMaxPart <= 0) return;
+
+    const int haveFrac = (dtFracPush != nullptr && dtFracRand != nullptr) ? 1 : 0;
 
     // §16.18 Phase 2: stream the live particles through the fixed device buffer
     // in chunks of g_nMaxPart. Each particle's update is independent, so slicing
@@ -214,7 +241,24 @@ void piclas_gpu_push_particles(double *PartState, int *isActive,
                               (size_t)chunk * sizeof(int),
                               cudaMemcpyHostToDevice));
 
-        launch_particle_push(d_PartState, d_isActive, chunk, dt);
+        const int    *d_frac_p = nullptr;
+        const double *d_frac_r = nullptr;
+        if (haveFrac) {
+            int    *fp = dtFracPush + (size_t)off;
+            double *fr = dtFracRand + (size_t)off;
+            CUDA_CHECK(cudaMemcpy(d_dtFracPush, fp,
+                                  (size_t)chunk * sizeof(int),
+                                  cudaMemcpyHostToDevice));
+            CUDA_CHECK(cudaMemcpy(d_dtFracRand, fr,
+                                  (size_t)chunk * sizeof(double),
+                                  cudaMemcpyHostToDevice));
+            d_frac_p = d_dtFracPush;
+            d_frac_r = d_dtFracRand;
+        }
+
+        launch_particle_push(d_PartState, d_isActive,
+                             d_frac_p, d_frac_r,
+                             chunk, dt, symmetryOrder);
 
         CUDA_CHECK(cudaMemcpy(ps, d_PartState,
                               (size_t)6 * chunk * sizeof(double),
