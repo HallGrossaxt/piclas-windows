@@ -92,12 +92,31 @@ jobs:
       # Configure via the new CMakePresets entry that bundles all the
       # AgNozzle-binary flags (DSMC + MPI + GPU + UNITTESTS=OFF).
       # ------------------------------------------------------------------ #
+      # The base preset 'windows-ucrt64' hardcodes C:/msys64/ucrt64 absolute
+      # paths matching a local developer install.  On the runner MSYS2 may
+      # live elsewhere; resolve $MINGW_PREFIX at runtime and override the
+      # hardcoded path entries so the preset works regardless of install root.
       - name: CMake configure
         run: |
           export PATH="/ucrt64/bin:/usr/bin:$PATH"
           which gfortran
           gfortran --version | head -1
-          cmake --preset windows-maxwell-dsmc-release-mpi-gpu
+          PREFIX=$(cygpath -m "$MINGW_PREFIX")
+          echo "MSYS2 UCRT64 prefix (Windows form): $PREFIX"
+          cmake --preset windows-maxwell-dsmc-release-mpi-gpu \
+            -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"                    \
+            -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"                        \
+            -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"                      \
+            -DCMAKE_Fortran_COMPILER="$PREFIX/bin/gfortran.exe"             \
+            -DCMAKE_PREFIX_PATH="$PREFIX"                                   \
+            -DHDF5_ROOT="$PREFIX"                                           \
+            -DHDF5_DIR="$PREFIX/lib/cmake/hdf5"                             \
+            -DHDF5_Fortran_INCLUDE_DIR="$PREFIX/include"                    \
+            -DLAPACK_ROOT="$PREFIX"                                         \
+            -DMPI_HOME="$PREFIX"                                            \
+            -DMPI_C_COMPILER="$PREFIX/bin/mpicc"                            \
+            -DMPI_CXX_COMPILER="$PREFIX/bin/mpicxx"                         \
+            -DMPI_Fortran_COMPILER="$PREFIX/bin/mpifort"
 
       # ------------------------------------------------------------------ #
       - name: Build piclas target only
