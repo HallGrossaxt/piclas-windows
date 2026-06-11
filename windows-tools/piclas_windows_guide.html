@@ -190,6 +190,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     <a href="#s16-22">§16.22 Serial PETSc binary, TERadius MPI_IN_PLACE fix, reggie externals verification</a>
     <a href="#s16-23">§16.23 L2-error-norm MPI_IN_PLACE fix (convtest_maxwell + SuperB), NIG_poisson CODE_ANALYZE binary</a>
     <a href="#s16-24">§16.24 reggie excludeBuild in -e mode (stale venv) &mdash; NIG_code_analyze/FieldIonization</a>
+    <a href="#s16-26">§16.26 GPU Push &mdash; Surface Flux + Axisymmetric DSMC</a>
     <a class="nav-sub" href="#s16-20-track1">Track 1 Builds (14 binaries)</a>
     <a class="nav-sub" href="#s16-20-gyrotron">Emission Gyrotron Analyze Fix</a>
     <a class="nav-sub" href="#s16-20-metrics">metrics.f90 Jacobian Gate</a>
@@ -233,7 +234,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
       <code>OUTPUT_NAME</code> is now <code>piclas-win</code>, producing <code>piclas-win.exe</code>.
       All run, build and reggie regression commands (and the Windows builder) now reference
       <code>piclas-win.exe</code>; the <code>piclas2vtk</code> tool is unaffected. Verified
-      end-to-end with the DSMC+MPI+GPU build (CUDA 13.2, RTX 3060 sm_86, MS-MPI, MSYS2 UCRT64).
+      end-to-end with the DSMC+MPI+GPU build (CUDA 13.2, RTX 3060 sm_86, MS-MPI, MSYS2 UCRT64). GPU particle push now also covers constant/adaptive surface-flux emission and 2D axisymmetric DSMC (&sect;16.26).
     </td>
   </tr>
   <tr>
@@ -5486,6 +5487,58 @@ regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.ini
   <code>NIG_code_analyze/Semicircle</code> integrate_line is off by 17% (both tracking methods agree &rarr; likely a
   stale reference or a real weighting difference).
 </div>
+
+<!-- ─────────────────── §16.26 ─────────────────── -->
+<h2 id="s16-26">§16.26 GPU Push &mdash; Surface Flux + Axisymmetric DSMC Support</h2>
+<p>
+  As of <code>piclas-win 1.0</code> the CUDA particle-position push supports two DSMC configurations that were
+  previously forced onto the CPU path: constant/adaptive <strong>surface-flux</strong> emission and
+  <strong>2D axisymmetric</strong> runs. This directly benefits cases such as the silver-vapor nozzle
+  (<code>Symmetry2DAxisymmetric = T</code> with an adaptive surface-flux inlet), whose position push now runs
+  on the GPU.
+</p>
+
+<h3 id="s16-26-1">§16.26.1 Previous limitation</h3>
+<p>
+  The <code>UseGPUPush</code> guard in <code>TimeStep_DSMC</code> disqualified any run with
+  <code>DoSurfaceFlux = T</code> or <code>Symmetry%Axisymmetric = T</code>. The kernel only computed
+  <code>pos += vel * dt</code>, so it handled neither the fractional time step of freshly inserted surface-flux
+  particles nor the axisymmetric rotation of the radial coordinates; enabling the GPU path for those cases
+  would have produced wrong positions, so they silently fell back to the CPU.
+</p>
+
+<h3 id="s16-26-2">§16.26.2 Patch</h3>
+<ul>
+  <li>
+    <code>particle_push_kernel</code> now takes <code>dtFracPush[nPart]</code>, <code>dtFracRand[nPart]</code>
+    and <code>symmetryOrder</code>. Freshly inserted surface-flux particles have their <code>dt</code> scaled by
+    the host-supplied uniform random number; for <code>symmetryOrder = 2</code> or <code>3</code> the kernel
+    rotates the (y,z) or (x,z) components per <code>CalcPartSymmetryPos</code>. The on-axis
+    <code>|r| &lt; eps</code> case leaves the velocity unchanged.
+  </li>
+  <li>
+    The random numbers are drawn <strong>host-side in <code>iPart</code> order</strong> (in
+    <code>GPU_PushParticlesBatch</code>, <code>gpu_interface.f90</code>) so the global
+    <code>RANDOM_NUMBER</code> sequence stays <strong>bit-identical to the CPU per-particle loop</strong> &mdash;
+    GPU and CPU runs remain reproducible.
+  </li>
+  <li>
+    New device buffers <code>d_dtFracPush</code> / <code>d_dtFracRand</code> are allocated alongside
+    <code>d_PartState</code>, and the <code>UseGPUPush</code> guard is relaxed to admit surface-flux and
+    axisymmetric runs.
+  </li>
+</ul>
+<div class="note">
+  <b>Still CPU-only:</b> ambipolar diffusion (<code>DSMC%DoAmbipolarDiff</code>), variable / species-specific
+  time step, rotational reference frame, and granular species &mdash; the kernel does not yet handle their extra
+  per-particle work, so those runs continue to use the CPU push.
+</div>
+<p>
+  <b>Files:</b> <code>src/gpu/particle_push.cu</code>, <code>src/gpu/gpu_memory.cu</code>,
+  <code>src/gpu/gpu_interface.f90</code>, <code>src/gpu/gpu_vars.f90</code>, <code>src/gpu/gpu_loader.c</code>,
+  <code>src/gpu/piclas_gpu.h</code>, <code>src/timedisc/timedisc_TimeStep_DSMC.f90</code> (commit
+  <code>4582f18</code>).
+</p>
 
 <hr>
 <p style="font-size:0.78rem;color:var(--muted);text-align:center;">
