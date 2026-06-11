@@ -133,7 +133,7 @@ jobs:
         shell: cmd
         run: |
           dir build-maxwell-dsmc-release-mpi-gpu\bin
-          if not exist build-maxwell-dsmc-release-mpi-gpu\bin\piclas.exe (exit /b 1)
+          if not exist build-maxwell-dsmc-release-mpi-gpu\bin\piclas-win.exe (exit /b 1)
           if not exist build-maxwell-dsmc-release-mpi-gpu\bin\libpiclas.dll (exit /b 1)
           if not exist build-maxwell-dsmc-release-mpi-gpu\bin\libpiclasGPU.dll (exit /b 1)
 
@@ -143,7 +143,7 @@ jobs:
         with:
           name: piclas-dsmc-gpu-mpi-win64-${{ github.sha }}
           path: |
-            build-maxwell-dsmc-release-mpi-gpu/bin/piclas.exe
+            build-maxwell-dsmc-release-mpi-gpu/bin/piclas-win.exe
             build-maxwell-dsmc-release-mpi-gpu/bin/libpiclas.dll
             build-maxwell-dsmc-release-mpi-gpu/bin/libpiclasGPU.dll
             build-maxwell-dsmc-release-mpi-gpu/bin/cudart64_*.dll
