@@ -1,10 +1,9 @@
-name: Build DSMC + MPI + GPU (AgNozzle binary)
+name: Build DSMC + MPI + GPU
 
-# Verify the repo contains everything needed to build the binary used for
-# the 2D-axisymmetric silver-vapor nozzle DSMC case (see §16.26a/b in
-# windows-tools/piclas_bugs_summary.md).  The binary links against the
-# CUDA runtime; runtime execution of the GPU code path is NOT exercised
-# here because GitHub-hosted runners have no NVIDIA device.
+# Verify the repo contains everything needed to build the DSMC + MPI + GPU
+# binary.  The binary links against the CUDA runtime; runtime execution of
+# the GPU code path is NOT exercised here because GitHub-hosted runners have
+# no NVIDIA device.
 
 on:
   push:
@@ -27,7 +26,7 @@ permissions:
 
 jobs:
   build:
-    name: AgNozzle DSMC + MPI + GPU (Windows / MSYS2-UCRT64 + CUDA + MSVC)
+    name: DSMC + MPI + GPU (Windows / MSYS2-UCRT64 + CUDA + MSVC)
     runs-on: windows-2022
     timeout-minutes: 90
 
@@ -90,7 +89,7 @@ jobs:
 
       # ------------------------------------------------------------------ #
       # Configure via the new CMakePresets entry that bundles all the
-      # AgNozzle-binary flags (DSMC + MPI + GPU + UNITTESTS=OFF).
+      # DSMC + MPI + GPU binary flags (DSMC + MPI + GPU + UNITTESTS=OFF).
       # ------------------------------------------------------------------ #
       # The base preset 'windows-ucrt64' hardcodes C:/msys64/ucrt64 absolute
       # paths matching a local developer install.  On the runner MSYS2 may

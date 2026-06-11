@@ -3,8 +3,8 @@ name: Build piclas2vtk (HDF5 → VTK POSTI tool)
 # Verify the repo contains everything needed to build the piclas2vtk
 # POSTI tool — converts PICLas State / DSMCState / PartStateBoundary
 # HDF5 files to VTK so they can be opened in ParaView.  The build
-# inherits the same DSMC settings as the AgNozzle binary so the
-# resulting piclas2vtk can post-process the silver-vapor case output.
+# inherits the same DSMC settings as the DSMC + MPI + GPU binary so the
+# resulting piclas2vtk can post-process DSMC case output.
 # CPU-only, no CUDA needed.
 
 on:
