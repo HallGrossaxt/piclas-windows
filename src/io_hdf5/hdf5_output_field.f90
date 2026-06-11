@@ -158,7 +158,7 @@ USE MOD_Globals
 USE MOD_Globals_Vars       ,ONLY: ProjectName
 USE MOD_Mesh_Vars          ,ONLY: offsetElem,nGlobalElems,MeshFile
 USE MOD_io_HDF5
-USE MOD_HDF5_output        ,ONLY: WriteArrayToHDF5, copy_userblock
+USE MOD_HDF5_output        ,ONLY: WriteArrayToHDF5, copy_userblock, GatheredWriteArray
 USE MOD_Output_Vars        ,ONLY: UserBlockTmpFile,userblock_total_len
 USE MOD_Interpolation_Vars ,ONLY: Uex,NAnalyze,NodeTypeGL
 #if USE_LOADBALANCE
@@ -212,8 +212,6 @@ END IF
 #if USE_MPI
 CALL MPI_BARRIER(MPI_COMM_PICLAS,iError)
 #endif /*USE_MPI*/
-CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-
 nVal=nGlobalElems  ! For the MPI case this must be replaced by the global number of elements (sum over all procs)
 
 ! Associate construct for integer KIND=8 possibility
@@ -223,14 +221,14 @@ ASSOCIATE (&
   PP_nElems    => INT(PP_nElems,IK)    ,&
   offsetElem   => INT(offsetElem,IK)   ,&
   nGlobalElems => INT(nGlobalElems,IK) )
-CALL WriteArrayToHDF5(DataSetName='DG_Solution'    , rank=5 , &
+! Serial HDF5: only MPIRoot may create datasets; gather non-root data to root (element dim is last)
+CALL GatheredWriteArray(FileName,create=.FALSE.,&
+                      DataSetName='DG_Solution'    , rank=5 , &
                       nValGlobal=(/UexDataSize , N+1_IK , N+1_IK , N+1_IK , nGlobalElems/) , &
                       nVal      =(/UexDataSize , N+1_IK , N+1_IK , N+1_IK , PP_nElems/)    , &
                       offset    =(/0_IK       , 0_IK   , 0_IK   , 0_IK   , offsetElem/)   , &
                       collective=.false., RealArray=Uex)
 END ASSOCIATE
-
-CALL CloseDataFile()
 
 DEALLOCATE(StrVarNames)
 
@@ -424,7 +422,7 @@ USE MOD_Globals
 USE MOD_Globals_Vars       ,ONLY: ProjectName
 USE MOD_Mesh_Vars          ,ONLY: offsetElem,nGlobalElems, nElems,MeshFile
 USE MOD_io_HDF5
-USE MOD_HDF5_output        ,ONLY: WriteArrayToHDF5,copy_userblock
+USE MOD_HDF5_output        ,ONLY: copy_userblock,GatheredWriteArray
 USE MOD_Output_Vars        ,ONLY: UserBlockTmpFile,userblock_total_len
 USE MOD_Interpolation_Vars ,ONLY: N_BG, NodeType, BGDataSize, NMax, PREF_VDM
 USE MOD_Restart_Vars       ,ONLY: RestartTime
@@ -443,7 +441,7 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 CHARACTER(LEN=255)             :: FileName
 CHARACTER(LEN=255),ALLOCATABLE :: StrVarNames(:)
-INTEGER                        :: nVal, iElem, Nloc
+INTEGER                        :: iElem, Nloc
 REAL                           :: outputArray(1:BGDataSize,0:NMax,0:NMax,0:NMax,1:nElems)
 REAL                           :: StartT,EndT
 !===================================================================================================================================
@@ -489,10 +487,6 @@ END IF
 #if USE_MPI
 CALL MPI_BARRIER(MPI_COMM_PICLAS,iError)
 #endif /*USE_MPI*/
-CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-
-nVal=nGlobalElems  ! For the MPI case this must be replaced by the global number of elements (sum over all procs)
-
 ! Associate construct for integer KIND=8 possibility
 ASSOCIATE (&
   BGDataSize   => INT(BGDataSize,IK)   ,&
@@ -500,14 +494,13 @@ ASSOCIATE (&
   PP_nElems    => INT(PP_nElems,IK)    ,&
   offsetElem   => INT(offsetElem,IK)   ,&
   nGlobalElems => INT(nGlobalElems,IK) )
-CALL WriteArrayToHDF5(DataSetName='DG_Solution', rank=5 , &
-                      nValGlobal=(/BGDataSize , N+1_IK , N+1_IK , N+1_IK , nGlobalElems/) , &
-                      nVal      =(/BGDataSize , N+1_IK , N+1_IK , N+1_IK , PP_nElems/)    , &
-                      offset    =(/0_IK        , 0_IK   , 0_IK   , 0_IK   , offsetElem/)   , &
-                      collective=.false., RealArray=outputArray)
+  CALL GatheredWriteArray(FileName, create=.FALSE.                                                  , &
+                          DataSetName = 'DG_Solution' , rank = 5                                    , &
+                          nValGlobal  = (/BGDataSize  , N+1_IK , N+1_IK , N+1_IK , nGlobalElems/)  , &
+                          nVal        = (/BGDataSize  , N+1_IK , N+1_IK , N+1_IK , PP_nElems/)     , &
+                          offset      = (/0_IK        , 0_IK   , 0_IK   , 0_IK   , offsetElem/)    , &
+                          collective  = .FALSE.        , RealArray = outputArray)
 END ASSOCIATE
-
-CALL CloseDataFile()
 
 DEALLOCATE(StrVarNames)
 

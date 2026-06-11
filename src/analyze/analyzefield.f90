@@ -260,6 +260,7 @@ IF(CalcEpot)THEN
   ! 2) magnetic field
   ! 3) divergence correction magnetic
   ! 4) divergence correction electric + charge
+#if !(USE_FV) || (USE_HDG)
 #if (PP_nVar==8)
   IF(DoDielectric)THEN
     CALL CalcPotentialEnergy_Dielectric(WEl,WMag,Wphi,Wpsi)
@@ -273,6 +274,7 @@ IF(CalcEpot)THEN
     CALL CalcPotentialEnergy(WEl)
   END IF ! DoDielectric
 #endif /*PP_nVar=8*/
+#endif /*no FV alone - !(USE_FV) || (USE_HDG)*/
 END IF ! CalcEpot
 #if (PP_nVar>=6)
 IF(CalcPoyntingInt) CALL CalcPoyntingIntegral(PoyntingIntegral)

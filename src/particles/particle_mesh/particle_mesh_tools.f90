@@ -2145,7 +2145,7 @@ USE MOD_Symmetry_Vars           ,ONLY: Symmetry
 INTEGER                         :: SideID, iLocSide, BCSideID, locElemID, CNElemID, iSide
 REAL                            :: triarea(2), y_nodes(4)
 #if USE_MPI
-REAL                            :: CNVolume
+REAL                            :: CNVolume, CNVolumeTmp
 INTEGER                         :: offsetElemCNProc
 #endif /*USE_MPI*/
 LOGICAL                         :: SymmetryBCExists
@@ -2263,7 +2263,9 @@ CALL BARRIER_AND_SYNC(ElemCharLength_Shared_Win,MPI_COMM_SHARED)
 ! Compute-node mesh volume
 offsetElemCNProc = offsetElem - offsetComputeNodeElem
 CNVolume = SUM(ElemVolume_Shared(offsetElemCNProc+1:offsetElemCNProc+nElems))
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,CNVolume,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_SHARED,iError)
+! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+CALL MPI_ALLREDUCE(CNVolume,CNVolumeTmp,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_SHARED,iError)
+CNVolume = CNVolumeTmp
 IF (myComputeNodeRank.EQ.0) THEN
   ! All-reduce between node leaders
   CALL MPI_ALLREDUCE(CNVolume,MeshVolume,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_LEADERS_SHARED,IERROR)
@@ -2314,7 +2316,7 @@ REAL                            :: X(2), MaxCoord, MinCoord
 LOGICAL                         :: SideInPlane, X1Occupied
 INTEGER                         :: firstElem,lastElem, firstSide, lastSide
 #if USE_MPI
-REAL                            :: CNVolume
+REAL                            :: CNVolume, CNVolumeTmp
 INTEGER                         :: offsetElemCNProc
 #endif /*USE_MPI*/
 !===================================================================================================================================
@@ -2400,7 +2402,9 @@ CALL BARRIER_AND_SYNC(ElemCharLength_Shared_Win,MPI_COMM_SHARED)
 ! Compute-node mesh volume
 offsetElemCNProc = offsetElem - offsetComputeNodeElem
 CNVolume = SUM(ElemVolume_Shared(offsetElemCNProc+1:offsetElemCNProc+nElems))
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,CNVolume,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_SHARED,iError)
+! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) corrupts the buffer. Use explicit send/recv buffers.
+CALL MPI_ALLREDUCE(CNVolume,CNVolumeTmp,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_SHARED,iError)
+CNVolume = CNVolumeTmp
 IF (myComputeNodeRank.EQ.0) THEN
   ! All-reduce between node leaders
   CALL MPI_ALLREDUCE(CNVolume,MeshVolume,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_LEADERS_SHARED,IERROR)

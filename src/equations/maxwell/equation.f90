@@ -325,8 +325,8 @@ DO iRefState=1,nTmp
     IF((TEPolarization.NE.'x').AND.(TEPolarization.NE.'y').AND.(TEPolarization.NE.'r').AND.(TEPolarization.NE.'l'))THEN
       CALL abort(__STAMP__,' TEPolarization has to be x,y,l or r.')
     END IF
-    IF(TERadius.LT.0.0)THEN ! not set
-      TERadius=GETREAL('TERadius','0.0')
+    IF(TERadius.LE.0.0)THEN ! not set or auto-detection returned 0 (e.g. Windows Face_xGP issue)
+      TERadius=GETREAL('TERadius','-1.0')
       LBWRITE(UNIT_StdOut,*) ' TERadius not determined automatically. Set waveguide radius to ', TERadius
     ELSE
       LBWRITE(UNIT_StdOut,*) ' TERadius determined automatically: ', TERadius
@@ -1342,7 +1342,10 @@ DO iSide=1,nSides
 END DO
 
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,TERadius,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_PICLAS,iError)
+! MS-MPI corrupts MPI_IN_PLACE reductions: use an explicit send buffer so ranks without inlet faces
+! (local TERadius=0) correctly receive the global MAX. Otherwise TERadius stays 0 on those ranks -> abort.
+Radius = TERadius
+CALL MPI_ALLREDUCE(Radius,TERadius,1,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_PICLAS,iError)
 #endif /*USE_MPI*/
 
 LBWRITE(UNIT_StdOut,*) ' Found waveguide radius of ', TERadius

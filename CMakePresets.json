@@ -91,6 +91,363 @@
         "PICLAS_BUILD_POSTI":    "ON",
         "PICLAS_UNITTESTS":      "OFF"
       }
+    },
+    {
+      "name": "windows-maxwell-bgk-mpi-gpu",
+      "displayName": "Windows - maxwell + BGK-Flow + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-bgk-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "BGK-Flow",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-mpi-gpu",
+      "displayName": "Windows - maxwell + RK4 + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "RK4",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk3-mpi",
+      "displayName": "Windows - maxwell + RK3 + MPI",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk3-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK3"
+      }
+    },
+    {
+      "name": "windows-maxwell-radiation-mpi-gpu",
+      "displayName": "Windows - maxwell + Radiation + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-radiation-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "Radiation",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-superb-mpi",
+      "displayName": "Windows - maxwell + RK3 + MPI + SuperB POSTI",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-superb-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK3",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_SUPERB":    "ON"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-superb-mpi",
+      "displayName": "Windows - maxwell + RK4 + MPI + SuperB (enables USE_SUPER_B for external_bgfield test)",
+      "description": "Required by NIG_PIC_maxwell_RK4 external_bgfield example: PIC-BG-Field=T needs USE_SUPER_B=1 compiled in. POSTI_BUILD_SUPERB=ON sets ADD_DEFINITIONS(-DUSE_SUPER_B=1).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-superb-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_SUPERB":    "ON"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-dmd-mpi",
+      "displayName": "Windows - maxwell + RK4 + DMD + MPI (no particles)",
+      "description": "PARTICLES=OFF build with DMD and piclas2vtk POSTI tools. Required by NIG_maxwell_RK4 (builds.ini: PICLAS_PARTICLES=OFF, POSTI_BUILD_DMD=ON).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-dmd-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_PARTICLES":      "OFF",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_DMD":       "ON",
+        "POSTI_BUILD_SUPERB":    "OFF",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
+      "name": "windows-edvm-mpi",
+      "displayName": "Windows - discrete_velocity + ED-DVM + MPI",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-edvm-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "discrete_velocity",
+        "PICLAS_TIMEDISCMETHOD": "ED-DVM",
+        "PICLAS_FV_2D":          "ON",
+        "PICLAS_PARTICLES":      "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-leapfrog-mpi-gpu",
+      "displayName": "Windows - poisson + Leapfrog + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-leapfrog-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "poisson",
+        "PICLAS_TIMEDISCMETHOD":    "Leapfrog",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-poisson-boris-mpi-gpu",
+      "displayName": "Windows - poisson + Boris-Leapfrog + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-boris-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "poisson",
+        "PICLAS_TIMEDISCMETHOD":    "Boris-Leapfrog",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-poisson-rk3-mpi-gpu",
+      "displayName": "Windows - poisson + RK3 + MPI + GPU",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-rk3-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "poisson",
+        "PICLAS_TIMEDISCMETHOD":    "RK3",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc"
+      }
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-mpi",
+      "displayName": "Windows - maxwell + DSMC + MPI (Release, no GPU)",
+      "description": "Release DSMC build without GPU. Used by NIG_DSMC (Release variant) and NIG_LoadBalance.",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-release-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "DSMC"
+      }
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-mpi-gpu",
+      "displayName": "Windows - maxwell + DSMC + MPI + GPU (AgNozzle build)",
+      "description": "DSMC + MPI + GPU push (the binary used for the 2D-axisymmetric silver-vapor nozzle case at C:\\Data\\PRJ\\AgNozzle). Requires CUDA Toolkit + MSVC cl.exe (auto-found by SetGPU.cmake). PICLAS_UNITTESTS=OFF — with CUDA enabled the test executables race against mod_globals.mod; piclas itself does not need them.",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-release-mpi-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "DSMC",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_COMPILER":      "nvcc",
+        "PICLAS_UNITTESTS":         "OFF"
+      }
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-mpi-posti",
+      "displayName": "Windows - maxwell + DSMC + MPI + POSTI (piclas2vtk build)",
+      "description": "DSMC + MPI + POSTI tools (piclas2vtk).  Same equation/timedisc as the AgNozzle DSMC build so the resulting piclas2vtk can post-process State / DSMCState / PartStateBoundary files from that run.",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-release-mpi-posti",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "DSMC",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-nopart-mpi",
+      "displayName": "Windows - maxwell + RK4 + MPI (no particles)",
+      "description": "PARTICLES=OFF, no DMD. Required by NIG_convtest_maxwell and NIG_maxwell_dipole_dielectric (builds.ini: PICLAS_PARTICLES=OFF).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-nopart-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_PARTICLES":      "OFF",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
+      "name": "windows-maxwell-dsmc-codeanalyze-debug-mpi",
+      "displayName": "Windows - maxwell + DSMC + CODE_ANALYZE + Debug + MPI",
+      "description": "CODE_ANALYZE=ON + Debug. Required by NIG_code_analyze (DSMC examples: CHEM_*, ENER_*, Rotational_*, Semicircle, vMPF_*).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-codeanalyze-debug-mpi",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "DSMC",
+        "PICLAS_CODE_ANALYZE":   "ON"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-codeanalyze-debug-mpi",
+      "displayName": "Windows - maxwell + RK4 + CODE_ANALYZE + Debug + MPI",
+      "description": "CODE_ANALYZE=ON + Debug. Required by NIG_code_analyze (RK4 examples).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-codeanalyze-debug-mpi",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_CODE_ANALYZE":   "ON"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk3-codeanalyze-mpi",
+      "displayName": "Windows - maxwell + RK3 + CODE_ANALYZE + MPI",
+      "description": "CODE_ANALYZE=ON + Release. Required by NIG_convtest_t_maxwell (4 RK3 examples).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk3-codeanalyze-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK3",
+        "PICLAS_CODE_ANALYZE":   "ON"
+      }
+    },
+    {
+      "name": "windows-maxwell-rk4-codeanalyze-mpi",
+      "displayName": "Windows - maxwell + RK4 + CODE_ANALYZE + MPI",
+      "description": "CODE_ANALYZE=ON + Release. Required by NIG_convtest_t_maxwell (1 RK4 example).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-rk4-codeanalyze-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK4",
+        "PICLAS_CODE_ANALYZE":   "ON"
+      }
+    },
+    {
+      "name": "windows-poisson-leapfrog-codeanalyze-debug-mpi",
+      "displayName": "Windows - poisson + Leapfrog + CODE_ANALYZE + Debug + MPI",
+      "description": "CODE_ANALYZE=ON + Debug. Required by NIG_Photoionization (builds.ini: CMAKE_BUILD_TYPE=Debug, CODE_ANALYZE=ON).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-leapfrog-codeanalyze-debug-mpi",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "Leapfrog",
+        "PICLAS_CODE_ANALYZE":   "ON"
+      }
+    },
+    {
+      "name": "windows-poisson-borisleapfrog-codeanalyze-serial",
+      "displayName": "Windows - poisson + Boris-Leapfrog + CODE_ANALYZE (serial)",
+      "description": "MPI=OFF + CODE_ANALYZE=ON. Required by NIG_convtest_t_poisson Boris-Leapfrog subset (7 examples: relativistic, electromagnetic, magnetostatic).",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-poisson-borisleapfrog-codeanalyze-serial",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "Boris-Leapfrog",
+        "PICLAS_CODE_ANALYZE":   "ON",
+        "LIBS_USE_MPI":          "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-higuera-cary-codeanalyze-serial",
+      "displayName": "Windows - poisson + Higuera-Cary + CODE_ANALYZE (serial)",
+      "description": "MPI=OFF + CODE_ANALYZE=ON. Required by NIG_convtest_t_poisson Higuera-Cary subset (7 examples: same set as Boris-Leapfrog).",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-poisson-higuera-cary-codeanalyze-serial",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "Higuera-Cary",
+        "PICLAS_CODE_ANALYZE":   "ON",
+        "LIBS_USE_MPI":          "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-leapfrog-codeanalyze-serial",
+      "displayName": "Windows - poisson + Leapfrog + CODE_ANALYZE (serial)",
+      "description": "MPI=OFF + CODE_ANALYZE=ON. Required by NIG_convtest_t_poisson Leapfrog subset (4 examples).",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-poisson-leapfrog-codeanalyze-serial",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "Leapfrog",
+        "PICLAS_CODE_ANALYZE":   "ON",
+        "LIBS_USE_MPI":          "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-rk3-codeanalyze-serial",
+      "displayName": "Windows - poisson + RK3 + CODE_ANALYZE (serial)",
+      "description": "MPI=OFF + CODE_ANALYZE=ON. Required by NIG_convtest_t_poisson RK3 subset (3 examples).",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-poisson-rk3-codeanalyze-serial",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "RK3",
+        "PICLAS_CODE_ANALYZE":   "ON",
+        "LIBS_USE_MPI":          "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-euler-explicit-codeanalyze-serial",
+      "displayName": "Windows - poisson + Euler-Explicit + CODE_ANALYZE (serial)",
+      "description": "MPI=OFF + CODE_ANALYZE=ON. Required by NIG_convtest_t_poisson Euler-Explicit subset (1 example: PIC_magnetostatic_Bz_exp_III_O1).",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-poisson-euler-explicit-codeanalyze-serial",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "Euler-Explicit",
+        "PICLAS_CODE_ANALYZE":   "ON",
+        "LIBS_USE_MPI":          "OFF"
+      }
+    },
+    {
+      "name": "windows-poisson-rk3-debug-mpi",
+      "displayName": "Windows - poisson + RK3 + Debug + MPI",
+      "description": "Debug build. Required by NIG_dielectric (builds.ini: CMAKE_BUILD_TYPE=DEBUG).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-rk3-debug-mpi",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "RK3"
+      }
+    },
+    {
+      "name": "windows-maxwell-dsmc-debug-mpi",
+      "displayName": "Windows - maxwell + DSMC + Debug + MPI",
+      "description": "Debug build. Required by NIG_DSMC Debug variant and NIG_code_analyze DSMC Debug variant.",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-debug-mpi",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "DSMC"
+      }
+    },
+    {
+      "name": "windows-maxwell-bgk-debug-mpi",
+      "displayName": "Windows - maxwell + BGK-Flow + Debug + MPI",
+      "description": "Debug build. Required by NIG_BGK Debug variant (builds.ini: CMAKE_BUILD_TYPE=Release,Debug).",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-maxwell-bgk-debug-mpi",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE":      "Debug",
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "BGK-Flow"
+      }
     }
   ],
   "buildPresets": [
@@ -122,6 +479,136 @@
     {
       "name": "windows-ucrt64-superB",
       "configurePreset": "windows-ucrt64-superB",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-bgk-mpi-gpu",
+      "configurePreset": "windows-maxwell-bgk-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-mpi-gpu",
+      "configurePreset": "windows-maxwell-rk4-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk3-mpi",
+      "configurePreset": "windows-maxwell-rk3-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-radiation-mpi-gpu",
+      "configurePreset": "windows-maxwell-radiation-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-superb-mpi",
+      "configurePreset": "windows-maxwell-superb-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-superb-mpi",
+      "configurePreset": "windows-maxwell-rk4-superb-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-dmd-mpi",
+      "configurePreset": "windows-maxwell-rk4-dmd-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-edvm-mpi",
+      "configurePreset": "windows-edvm-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-leapfrog-mpi-gpu",
+      "configurePreset": "windows-poisson-leapfrog-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-boris-mpi-gpu",
+      "configurePreset": "windows-poisson-boris-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-rk3-mpi-gpu",
+      "configurePreset": "windows-poisson-rk3-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-mpi",
+      "configurePreset": "windows-maxwell-dsmc-release-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-nopart-mpi",
+      "configurePreset": "windows-maxwell-rk4-nopart-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-dsmc-codeanalyze-debug-mpi",
+      "configurePreset": "windows-maxwell-dsmc-codeanalyze-debug-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-codeanalyze-debug-mpi",
+      "configurePreset": "windows-maxwell-rk4-codeanalyze-debug-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk3-codeanalyze-mpi",
+      "configurePreset": "windows-maxwell-rk3-codeanalyze-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-rk4-codeanalyze-mpi",
+      "configurePreset": "windows-maxwell-rk4-codeanalyze-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-leapfrog-codeanalyze-debug-mpi",
+      "configurePreset": "windows-poisson-leapfrog-codeanalyze-debug-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-borisleapfrog-codeanalyze-serial",
+      "configurePreset": "windows-poisson-borisleapfrog-codeanalyze-serial",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-higuera-cary-codeanalyze-serial",
+      "configurePreset": "windows-poisson-higuera-cary-codeanalyze-serial",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-leapfrog-codeanalyze-serial",
+      "configurePreset": "windows-poisson-leapfrog-codeanalyze-serial",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-rk3-codeanalyze-serial",
+      "configurePreset": "windows-poisson-rk3-codeanalyze-serial",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-euler-explicit-codeanalyze-serial",
+      "configurePreset": "windows-poisson-euler-explicit-codeanalyze-serial",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-rk3-debug-mpi",
+      "configurePreset": "windows-poisson-rk3-debug-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-dsmc-debug-mpi",
+      "configurePreset": "windows-maxwell-dsmc-debug-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-bgk-debug-mpi",
+      "configurePreset": "windows-maxwell-bgk-debug-mpi",
       "jobs": 0
     }
   ]

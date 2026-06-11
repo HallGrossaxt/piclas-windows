@@ -88,6 +88,7 @@ REAL                  :: tLBStart
 #endif /*USE_LOADBALANCE*/
 #if PICLAS_USE_GPU
 LOGICAL                    :: UseGPUPush
+INTEGER                    :: symmOrder
 #endif /*PICLAS_USE_GPU*/
 !===================================================================================================================================
 ! for reservoir simulation: no surface flux, particle push, tracking, ...
@@ -134,16 +135,19 @@ CALL LBStartTime(tLBStart)
 #endif /*USE_LOADBALANCE*/
 
 #if PICLAS_USE_GPU
-! GPU push is valid only for the simple constant-dt case without surface flux,
-! rotating reference frame, granular species, or axisymmetric treatment.
-! (Axisymmetric CalcPartSymmetryPos runs inside the CPU loop on updated positions;
-!  excluding that case avoids GPU push acting on stale positions.)
-UseGPUPush = GPUInitialized          .AND. &
-             .NOT.UseVarTimeStep     .AND. &
-             .NOT.UseRotRefFrame     .AND. &
-             .NOT.UseGranularSpecies .AND. &
-             .NOT.DoSurfaceFlux      .AND. &
-             .NOT.Symmetry%Axisymmetric
+! GPU push is valid when the per-particle position update can be expressed as
+! the uniform-dt + per-particle-RandVal-scale formula handled by the kernel:
+!   PartState(1:3) += PartState(4:6) * dt * (RandVal[i] if dtFracPush else 1)
+!   then optional axisymmetric rotation (Symmetry%Order = 2 or 3).
+! Excluded: variable time step (UseVarTimeStep, UseSpeciesSpecific), rotating
+! reference frame, granular species, and ambipolar diffusion (which rotates an
+! extra electron-velocity vector that is not on the device).
+UseGPUPush = GPUInitialized                  .AND. &
+             .NOT.UseVarTimeStep             .AND. &
+             .NOT.VarTimeStep%UseSpeciesSpecific .AND. &
+             .NOT.UseRotRefFrame             .AND. &
+             .NOT.UseGranularSpecies         .AND. &
+             .NOT.DSMC%DoAmbipolarDiff
 #endif /*PICLAS_USE_GPU*/
 
 DO iPart=1,PDM%ParticleVecLength
@@ -157,6 +161,20 @@ DO iPart=1,PDM%ParticleVecLength
       dtVar = dt
     END IF
     IF(VarTimeStep%UseSpeciesSpecific) dtVar = dtVar * Species(PartSpecies(iPart))%TimeStepFactor
+#if PICLAS_USE_GPU
+    ! GPU path: only fill the LastPartPos/LastGlobalElemID bookkeeping for
+    ! non-fresh particles (the kernel updates PartState only). RNG draw,
+    ! dt scaling, dtFracPush reset and the axisymmetric rotation all happen
+    ! inside GPU_PushParticlesBatch below, in iPart order, so the global
+    ! RANDOM_NUMBER sequence matches the CPU path.
+    IF (UseGPUPush) THEN
+      IF (.NOT. PDM%dtFracPush(iPart)) THEN
+        LastPartPos(1:3, iPart)       = PartState(1:3, iPart)
+        PEM%LastGlobalElemID(iPart)   = PEM%GlobalElemID(iPart)
+      END IF
+      CYCLE
+    END IF
+#endif /*PICLAS_USE_GPU*/
     IF (PDM%dtFracPush(iPart)) THEN
       ! Surface flux (dtFracPush): previously inserted particles are pushed a random distance between 0 and v*dt
       !                            LastPartPos and LastElem already set!
@@ -170,11 +188,6 @@ DO iPart=1,PDM%ParticleVecLength
     IF(UseRotRefFrame) THEN
       LastPartVeloRotRef(1:3,iPart)=PartVeloRotRef(1:3,iPart)
       CALL CalcPartPosInRotRef(iPart, dtVar)
-#if PICLAS_USE_GPU
-    ELSE IF (UseGPUPush) THEN
-      ! Position update offloaded to GPU batch call below this loop — skip here
-      CONTINUE
-#endif /*PICLAS_USE_GPU*/
     ELSE
       PartState(1:3,iPart) = PartState(1:3,iPart) + PartState(4:6,iPart) * dtVar
     END IF
@@ -192,10 +205,17 @@ IF(UseGranularSpecies) THEN
 END IF
 
 #if PICLAS_USE_GPU
-! GPU batch position push: upload PartState, run kernel, download results.
-! Replaces the per-particle CPU push skipped above for simple constant-dt runs.
+! GPU batch position push + optional axisymmetric post-rotation.
+! Replaces the per-particle CPU push skipped above (with CYCLE) when
+! UseGPUPush=.TRUE.
 IF (UseGPUPush) THEN
-  CALL GPU_PushParticlesBatch(PartState, PDM%ParticleInside, PDM%ParticleVecLength, dt)
+  symmOrder = MERGE(Symmetry%Order, 0, Symmetry%Axisymmetric)
+  CALL GPU_PushParticlesBatch(PartState, PDM%ParticleInside, PDM%dtFracPush, &
+                              PDM%ParticleVecLength, dt, symmOrder)
+  ! Mirror the CPU loop: clear dtFracPush for all active particles after
+  ! their fractional-dt push has been consumed by the kernel.
+  WHERE (PDM%ParticleInside(1:PDM%ParticleVecLength)) &
+    PDM%dtFracPush(1:PDM%ParticleVecLength) = .FALSE.
 END IF
 #endif /*PICLAS_USE_GPU*/
 

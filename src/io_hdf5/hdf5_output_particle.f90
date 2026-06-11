@@ -740,23 +740,19 @@ DO iSpec = 1, nSpecies
   iVar = iVar + nVar
 END DO
 
-WRITE(H5_Name,'(A)') 'AdaptiveInfo'
-CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-
-! Associate construct for integer KIND=8 possibility
+! Use GatheredWriteArray so non-root ranks gather to MPIRoot — same pattern as Fix H for serial HDF5
 ASSOCIATE (&
       nGlobalElems    => INT(nGlobalElems,IK)    ,&
       nElems          => INT(nElems,IK)          ,&
       nVarTotal       => INT(nVarTotal,IK)       ,&
-      nSpecies        => INT(nSpecies,IK)        ,&
       offsetElem      => INT(offsetElem,IK)      )
-  CALL WriteArrayToHDF5(DataSetName = H5_Name     , rank = 2                  , &
-                        nValGlobal  = (/nVarTotal , nGlobalElems/)            , &
-                        nVal        = (/nVarTotal , nElems      /)            , &
-                        offset      = (/0_IK      , offsetElem  /)            , &
-                        collective  = .FALSE.     , RealArray = AdaptiveData)
+  CALL GatheredWriteArray(FileName , create=.FALSE.                                , &
+                          DataSetName = 'AdaptiveInfo' , rank = 2                 , &
+                          nValGlobal  = (/nVarTotal , nGlobalElems/)              , &
+                          nVal        = (/nVarTotal , nElems      /)              , &
+                          offset      = (/0_IK      , offsetElem  /)              , &
+                          collective  = .FALSE.        , RealArray = AdaptiveData)
 END ASSOCIATE
-CALL CloseDataFile()
 SDEALLOCATE(StrVarNames)
 
 IF(AdaptBCTruncAverage) CALL WriteAdaptiveRunningAverageToHDF5(FileName)
@@ -791,6 +787,16 @@ CHARACTER(LEN=255),INTENT(IN)  :: FileName
 ! LOCAL VARIABLES
 INTEGER                        :: nVar,ElemID,SampleElemID
 INTEGER, ALLOCATABLE           :: AdaptBCAverageIndex(:)
+#if !USE_MPI_HDF5
+#if USE_MPI
+INTEGER                        :: gSpecIdx, gSendPerSpec
+INTEGER, ALLOCATABLE           :: gcounts(:), gdisps(:), gidxcounts(:), gidxdisps(:)
+REAL, ALLOCATABLE              :: gatheredAvg(:,:,:,:)
+INTEGER, ALLOCATABLE           :: gatheredIdx(:)
+REAL                           :: gDummyR
+INTEGER                        :: gDummyI
+#endif /* USE_MPI */
+#endif /* !USE_MPI_HDF5 */
 !===================================================================================================================================
 
 IF(.NOT.DoRestart.AND.iter.EQ.0) RETURN
@@ -815,6 +821,7 @@ IF(MPIRoot)THEN
   CALL CloseDataFile()
 END IF
 
+#if USE_MPI_HDF5
 CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
 ! Associate construct for integer KIND=8 possibility
 ASSOCIATE (&
@@ -836,6 +843,102 @@ ASSOCIATE (&
                         collective  = .FALSE. , IntegerArray_i4 = AdaptBCAverageIndex)
 END ASSOCIATE
 CALL CloseDataFile()
+#else
+! Serial HDF5: gather to MPIRoot per-species (dim 3 of AdaptBCAverage is local-element index,
+! not the last dim, so GatheredWriteArray cannot be used directly). Each species slice is
+! contiguous in memory, so MPI_GATHERV works species-by-species.
+#if USE_MPI
+gSendPerSpec = nVar * AdaptBCSampIter * AdaptBCSampleElemNum
+ALLOCATE(gcounts(nProcessors), gdisps(nProcessors), gidxcounts(nProcessors), gidxdisps(nProcessors))
+CALL MPI_ALLGATHER(gSendPerSpec, 1, MPI_INTEGER, gcounts, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+CALL MPI_ALLGATHER(nVar*AdaptBCSampIter*offSetElemAdaptBCSample, 1, MPI_INTEGER, gdisps, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+CALL MPI_ALLGATHER(AdaptBCSampleElemNum, 1, MPI_INTEGER, gidxcounts, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+CALL MPI_ALLGATHER(offSetElemAdaptBCSample, 1, MPI_INTEGER, gidxdisps, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+IF(MPIRoot)THEN
+  ALLOCATE(gatheredAvg(nVar, AdaptBCSampIter, AdaptBCSampleElemNumGlobal, nSpecies))
+  ALLOCATE(gatheredIdx(AdaptBCSampleElemNumGlobal))
+ELSE
+  ALLOCATE(gatheredAvg(1,1,1,1))
+  ALLOCATE(gatheredIdx(1))
+END IF
+DO gSpecIdx = 1, nSpecies
+  IF(MPIRoot)THEN
+    IF(gSendPerSpec.GT.0)THEN
+      CALL MPI_GATHERV(AdaptBCAverage(1,1,1,gSpecIdx), gSendPerSpec, MPI_DOUBLE_PRECISION, &
+                       gatheredAvg(1,1,1,gSpecIdx), gcounts, gdisps, MPI_DOUBLE_PRECISION, &
+                       0, MPI_COMM_PICLAS, iError)
+    ELSE
+      CALL MPI_GATHERV(gDummyR, 0, MPI_DOUBLE_PRECISION, &
+                       gatheredAvg(1,1,1,gSpecIdx), gcounts, gdisps, MPI_DOUBLE_PRECISION, &
+                       0, MPI_COMM_PICLAS, iError)
+    END IF
+  ELSE
+    IF(gSendPerSpec.GT.0)THEN
+      CALL MPI_GATHERV(AdaptBCAverage(1,1,1,gSpecIdx), gSendPerSpec, MPI_DOUBLE_PRECISION, &
+                       gDummyR, gcounts, gdisps, MPI_DOUBLE_PRECISION, &
+                       0, MPI_COMM_PICLAS, iError)
+    ELSE
+      CALL MPI_GATHERV(gDummyR, 0, MPI_DOUBLE_PRECISION, &
+                       gDummyR, gcounts, gdisps, MPI_DOUBLE_PRECISION, &
+                       0, MPI_COMM_PICLAS, iError)
+    END IF
+  END IF
+END DO
+IF(MPIRoot)THEN
+  IF(AdaptBCSampleElemNum.GT.0)THEN
+    CALL MPI_GATHERV(AdaptBCAverageIndex(1), AdaptBCSampleElemNum, MPI_INTEGER, &
+                     gatheredIdx(1), gidxcounts, gidxdisps, MPI_INTEGER, 0, MPI_COMM_PICLAS, iError)
+  ELSE
+    CALL MPI_GATHERV(gDummyI, 0, MPI_INTEGER, &
+                     gatheredIdx(1), gidxcounts, gidxdisps, MPI_INTEGER, 0, MPI_COMM_PICLAS, iError)
+  END IF
+ELSE
+  IF(AdaptBCSampleElemNum.GT.0)THEN
+    CALL MPI_GATHERV(AdaptBCAverageIndex(1), AdaptBCSampleElemNum, MPI_INTEGER, &
+                     gDummyI, gidxcounts, gidxdisps, MPI_INTEGER, 0, MPI_COMM_PICLAS, iError)
+  ELSE
+    CALL MPI_GATHERV(gDummyI, 0, MPI_INTEGER, &
+                     gDummyI, gidxcounts, gidxdisps, MPI_INTEGER, 0, MPI_COMM_PICLAS, iError)
+  END IF
+END IF
+IF(MPIRoot)THEN
+  ASSOCIATE (&
+        AdaptBCSampleElemNumGlobal    => INT(AdaptBCSampleElemNumGlobal,IK)    ,&
+        nVar                          => INT(nVar,IK)            ,&
+        nSpecies                      => INT(nSpecies,IK)        ,&
+        AdaptBCSampIter               => INT(AdaptBCSampIter,IK) )
+    CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+    CALL WriteArrayToHDF5(DataSetName='AdaptiveRunningAverage',rank=4,                                &
+                          nValGlobal=(/nVar,AdaptBCSampIter,AdaptBCSampleElemNumGlobal,nSpecies/),     &
+                          nVal      =(/nVar,AdaptBCSampIter,AdaptBCSampleElemNumGlobal,nSpecies/),     &
+                          offset    =(/0_IK,0_IK,0_IK,0_IK/),collective=.FALSE.,RealArray=gatheredAvg)
+    CALL WriteArrayToHDF5(DataSetName='AdaptiveRunningAverageIndex',rank=1,                            &
+                          nValGlobal=(/AdaptBCSampleElemNumGlobal/),                                   &
+                          nVal      =(/AdaptBCSampleElemNumGlobal/),                                   &
+                          offset    =(/0_IK/),collective=.FALSE.,IntegerArray_i4=gatheredIdx)
+    CALL CloseDataFile()
+  END ASSOCIATE
+END IF
+DEALLOCATE(gcounts, gdisps, gidxcounts, gidxdisps, gatheredAvg, gatheredIdx)
+#else /* not USE_MPI: single process (LIBS_USE_MPI=OFF), local data IS global data */
+ASSOCIATE (&
+      AdaptBCSampleElemNumGlobal    => INT(AdaptBCSampleElemNumGlobal,IK)    ,&
+      nVar                          => INT(nVar,IK)            ,&
+      nSpecies                      => INT(nSpecies,IK)        ,&
+      AdaptBCSampIter               => INT(AdaptBCSampIter,IK) )
+  CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+  CALL WriteArrayToHDF5(DataSetName='AdaptiveRunningAverage',rank=4,                                         &
+                        nValGlobal=(/nVar,AdaptBCSampIter,AdaptBCSampleElemNumGlobal,nSpecies/),              &
+                        nVal      =(/nVar,AdaptBCSampIter,AdaptBCSampleElemNumGlobal,nSpecies/),              &
+                        offset    =(/0_IK,0_IK,0_IK,0_IK/),collective=.FALSE.,RealArray=AdaptBCAverage)
+  CALL WriteArrayToHDF5(DataSetName='AdaptiveRunningAverageIndex',rank=1,                                     &
+                        nValGlobal=(/AdaptBCSampleElemNumGlobal/),                                            &
+                        nVal      =(/AdaptBCSampleElemNumGlobal/),                                            &
+                        offset    =(/0_IK/),collective=.FALSE.,IntegerArray_i4=AdaptBCAverageIndex)
+  CALL CloseDataFile()
+END ASSOCIATE
+#endif /* USE_MPI */
+#endif /* USE_MPI_HDF5 */
 DEALLOCATE(AdaptBCAverageIndex)
 
 END SUBROUTINE WriteAdaptiveRunningAverageToHDF5
@@ -1071,6 +1174,10 @@ CHARACTER(LEN=255),ALLOCATABLE :: StrVarNames(:)
 CHARACTER(LEN=255)             :: H5_Name
 CHARACTER(LEN=255)             :: SpecID
 INTEGER                        :: iSpec
+#if USE_MPI
+INTEGER, ALLOCATABLE           :: vpbCounts(:), vpbDisps(:)
+REAL, ALLOCATABLE              :: vpbGathered(:,:)
+#endif
 !===================================================================================================================================
 IF(CollisMode.GT.1) THEN
   IF(DSMC%VibRelaxProb.EQ.2.0) THEN
@@ -1087,6 +1194,7 @@ IF(CollisMode.GT.1) THEN
     END IF
 
     WRITE(H5_Name,'(A)') 'VibProbInfo'
+#if USE_MPI_HDF5
     CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
 
     ! Associate construct for integer KIND=8 possibility
@@ -1102,15 +1210,66 @@ IF(CollisMode.GT.1) THEN
                             collective  = .FALSE.        , RealArray = VarVibRelaxProb%ProbVibAv)
     END ASSOCIATE
     CALL CloseDataFile()
+#else
+#if USE_MPI
+    ! Serial HDF5 + MPI: only MPIRoot may open/write the file. The element index is the FIRST
+    ! dimension of ProbVibAv (not the last), so GatheredWriteArray cannot be used. Each species
+    ! column is contiguous in memory, so gather to MPIRoot species-by-species, then root writes.
+    ALLOCATE(vpbCounts(nProcessors), vpbDisps(nProcessors))
+    CALL MPI_ALLGATHER(nElems    , 1, MPI_INTEGER, vpbCounts, 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+    CALL MPI_ALLGATHER(offsetElem, 1, MPI_INTEGER, vpbDisps , 1, MPI_INTEGER, MPI_COMM_PICLAS, iError)
+    IF(MPIRoot)THEN
+      ALLOCATE(vpbGathered(nGlobalElems, nSpecies))
+    ELSE
+      ALLOCATE(vpbGathered(1,1))
+    END IF
+    DO iSpec = 1, nSpecies
+      IF(MPIRoot)THEN
+        CALL MPI_GATHERV(VarVibRelaxProb%ProbVibAv(1,iSpec), nElems, MPI_DOUBLE_PRECISION, &
+                         vpbGathered(1,iSpec), vpbCounts, vpbDisps, MPI_DOUBLE_PRECISION, 0, MPI_COMM_PICLAS, iError)
+      ELSE
+        CALL MPI_GATHERV(VarVibRelaxProb%ProbVibAv(1,iSpec), nElems, MPI_DOUBLE_PRECISION, &
+                         vpbGathered, vpbCounts, vpbDisps, MPI_DOUBLE_PRECISION, 0, MPI_COMM_PICLAS, iError)
+      END IF
+    END DO
+    IF(MPIRoot)THEN
+      ASSOCIATE (&
+            nGlobalElems => INT(nGlobalElems,IK) ,&
+            nSpecies     => INT(nSpecies,IK)     )
+        CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+        CALL WriteArrayToHDF5(DataSetName = H5_Name        , rank = 2    , &
+                              nValGlobal  = (/nGlobalElems , nSpecies /) , &
+                              nVal        = (/nGlobalElems , nSpecies /) , &
+                              offset      = (/0_IK         , 0_IK     /) , &
+                              collective  = .FALSE.        , RealArray = vpbGathered)
+        CALL CloseDataFile()
+      END ASSOCIATE
+    END IF
+    DEALLOCATE(vpbCounts, vpbDisps, vpbGathered)
+#else /* not USE_MPI: single process, local data IS global data */
+    ASSOCIATE (&
+          nGlobalElems    => INT(nGlobalElems,IK)    ,&
+          nElems          => INT(nElems,IK)          ,&
+          nSpecies        => INT(nSpecies,IK)        ,&
+          offsetElem      => INT(offsetElem,IK)      )
+      CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+      CALL WriteArrayToHDF5(DataSetName = H5_Name        , rank = 2    , &
+                            nValGlobal  = (/nGlobalElems , nSpecies /) , &
+                            nVal        = (/nElems       , nSpecies /) , &
+                            offset      = (/offsetElem   , 0_IK     /) , &
+                            collective  = .FALSE.        , RealArray = VarVibRelaxProb%ProbVibAv)
+      CALL CloseDataFile()
+    END ASSOCIATE
+#endif /*USE_MPI*/
+#endif /*USE_MPI_HDF5*/
     SDEALLOCATE(StrVarNames)
   ELSE ! DSMC%VibRelaxProb < 2.0
-#if USE_MPI
-    CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-#else
-    CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
-#endif
-    CALL WriteAttributeToHDF5(File_ID,'VibProbConstInfo',1,RealScalar=DSMC%VibRelaxProb)
-    CALL CloseDataFile()
+    ! Attribute-only write: serial HDF5 requires that only MPIRoot opens the file
+    IF(MPIRoot)THEN
+      CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
+      CALL WriteAttributeToHDF5(File_ID,'VibProbConstInfo',1,RealScalar=DSMC%VibRelaxProb)
+      CALL CloseDataFile()
+    END IF
   END IF
 ELSE ! CollisMode <= 1
   IF(MPIRoot)THEN
@@ -1134,6 +1293,7 @@ USE MOD_TimeDisc_Vars ,ONLY: ManualTimeStep
 USE MOD_DSMC_Vars     ,ONLY: UseDSMC, CollisMode, DSMC, PolyatomMolDSMC, SpecDSMC
 USE MOD_DSMC_Vars     ,ONLY: DoRadialWeighting, ParticleWeighting, ClonedParticles
 USE MOD_PARTICLE_Vars ,ONLY: nSpecies, usevMPF, Species, PartDataSize
+USE MOD_HDF5_Output   ,ONLY: GatheredWriteArray
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1296,52 +1456,47 @@ IF (usevMPF) THEN
   iPos=iPos+1
 END IF
 
-#if USE_MPI
-CALL OpenDataFile(FileName,create=.FALSE.,single=.FALSE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
-#else
-CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.)
-#endif
-
+! Use GatheredWriteArray so non-root ranks gather to MPIRoot — same pattern as Fix H for ElemData.
+! Direct WriteArrayToHDF5 after OpenDataFile(single=.FALSE.) would crash on ranks 1..N with
+! serial HDF5 (File_ID=0).
 ASSOCIATE (&
       offsetnPart     => INT(offsetnPart,IK)   ,&
       MaxQuantNum     => INT(MaxQuantNum,IK)   ,&
       MaxElecQuant    => INT(MaxElecQuant,IK)   ,&
       PartDataSizeLoc => INT(PartDataSizeLoc,IK)  )
-CALL WriteArrayToHDF5(DataSetName='CloneData'     , rank=2          , &
-                      nValGlobal=(/PartDataSizeLoc, globnPart(3)/)  , &
-                      nVal=      (/PartDataSizeLoc, locnPart    /)  , &
-                      offset=    (/0_IK           , offsetnPart /)  , &
-                      collective=.FALSE.          , RealArray=PartData)
+CALL GatheredWriteArray(FileName , create=.FALSE.          , DataSetName='CloneData'     , rank=2 , &
+                        nValGlobal=(/PartDataSizeLoc, globnPart(3)/) , &
+                        nVal=      (/PartDataSizeLoc, locnPart    /) , &
+                        offset=    (/0_IK           , offsetnPart /) , &
+                        collective=.FALSE.          , RealArray=PartData)
 IF (useDSMC) THEN
   IF(DSMC%NumPolyatomMolecs.GT.0) THEN
-    CALL WriteArrayToHDF5(DataSetName='CloneVibQuantData' , rank=2              , &
-                          nValGlobal=(/MaxQuantNum        , globnPart(3)   /)   , &
-                          nVal=      (/MaxQuantNum        , locnPart       /)   , &
-                          offset=    (/0_IK               , offsetnPart    /)   , &
-                          collective=.FALSE.              , IntegerArray_i4=VibQuantData)
+    CALL GatheredWriteArray(FileName , create=.FALSE.              , DataSetName='CloneVibQuantData' , rank=2 , &
+                            nValGlobal=(/MaxQuantNum  , globnPart(3)/)    , &
+                            nVal=      (/MaxQuantNum  , locnPart    /)    , &
+                            offset=    (/0_IK         , offsetnPart /)    , &
+                            collective=.FALSE.        , IntegerArray=VibQuantData)
     DEALLOCATE(VibQuantData)
   END IF
   IF (DSMC%ElectronicModel.EQ.2) THEN
-    CALL WriteArrayToHDF5(DataSetName='CloneElecDistriData' , rank=2              , &
-                          nValGlobal=(/MaxElecQuant       , globnPart(3)   /)   , &
-                          nVal=      (/MaxElecQuant        , locnPart      /)   , &
-                          offset=    (/0_IK               , offsetnPart    /)   , &
-                          collective=.FALSE.              , RealArray=ElecDistriData)
+    CALL GatheredWriteArray(FileName , create=.FALSE.                , DataSetName='CloneElecDistriData' , rank=2 , &
+                            nValGlobal=(/MaxElecQuant , globnPart(3)/) , &
+                            nVal=      (/MaxElecQuant , locnPart    /) , &
+                            offset=    (/0_IK         , offsetnPart /) , &
+                            collective=.FALSE.        , RealArray=ElecDistriData)
     DEALLOCATE(ElecDistriData)
   END IF
   IF (DSMC%DoAmbipolarDiff) THEN
-    CALL WriteArrayToHDF5(DataSetName='CloneADVeloData'   , rank=2              , &
-                          nValGlobal=(/3_IK               , globnPart(3)   /)   , &
-                          nVal=      (/3_IK               , locnPart       /)   , &
-                          offset=    (/0_IK               , offsetnPart    /)   , &
-                          collective=.FALSE.              , RealArray=AD_Data)
+    CALL GatheredWriteArray(FileName , create=.FALSE.             , DataSetName='CloneADVeloData' , rank=2 , &
+                            nValGlobal=(/3_IK        , globnPart(3)/) , &
+                            nVal=      (/3_IK        , locnPart    /) , &
+                            offset=    (/0_IK        , offsetnPart /) , &
+                            collective=.FALSE.       , RealArray=AD_Data)
     DEALLOCATE(AD_Data)
   END IF
 
 END IF
 END ASSOCIATE
-
-CALL CloseDataFile()
 
 ! Output of clone species variables as attribute to the dataset
 IF(MPIRoot) THEN

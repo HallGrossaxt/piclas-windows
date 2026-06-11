@@ -146,7 +146,11 @@ REAL              :: B_abs , Phi_abs, Psi_abs
 #endif
 #if USE_MPI
 REAL              :: RD
-#endif
+REAL              :: WElTmp
+#if (PP_nVar==8)
+REAL              :: WMagTmp, WphiTmp, WpsiTmp
+#endif /*PP_nVar=8*/
+#endif /*USE_MPI*/
 #if (PP_nVar==8)
 REAL              :: Wphi_tmp, Wpsi_tmp
 #endif /*PP_nVar=8*/
@@ -236,11 +240,15 @@ Wpsi = Wpsi * smu0*0.5
 #if USE_MPI
 ! todo: only one reduce with array
 IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,WEl  , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  WElTmp = WEl
+  CALL MPI_REDUCE(WElTmp       ,WEl  , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
 #if (PP_nVar==8)
-  CALL MPI_REDUCE(MPI_IN_PLACE,WMag , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  CALL MPI_REDUCE(MPI_IN_PLACE,Wphi , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
-  CALL MPI_REDUCE(MPI_IN_PLACE,Wpsi , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  WMagTmp = WMag
+  CALL MPI_REDUCE(WMagTmp      ,WMag , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  WphiTmp = Wphi
+  CALL MPI_REDUCE(WphiTmp      ,Wphi , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  WpsiTmp = Wpsi
+  CALL MPI_REDUCE(WpsiTmp      ,Wpsi , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
 #endif /*PP_nVar=8*/
 ELSE
   CALL MPI_REDUCE(WEl         ,RD   , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
@@ -313,7 +321,11 @@ REAL              :: B_abs , Phi_abs, Psi_abs
 #endif
 #if USE_MPI
 REAL              :: RD
-#endif
+REAL              :: WElTmp
+#if (PP_nVar==8)
+REAL              :: WMagTmp
+#endif /*PP_nVar=8*/
+#endif /*USE_MPI*/
 #if (PP_nVar==8)
 REAL              :: Wphi_tmp, Wpsi_tmp
 #endif /*PP_nVar=8*/
@@ -459,9 +471,11 @@ Wpsi = Wpsi * smu0*0.5
 
 #if USE_MPI
 IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,WEl  , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  WElTmp = WEl
+  CALL MPI_REDUCE(WElTmp       ,WEl  , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
 #if (PP_nVar==8)
-  CALL MPI_REDUCE(MPI_IN_PLACE,WMag , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  WMagTmp = WMag
+  CALL MPI_REDUCE(WMagTmp      ,WMag , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
 #endif /*PP_nVar=8*/
 ELSE
   CALL MPI_REDUCE(WEl         ,RD   , 1 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)

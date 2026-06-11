@@ -70,6 +70,9 @@ INTEGER :: iElem,BCSideID,BCType
 REAL    :: RandVal,x
 LOGICAL :: SetBCElemsToNMax
 INTEGER(KIND=8) :: nLocalDOFs
+#if USE_MPI
+INTEGER :: NMinTmp, NMaxTmp
+#endif /*USE_MPI*/
 !===================================================================================================================================
 ! Set defaults
 SetBCElemsToNMax = .FALSE. ! Initialize
@@ -180,8 +183,10 @@ NMaxGlobal = MAXVAL(N_DG)
 #if USE_MPI
 ! Get global min/max polynomial degree that are actually present (not the theoretical limits)
 IF(MPIroot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE , NMinGlobal , 1 , MPI_INTEGER , MPI_MIN , 0 , MPI_COMM_PICLAS , iError)
-  CALL MPI_REDUCE(MPI_IN_PLACE , NMaxGlobal , 1 , MPI_INTEGER , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
+  NMinTmp = NMinGlobal
+  CALL MPI_REDUCE(NMinTmp , NMinGlobal , 1 , MPI_INTEGER , MPI_MIN , 0 , MPI_COMM_PICLAS , iError)
+  NMaxTmp = NMaxGlobal
+  CALL MPI_REDUCE(NMaxTmp , NMaxGlobal , 1 , MPI_INTEGER , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
 ELSE
   CALL MPI_REDUCE(NMinGlobal   , 0          , 1 , MPI_INTEGER , MPI_MIN , 0 , MPI_COMM_PICLAS , iError)
   CALL MPI_REDUCE(NMaxGlobal   , 0          , 1 , MPI_INTEGER , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
@@ -484,13 +489,17 @@ ELSE
     ! Arrays for the compute node to hold the elem offsets
     ALLOCATE(displsDofs(   0:nLeaderGroupProcs-1), recvcountDofs(0:nLeaderGroupProcs-1))
     displsDofs(myLeaderGroupRank) = offsetComputeNodeElem
-    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsDofs,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+    ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+    IF (nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsDofs,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
     DO iProc=1,nLeaderGroupProcs-1
       recvcountDofs(iProc-1) = displsDofs(iProc)-displsDofs(iProc-1)
     END DO
     recvcountDofs(nLeaderGroupProcs-1) = nGlobalElems - displsDofs(nLeaderGroupProcs-1)
 
-    CALL MPI_ALLGATHERV( MPI_IN_PLACE                  &
+    ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+    IF (nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLGATHERV( MPI_IN_PLACE                  &
         , 0                             &
         , MPI_DATATYPE_NULL             &
         , N_DG_Mapping               &
@@ -501,7 +510,9 @@ ELSE
         , IERROR)
 
     displsDofs(myLeaderGroupRank) = N_DG_Mapping(1,1+offSetElem)
-    CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsDofs,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
+    ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
+    IF (nLeaderGroupProcs.GT.1) &
+      CALL MPI_ALLGATHER(MPI_IN_PLACE,0,MPI_DATATYPE_NULL,displsDofs,1,MPI_INTEGER,MPI_COMM_LEADERS_SHARED,IERROR)
     DO iProc=1,nLeaderGroupProcs-1
       recvcountDofs(iProc-1) = displsDofs(iProc)-displsDofs(iProc-1)
     END DO

@@ -61,6 +61,9 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 INTEGER           :: k,l,m,i,iElem,Nloc
 REAL              :: ChargeNumerical, ChargeLoc, ChargeAnalytical
+#if USE_MPI
+REAL              :: ChargeTmpV
+#endif /*USE_MPI*/
 REAL              :: Coords_NAnalyze(3,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL              :: U_NAnalyze(1,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL              :: J_NAnalyze(1,0:NAnalyze,0:NAnalyze,0:NAnalyze)
@@ -104,8 +107,10 @@ END DO
 ! Collect info on MPI root process
 #if USE_MPI
    IF(MPIRoot) THEN
-     CALL MPI_REDUCE(MPI_IN_PLACE     , ChargeAnalytical , 1 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
-     CALL MPI_REDUCE(MPI_IN_PLACE     , ChargeNumerical  , 1 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
+     ChargeTmpV = ChargeAnalytical
+     CALL MPI_REDUCE(ChargeTmpV,ChargeAnalytical,1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
+     ChargeTmpV = ChargeNumerical
+     CALL MPI_REDUCE(ChargeTmpV,ChargeNumerical ,1,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
    ELSE
      CALL MPI_REDUCE(ChargeAnalytical , 0                , 1 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
      CALL MPI_REDUCE(ChargeNumerical  , 0                , 1 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , IERROR)
@@ -156,7 +161,7 @@ IMPLICIT NONE
 INTEGER           :: i,j,k,iPart,iElem,Nloc
 REAL              :: Charge(2)
 #if USE_MPI
-REAL              :: RECBR(2)
+REAL              :: RECBR(2), ChargeTmp(2)
 #endif /*USE_MPI*/
 !===================================================================================================================================
 
@@ -189,7 +194,8 @@ END DO
 ! MPI Communication
 #if USE_MPI
 IF (MPIRoot) THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,Charge , 2 , MPI_DOUBLE_PRECISION, MPI_SUM,0, MPI_COMM_PICLAS, IERROR)
+  ChargeTmp = Charge
+  CALL MPI_REDUCE(ChargeTmp,Charge,2,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS,IERROR)
 ELSE ! no Root
   CALL MPI_REDUCE(Charge,RECBR  ,2,MPI_DOUBLE_PRECISION,MPI_SUM,0,MPI_COMM_PICLAS, IERROR)
 END IF

@@ -356,7 +356,9 @@ IF(PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance))THEN
 
   ALLOCATE(U(PP_nVar+nVarVDL,0:NMax,0:NMax,0:NMax,nElemsOld))
   DO iElem = 1, nElemsOld
-    Nloc = N_DG_Mapping(2,iElem+offSetElemOld)
+    ! BUGG-FIX (Move-2 audit, 2026-05-30): use allocated UBOUND as loop bound, not N_DG_Mapping value
+    ! (same anti-pattern as particle_readin.f90:178 and loadbalance_metrics.f90:73; see audit notes).
+    Nloc = UBOUND(U_N(iElem)%U,2)
     IF(Nloc.EQ.Nmax)THEN
                                    U(        1:PP_nVar        ,:,:,:,iElem) = U_N(iElem)%U(:,:,:,:)
       IF(DoVirtualDielectricLayer) U(PP_nVar+1:PP_nVar+nVarVDL,:,:,:,iElem) = U_N(iElem)%PhiF(:,:,:,:)
@@ -451,7 +453,9 @@ IF(PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance))THEN
   ! Only required for time discs where U is allocated
   ALLOCATE(U(PP_nVar,0:NMax,0:NMax,0:NMax,nElemsOld))
   DO iElem = 1, nElemsOld
-    Nloc = N_DG_Mapping(2,iElem+offSetElemOld)
+    ! BUGG-FIX (Move-2 audit, 2026-05-30): use allocated UBOUND as loop bound, not N_DG_Mapping value
+    ! (same anti-pattern as particle_readin.f90:178 and loadbalance_metrics.f90:73; see audit notes).
+    Nloc = UBOUND(U_N(iElem)%U,2)
     IF(Nloc.EQ.Nmax)THEN
       U(:,:,:,:,iElem) = U_N(iElem)%U(:,:,:,:)
     ELSE

@@ -65,7 +65,7 @@ USE MOD_Particle_MPI_Vars       ,ONLY: AbortExchangeProcs,DoParticleLatencyHidin
 USE MOD_Particle_Tracking_Vars  ,ONLY: TrackingMethod
 USE MOD_PICDepo_Vars            ,ONLY: DepositionType, ShapeElemProcSend_Shared, ShapeElemProcSend_Shared_Win
 USE MOD_PICDepo_Vars            ,ONLY: SendDofShapeID, CNRankToSendRank, nShapeExchangeProcs
-USE MOD_PICDepo_Vars            ,ONLY: ShapeMapping,CNShapeMapping,r_sf, FlagShapeElem, DoHaloDepo
+USE MOD_PICDepo_Vars            ,ONLY: ShapeMapping,CNShapeMapping,r_sf, FlagShapeElem, DoHaloDepo, dim_sf, dim_sf_dir
 USE MOD_ReadInTools             ,ONLY: PrintOption
 USE MOD_TimeDisc_Vars           ,ONLY: ManualTimeStep
 USE MOD_DG_Vars                 ,ONLY: N_DG_Mapping
@@ -435,7 +435,24 @@ IF (nComputeNodeProcessors.EQ.nProcessors_Global) THEN
   ! Check whether MPI_halo_eps is smaller than shape function radius e.g. 'shape_function'
   IF(StringBeginsWith(DepositionType,'shape_function'))THEN
     IF(r_sf.LT.0.) CALL abort(__STAMP__,'Shape function radius is below zero; not correctly set yet? r_sf=',RealInfoOpt=r_sf)
-    MPI_halo_eps = MPI_halo_eps + r_sf
+    ! Mirror the dim_sf logic from particle_bgm.f90: for 1D/2D shape functions, extend MPI_halo_eps to
+    ! cover the full transverse domain extent so all elements in the non-distributed directions are flagged.
+    SELECT CASE(dim_sf)
+      CASE(3)
+        MPI_halo_eps = MPI_halo_eps + r_sf
+      CASE(2)
+        SELECT CASE(dim_sf_dir)
+          CASE(1); MPI_halo_eps = MPI_halo_eps + MAX(r_sf,GEO%xmaxglob-GEO%xminglob)
+          CASE(2); MPI_halo_eps = MPI_halo_eps + MAX(r_sf,GEO%ymaxglob-GEO%yminglob)
+          CASE(3); MPI_halo_eps = MPI_halo_eps + MAX(r_sf,GEO%zmaxglob-GEO%zminglob)
+        END SELECT
+      CASE(1)
+        SELECT CASE(dim_sf_dir)
+          CASE(1); MPI_halo_eps = MPI_halo_eps + MAX(r_sf,MAX(GEO%ymaxglob-GEO%yminglob,GEO%zmaxglob-GEO%zminglob))
+          CASE(2); MPI_halo_eps = MPI_halo_eps + MAX(r_sf,MAX(GEO%xmaxglob-GEO%xminglob,GEO%zmaxglob-GEO%zminglob))
+          CASE(3); MPI_halo_eps = MPI_halo_eps + MAX(r_sf,MAX(GEO%xmaxglob-GEO%xminglob,GEO%ymaxglob-GEO%yminglob))
+        END SELECT
+    END SELECT
     IF (DoHaloDepo) MPI_halo_eps = MPI_halo_eps + r_sf
     CALL PrintOption('MPI_halo_eps from shape function radius','CALCUL.',RealOpt=MPI_halo_eps)
   END IF

@@ -292,7 +292,7 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER           :: Nloc,iCNElem,firstElem,lastElem,iGlobalElem,iElem
-REAL              :: VolMin,VolMax,m,NReal
+REAL              :: VolMin,VolMax,m,NReal,VolTmp
 #if defined(CODE_ANALYZE)
 INTEGER           :: CNElemID
 LOGICAL,PARAMETER :: debugRay=.FALSE.
@@ -377,8 +377,10 @@ IF(PerformRayTracing)THEN
           END IF
         END DO ! iCNElem = firstElem, lastElem
 #if USE_MPI
-        CALL MPI_ALLREDUCE(MPI_IN_PLACE, VolMin, 1, MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_PICLAS, IERROR)
-        CALL MPI_ALLREDUCE(MPI_IN_PLACE, VolMax, 1, MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_PICLAS, IERROR)
+        VolTmp = VolMin
+        CALL MPI_ALLREDUCE(VolTmp, VolMin, 1, MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_PICLAS, IERROR)
+        VolTmp = VolMax
+        CALL MPI_ALLREDUCE(VolTmp, VolMax, 1, MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_PICLAS, IERROR)
 #endif /*USE_MPI*/
 
         ! Loop over all elements again and scale the polynomial degree using NINT.

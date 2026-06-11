@@ -362,6 +362,9 @@ REAL,INTENT(OUT)              :: L_Inf_Error(PP_nVar) !< LInf error of the solut
 !----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER                       :: iElem,k,l,m,Nloc
+#if USE_MPI
+REAL                          :: L_2_Error_tmp(PP_nVar), L_Inf_Error_tmp(PP_nVar)
+#endif /*USE_MPI*/
 REAL                          :: U_exact(1:PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: U_NAnalyze(1:PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: Coords_NAnalyze(3,0:NAnalyze,0:NAnalyze,0:NAnalyze)
@@ -401,9 +404,13 @@ DO iElem=1,PP_nElems
   END IF ! OutputErrorNormsToH5
 END DO ! iElem=1,PP_nElems
 #if USE_MPI
+  ! MS-MPI drops root's contribution / zeroes the buffer for MPI_REDUCE(MPI_IN_PLACE) (catastrophic at MPI=1:
+  ! L_2_Error -> 0). Use explicit send buffers (cf. §16.14).
   IF(MPIroot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE , L_2_Error   , PP_nVar , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
-    CALL MPI_REDUCE(MPI_IN_PLACE , L_Inf_Error , PP_nVar , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
+    L_2_Error_tmp   = L_2_Error
+    L_Inf_Error_tmp = L_Inf_Error
+    CALL MPI_REDUCE(L_2_Error_tmp   , L_2_Error   , PP_nVar , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
+    CALL MPI_REDUCE(L_Inf_Error_tmp , L_Inf_Error , PP_nVar , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
   ELSE
     CALL MPI_REDUCE(L_2_Error   , 0            , PP_nVar , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
     CALL MPI_REDUCE(L_Inf_Error , 0            , PP_nVar , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
@@ -447,6 +454,9 @@ REAL,INTENT(OUT)              :: L_Inf_PartSource(PartSource_nVar) !< LInf error
 INTEGER                       :: iElem,k,l,m,Nloc
 REAL                          :: J_NAnalyze(1,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: IntegrationWeight
+#if USE_MPI
+REAL                          :: L_2_PartSource_tmp(PartSource_nVar), L_Inf_PartSource_tmp(PartSource_nVar)
+#endif /*USE_MPI*/
 
 REAL                          :: PartSource_NAnalyze1(1:PartSource_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: PartSource_NAnalyze2(1:PartSource_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
@@ -477,9 +487,12 @@ DO iElem=1,PP_nElems
   END DO ! m
 END DO ! iElem=1,PP_nElems
 #if USE_MPI
+! MS-MPI MPI_REDUCE(MPI_IN_PLACE) drops root / zeroes at MPI=1 -> use explicit send buffers (cf. §16.14)
 IF(MPIroot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE  , L_2_PartSource   , PartSource_nVar , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
-  CALL MPI_REDUCE(MPI_IN_PLACE  , L_Inf_PartSource , PartSource_nVar , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
+  L_2_PartSource_tmp   = L_2_PartSource
+  L_Inf_PartSource_tmp = L_Inf_PartSource
+  CALL MPI_REDUCE(L_2_PartSource_tmp   , L_2_PartSource   , PartSource_nVar , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
+  CALL MPI_REDUCE(L_Inf_PartSource_tmp , L_Inf_PartSource , PartSource_nVar , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)
 ELSE
   CALL MPI_REDUCE(L_2_PartSource   , 0             , PartSource_nVar , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
   CALL MPI_REDUCE(L_Inf_PartSource , 0             , PartSource_nVar , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , MPI_COMM_PICLAS , iError)

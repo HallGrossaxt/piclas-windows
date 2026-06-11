@@ -69,11 +69,10 @@ IF (PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance)) THEN
   ! Allocate old distribution of data with size nElemsOld
   ALLOCATE(VolMesh(16,0:NMax,0:NMax,0:NMax,nElemsOld))
   DO iElem = 1, nElemsOld
-#if !(USE_FV) || (USE_HDG)
-    Nloc = N_DG_Mapping(2,iElem+offSetElemOld)
-#else
-    Nloc = PP_N
-#endif /*#if !(USE_FV) || (USE_HDG)*/
+    ! BUGG-FIX (Move-2 audit, 2026-05-30): same root-cause pattern as particle_readin.f90:178.
+    ! Source-of-truth for the actual allocated shape is the array's own UBOUND, not N_DG_Mapping's
+    ! current value — they can diverge across LB / DoInitialAutoRestart in p-adaption simulations.
+    Nloc = UBOUND(N_VolMesh(iElem)%Elem_xGP, 2)
     IF(Nloc.EQ.Nmax)THEN
       VolMesh( 1:3 ,:,:,:,iElem) = N_VolMesh(iElem)%Elem_xGP(      :,:,:,:)
       VolMesh( 4:6 ,:,:,:,iElem) = N_VolMesh(iElem)%XCL_N(         :,:,:,:)
@@ -329,11 +328,9 @@ IF (PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance)) THEN
   ! Allocate old distribution of data with size nElemsOld
   ALLOCATE(JaCL_N(3,3,0:NMax,0:NMax,0:NMax,nElemsOld))
   DO iElem = 1, nElemsOld
-#if !(USE_FV) || (USE_HDG)
-    Nloc = N_DG_Mapping(2,iElem+offSetElemOld)
-#else
-    Nloc = PP_N
-#endif /*#if !(USE_FV) || (USE_HDG)*/
+    ! BUGG-FIX (Move-2 audit, 2026-05-30): use allocated UBOUND as loop bound, not N_DG_Mapping value
+    ! (same anti-pattern as particle_readin.f90:178 and ExchangeVolMesh; see audit notes).
+    Nloc = UBOUND(N_VolMesh2(iElem)%JaCL_N,3)
     IF(Nloc.EQ.Nmax)THEN
       JaCL_N(:,:,:,:,:,iElem) = N_VolMesh2(iElem)%JaCL_N(:,:,:,:,:)
     ELSE

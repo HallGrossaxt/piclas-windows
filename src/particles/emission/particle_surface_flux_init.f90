@@ -168,6 +168,7 @@ REAL                  :: VFR_total, RestartTimeVar, excludeCircleArea
 TYPE(tBCdata_auxSFRadWeight),ALLOCATABLE          :: BCdata_auxSFTemp(:)
 #if USE_MPI
 REAL                  :: totalAreaSF_global
+LOGICAL               :: DoSurfaceFluxTmp, DoPoissonRoundingTmp, DoTimeDepInflowTmp
 #endif
 !===================================================================================================================================
 ALLOCATE(SurfMeshSubSideData(SurfFluxSideSize(1),SurfFluxSideSize(2),1:nBCSides),SurfMeshSideAreas(1:nBCSides))
@@ -188,8 +189,10 @@ CALL ReadInAndPrepareSurfaceFlux(MaxSurfacefluxBCs, nDataBC)
 IF (SurfChem%CatBoundNum.GT.0) CALL InitSurfChemFlux(nDataBC)
 
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,DoPoissonRounding,1,MPI_LOGICAL,MPI_LAND,MPI_COMM_PICLAS,iError) !set T if this is for all procs
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,DoTimeDepInflow,1,MPI_LOGICAL,MPI_LAND,MPI_COMM_PICLAS,iError) !set T if this is for all procs
+DoPoissonRoundingTmp = DoPoissonRounding
+CALL MPI_ALLREDUCE(DoPoissonRoundingTmp,DoPoissonRounding,1,MPI_LOGICAL,MPI_LAND,MPI_COMM_PICLAS,iError) !set T if this is for all procs
+DoTimeDepInflowTmp = DoTimeDepInflow
+CALL MPI_ALLREDUCE(DoTimeDepInflowTmp,DoTimeDepInflow,1,MPI_LOGICAL,MPI_LAND,MPI_COMM_PICLAS,iError) !set T if this is for all procs
 #endif /*USE_MPI*/
 
 CALL CreateSideListAndFinalizeAreasSurfFlux(nDataBC, BCdata_auxSFTemp)
@@ -360,7 +363,8 @@ DO iSpec=1,nSpecies
 END DO    ! iSpec=1,nSpecies
 
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,DoSurfaceFlux,1,MPI_LOGICAL,MPI_LOR,MPI_COMM_PICLAS,iError) !set T if at least 1 proc have SFs
+DoSurfaceFluxTmp = DoSurfaceFlux
+CALL MPI_ALLREDUCE(DoSurfaceFluxTmp,DoSurfaceFlux,1,MPI_LOGICAL,MPI_LOR,MPI_COMM_PICLAS,iError) !set T if at least 1 proc have SFs
 #endif  /*USE_MPI*/
 IF ((.NOT.DoSurfaceFlux).AND. (.NOT.DoChemSurface)) THEN !-- no SFs defined
   LBWRITE(*,*) 'WARNING: No Sides for SurfacefluxBCs found! DoSurfaceFlux is now disabled!'

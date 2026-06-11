@@ -226,6 +226,7 @@ StrVarNames(22)='PML-PsiE-P22'
 StrVarNames(23)='PML-PsiE-P23'
 StrVarNames(24)='PML-PsiE-P24'
 
+iDOF = 0
 DO iElem=1,nElems
   Nloc = N_DG_Mapping(2,iElem+offSetElem)
   IF(isPMLElem(iElem))THEN

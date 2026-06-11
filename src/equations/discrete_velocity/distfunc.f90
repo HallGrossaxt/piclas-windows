@@ -458,11 +458,19 @@ REAL, INTENT(IN)                 :: MacroVal(DVMnMacro),densSpec
 REAL                            :: rho, Temp, uVelo(DVMDim), vMag, weight, gM
 REAL,DIMENSION(2+DVMDim)        :: alpha, psi, rhovec
 REAL                            :: J(2+DVMDim,2+DVMDim), B(2+DVMDim)
-INTEGER                         :: iVel,jVel,kVel, upos, countz, IPIV(2+DVMDim), info_dgesv
+INTEGER                         :: iVel,jVel,kVel, upos, countz, IPIV(2+DVMDim), info_dgesv, idim
+REAL                            :: maxAlphaPsi
 !===================================================================================================================================
 rho = densSpec*DVMSpecData(iSpec)%Mass
 uVelo(1:DVMDim) = MacroVal(2:1+DVMDim)
 Temp = MacroVal(5)
+
+! non-physical MacroValues (zero/neg density or temperature, or infinite velocity):
+! return empty distribution, consistent with MaxwellDistribution behaviour (EXP(-Inf)=0)
+IF (rho.LE.0.0 .OR. Temp.LE.0.0 .OR. DOTPRODUCT(uVelo).GE.HUGE(rho)) THEN
+  fMaxwell = 0.0
+  RETURN
+END IF
 
 ! vector of conservative variables
 rhovec(1) = rho
@@ -472,6 +480,18 @@ rhovec(2+DVMDim)=rho*(FLOAT(DVMDim)*DVMSpecData(iSpec)%R_S*Temp+DOTPRODUCT(uVelo
 alpha(1) = LOG(rho/(2.*Pi*DVMSpecData(iSpec)%R_S*Temp)**(DVMDim/2.))-DOTPRODUCT(uVelo)/2./DVMSpecData(iSpec)%R_S/Temp
 alpha(2:1+DVMDim) = uVelo(1:DVMDim)/DVMSpecData(iSpec)%R_S/Temp
 alpha(2+DVMDim) = -1/DVMSpecData(iSpec)%R_S/Temp
+
+! Guard against EXP overflow in Newton loop: large-but-finite uVelo (e.g. from near-zero-density
+! ED-DVM transport cells) causes alpha(2)*v_max >> 700 -> EXP overflow -> J=Inf -> DGESV fails.
+! MaxwellDistribution (BGKCollModel 1-3) is immune: EXP(-|c|^2/2RT)->0 for large |u|.
+maxAlphaPsi = 0.0
+DO idim = 1, DVMDim
+  maxAlphaPsi = MAX(maxAlphaPsi, ABS(alpha(1+idim)) * MAXVAL(ABS(DVMSpecData(iSpec)%Velos(:,idim))))
+END DO
+IF (.NOT.(maxAlphaPsi .LT. 700.0)) THEN
+  fMaxwell = 0.0
+  RETURN
+END IF
 
 ! init counter
 countz=0

@@ -1269,6 +1269,7 @@ TYPE tPeriodicNodeMap
 END TYPE
 TYPE(tPeriodicNodeMap), ALLOCATABLE :: PeriodicNodeMap(:)
 INTEGER,ALLOCATABLE       :: PeriodicNodesPerNode(:)
+INTEGER,ALLOCATABLE       :: PeriodicNodesPerNodeTmp(:)
 INTEGER                   :: UniqueNodeID
 #if USE_MPI
 LOGICAL                   :: NoBCSideOnNode,FoundOwnNode
@@ -2027,7 +2028,10 @@ END DO ! iNode = nUniqueGlobalNodes
 
 #if USE_MPI
 IF(myComputeNodeRank.EQ.0)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE        ,PeriodicNodesPerNode,nUniqueGlobalNodes,MPI_INTEGER,MPI_MAX,0,MPI_COMM_SHARED,IERROR)
+  ALLOCATE(PeriodicNodesPerNodeTmp(nUniqueGlobalNodes))
+  CALL MPI_REDUCE(PeriodicNodesPerNode,PeriodicNodesPerNodeTmp,nUniqueGlobalNodes,MPI_INTEGER,MPI_MAX,0,MPI_COMM_SHARED,IERROR)
+  PeriodicNodesPerNode = PeriodicNodesPerNodeTmp
+  DEALLOCATE(PeriodicNodesPerNodeTmp)
 #endif /*USE_MPI*/
   nTotalPeriodicNodes = 0
   DO iNode = 1,nUniqueGlobalNodes
@@ -2058,25 +2062,20 @@ IF(nTotalPeriodicNodes.GT.0) THEN
   Periodic_Nodes = 0
 #endif /*USE_MPI*/
 
-  ! Every processor loops over its own periodic map and fills the Periodic_Nodes_Shared_Win array. MPI_ACCUMULATE ensures that data
-  ! is consistent
+  ! Every processor loops over its own periodic map and fills the Periodic_Nodes_Shared_Win array.
+  ! Windows/MS-MPI workaround: MPI_ACCUMULATE on a shared MPI window fails with "invalid displacement"
+  ! (MS-MPI RMA bug). All procs on the same compute node share physical memory via the shared pointer,
+  ! so a direct write is equivalent and correct; BARRIER_AND_SYNC below ensures visibility.
   DO iNode = 1,nUniqueGlobalNodes
     ASSOCIATE(offset => Periodic_offsetNode(iNode))
 
       IF (PeriodicNodeMap(iNode)%nPeriodicNodes.GT.0) THEN
-#if USE_MPI
-        CALL MPI_ACCUMULATE(PeriodicNodeMap(iNode)%Mapping             ,PeriodicNodeMap(iNode)%nPeriodicNodes, MPI_INTEGER, &
-                            0    ,INT(offset*SIZE_INT,MPI_ADDRESS_KIND),PeriodicNodeMap(iNode)%nPeriodicNodes, MPI_INTEGER, &
-                            MPI_REPLACE                                ,Periodic_Nodes_Shared_Win            , iError)
-#else
         Periodic_Nodes(1+offset:offset+PeriodicNodeMap(iNode)%nPeriodicNodes) = PeriodicNodeMap(iNode)%Mapping
-#endif /*USE_MPI*/
     END IF ! PeriodicNodeMap(iNode)%nPeriodicNodes.GT.0
 
     END ASSOCIATE
   END DO ! iNode = nUniqueGlobalNodes
 #if USE_MPI
-  CALL MPI_WIN_FLUSH(0 ,Periodic_Nodes_Shared_Win,iError)
   CALL BARRIER_AND_SYNC(Periodic_Nodes_Shared_Win,MPI_COMM_SHARED)
 #endif /*USE_MPI*/
 END IF

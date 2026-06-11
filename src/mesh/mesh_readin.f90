@@ -299,7 +299,7 @@ INTEGER                        :: FirstSideInd,LastSideInd,FirstElemInd,LastElem
 INTEGER                        :: FirstEdgeInd,LastEdgeInd,FirstEdgeConnectInd,LastEdgeConnectInd
 INTEGER                        :: FirstVertexInd,LastVertexInd,FirstVertexConnectInd,LastVertexConnectInd
 INTEGER                        :: nPeriodicSides,nMPIPeriodics
-INTEGER                        :: ReduceData(9)
+INTEGER                        :: ReduceData(9),ReduceDataTmp(9)
 INTEGER                        :: nSideIDs,offsetSideID
 INTEGER                        :: nEdgeIDs,offsetEdgeID,nEdgeConnectIDs,offsetEdgeConnectID
 INTEGER                        :: nVertexIDs,offsetVertexID,nVertexConnectIDs,offsetVertexConnectID
@@ -1020,7 +1020,9 @@ CALL FinishCommunicateMeshReadin()
 #endif
 
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,ReduceData,9,MPI_INTEGER,MPI_SUM,MPI_COMM_PICLAS,iError)
+! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) corrupts the buffer — use explicit send/recv buffers.
+CALL MPI_ALLREDUCE(ReduceData,ReduceDataTmp,9,MPI_INTEGER,MPI_SUM,MPI_COMM_PICLAS,iError)
+ReduceData = ReduceDataTmp
 #endif /*USE_MPI*/
 
 nGlobalMortarSides=ReduceData(9)

@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 0.9.3 Build Configurator</title>
+<title>piclas-win 1.0 Build Configurator</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
@@ -52,7 +52,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 <body>
 
 <header>
-  <h1>piclas-win 0.9.3 Build Configurator</h1>
+  <h1>piclas-win 1.0 Build Configurator</h1>
   <span style="font-size:0.78rem;color:#8892b0;">Unofficial Windows port of PICLas 4.1.0 &mdash; standalone HTML, works in any browser, no server needed</span>
 </header>
 <div class="note-bar">
@@ -87,12 +87,16 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
     <div class="card">
       <h3>Equation System</h3>
       <div class="opt-group" id="grp-eqnsys">
-        <button class="opt-btn active" data-val="maxwell" onclick="sel('eqnsys',this)">maxwell</button>
-        <button class="opt-btn"        data-val="poisson" onclick="sel('eqnsys',this)">poisson</button>
+        <button class="opt-btn active" data-val="maxwell"           onclick="sel('eqnsys',this)">maxwell</button>
+        <button class="opt-btn"        data-val="poisson"           onclick="sel('eqnsys',this)">poisson</button>
+        <button class="opt-btn"        data-val="discrete_velocity" onclick="sel('eqnsys',this)">discrete_velocity</button>
+        <button class="opt-btn"        data-val="drift_diffusion"   onclick="sel('eqnsys',this)">drift_diffusion</button>
       </div>
       <div class="desc">
-        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser / PIC-DSMC simulations. Compatible with all time methods.<br>
-        <b>poisson</b>: electrostatic Poisson solver (HDG) &mdash; PIC plasma without radiation. Internally enables HDG; only <b>Boris-Leapfrog, Leapfrog, RK3, RK4, RK14</b> are supported. DSMC, FP-Flow, BGK-Flow and RK4-implicit will fail at configure time with this solver.
+        <b>maxwell</b>: full electromagnetic (DGSEM) &mdash; EM wave / laser / combined DSMC+PIC-EM simulations. Use with RK3, RK4, RK14, DSMC, FP-Flow, BGK-Flow, Radiation.<br>
+        <b>poisson</b>: electrostatic Poisson solver (HDG) &mdash; electrostatic PIC without radiation. Supported: Euler-Explicit, Higuera-Cary, Boris-Leapfrog, Leapfrog, RK3, RK4, RK14. DSMC, FP-Flow, BGK-Flow, Radiation, ED-DVM, Explicit-FV, PLOESMA <b>fail</b> at configure time.<br>
+        <b>discrete_velocity</b>: Boltzmann discrete-velocity (FV solver) &mdash; use with ED-DVM, PLOESMA, or Explicit-FV.<br>
+        <b>drift_diffusion</b>: drift-diffusion (HDG+FV) &mdash; use with Explicit-FV or RK3/RK4/RK14 with combined field+FV.
       </div>
       <div class="compat" id="compat-eqnsys"></div>
     </div>
@@ -105,18 +109,28 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <button class="opt-btn"        data-val="RK14"           onclick="sel('timedisc',this)">RK14</button>
         <button class="opt-btn"        data-val="Boris-Leapfrog" onclick="sel('timedisc',this)">Boris-Leapfrog</button>
         <button class="opt-btn"        data-val="Leapfrog"       onclick="sel('timedisc',this)">Leapfrog</button>
-        <button class="opt-btn"        data-val="RK4-implicit"   onclick="sel('timedisc',this)">RK4-implicit</button>
+        <button class="opt-btn"        data-val="Euler-Explicit" onclick="sel('timedisc',this)">Euler-Explicit</button>
+        <button class="opt-btn"        data-val="Higuera-Cary"   onclick="sel('timedisc',this)">Higuera-Cary</button>
         <button class="opt-btn"        data-val="DSMC"           onclick="sel('timedisc',this)">DSMC</button>
         <button class="opt-btn"        data-val="FP-Flow"        onclick="sel('timedisc',this)">FP-Flow</button>
         <button class="opt-btn"        data-val="BGK-Flow"       onclick="sel('timedisc',this)">BGK-Flow</button>
+        <button class="opt-btn"        data-val="Radiation"      onclick="sel('timedisc',this)">Radiation</button>
+        <button class="opt-btn"        data-val="ED-DVM"         onclick="sel('timedisc',this)">ED-DVM</button>
+        <button class="opt-btn"        data-val="Explicit-FV"    onclick="sel('timedisc',this)">Explicit-FV</button>
+        <button class="opt-btn"        data-val="PLOESMA"        onclick="sel('timedisc',this)">PLOESMA</button>
       </div>
       <div class="desc">
-        <b>RK3/RK4/RK14</b>: explicit Runge-Kutta &mdash; general purpose.<br>
-        <b>Boris-Leapfrog</b>: symplectic, ideal for PIC particle tracking.<br>
-        <b>Leapfrog</b>: 2nd-order, lightweight &mdash; recommended for electrostatic PIC.<br>
-        <b>RK4-implicit</b>: for stiff systems with disparate time scales.<br>
-        <b>DSMC</b>: Direct Simulation Monte Carlo &mdash; rarefied gas / particle collisions. Use with <b>maxwell</b>. Required for the <code>dsmc-cone-3D</code> tutorial.<br>
-        <b>FP-Flow / BGK-Flow</b>: stochastic particle methods for transitional flow regimes. Require particles (PICLAS_PARTICLES=ON, the default).
+        <b>RK3 / RK4 / RK14</b>: explicit LSERK Runge-Kutta. Works with <b>maxwell</b> (PP_TimeDiscMethod=1/2/6), <b>poisson</b> (HDG, 501/502/506), or <b>drift_diffusion</b> (HDG+FV). <b>maxwell+RK4 is the correct build for combined DSMC+PIC-EM</b> &mdash; DSMC collision physics is enabled at runtime via parameter file (e.g. <code>Particles-DSMC-CollisMode=3</code>).<br>
+        <b>Boris-Leapfrog</b>: symplectic Boris pusher (PP_TimeDiscMethod=508) &mdash; <b>requires poisson</b>. Fails with maxwell.<br>
+        <b>Leapfrog</b>: 2nd-order leapfrog (PP_TimeDiscMethod=509) &mdash; <b>requires poisson</b>. Fails with maxwell.<br>
+        <b>Euler-Explicit</b>: 1st-order explicit Euler for HDG (PP_TimeDiscMethod=500) &mdash; <b>requires poisson</b>.<br>
+        <b>Higuera-Cary</b>: energy-conserving relativistic Boris variant (PP_TimeDiscMethod=507) &mdash; <b>requires poisson</b>.<br>
+        <b>DSMC</b>: <em>pure</em> Direct Simulation Monte Carlo time loop (PP_TimeDiscMethod=4, no EM field solve). Use with <b>maxwell</b>. For combined DSMC+PIC-EM use <b>RK4</b> + maxwell instead and enable DSMC at runtime.<br>
+        <b>FP-Flow / BGK-Flow</b>: stochastic particle methods for transitional flow regimes. Require <b>maxwell</b> and PICLAS_PARTICLES=ON (the default).<br>
+        <b>Radiation</b>: radiative transfer time loop (PP_TimeDiscMethod=600). Requires <b>maxwell</b>.<br>
+        <b>ED-DVM</b>: explicit discrete-velocity method (PP_TimeDiscMethod=700, FV solver). Requires <b>discrete_velocity</b> equation system.<br>
+        <b>Explicit-FV</b>: explicit finite-volume time stepping (PP_TimeDiscMethod=701). Requires <b>discrete_velocity</b> or <b>drift_diffusion</b>.<br>
+        <b>PLOESMA</b>: plasma+DVM coupling with HDG fields + FV particles (PP_TimeDiscMethod=702). Requires <b>discrete_velocity</b>.
       </div>
       <div class="compat" id="compat-timedisc"></div>
     </div>
@@ -127,11 +141,15 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <button class="opt-btn"        data-val="Debug"          onclick="sel('buildtype',this)">Debug</button>
         <button class="opt-btn active" data-val="Release"        onclick="sel('buildtype',this)">Release</button>
         <button class="opt-btn"        data-val="RelWithDebInfo" onclick="sel('buildtype',this)">RelWithDebInfo</button>
+        <button class="opt-btn"        data-val="Sanitize"       onclick="sel('buildtype',this)">Sanitize</button>
+        <button class="opt-btn"        data-val="Profile"        onclick="sel('buildtype',this)">Profile</button>
       </div>
       <div class="desc">
         <b>Release</b>: full optimisation, no debug symbols &mdash; use for production runs.<br>
         <b>Debug</b>: no optimisation, full symbols &mdash; use when debugging crashes.<br>
-        <b>RelWithDebInfo</b>: optimised + symbols &mdash; good for profiling.
+        <b>RelWithDebInfo</b>: optimised + symbols &mdash; good for profiling.<br>
+        <b>Sanitize</b>: address+undefined sanitizer instrumentation (~10&times; slower runtime). Use to chase memory bugs / UB. <b>Not compatible with MPI</b> on Windows &mdash; sanitizer errors fire inside the MPI library itself; build with <code>LIBS_USE_MPI=OFF</code>.<br>
+        <b>Profile</b>: instrumented for <code>gprof</code>-style profiling.
       </div>
     </div>
 
@@ -141,12 +159,27 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-posti" checked onchange="updateAll()">
         <label for="chk-posti">PICLAS_BUILD_POSTI</label>
       </div>
-      <div class="desc">Build post-processing tools: <b>piclas2vtk</b> (HDF5 → VTK/ParaView converter) and <b>superB</b> (standalone magnetic-field pre-processor — computes coil and permanent-magnet B-fields on a mesh and writes an HDF5 background-field file for use in subsequent PICLas simulations).</div>
+      <div class="desc">Build post-processing tools. With POSTI=ON: <b>piclas2vtk</b> (HDF5 → VTK/ParaView converter) and (unless time method is ED-DVM) <b>superB</b> (standalone B-field pre-processor). Building POSTI also compiles <code>USE_SUPER_B=1</code> into the piclas binary, which is required for any example that reads a background magnetic field (e.g. HEMPT, gyrotron, *variable_B*). Turn POSTI off only for stripped-down runtime-only builds.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-dmd" onchange="updateAll()">
+        <label for="chk-dmd">POSTI_BUILD_DMD</label>
+      </div>
+      <div class="desc">Also build the <b>DMD</b> (Dynamic Mode Decomposition) tool. Required for the <code>NIG_maxwell_RK4/CoaxialCable_DMD</code> family of tests. Only effective if POSTI is ON.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-particles" checked onchange="updateAll()">
+        <label for="chk-particles">PICLAS_PARTICLES</label>
+      </div>
+      <div class="desc">Compile the particle module. <b>Turn OFF</b> for pure field-only builds (e.g. <code>NIG_maxwell_RK4</code>, <code>NIG_convtest_maxwell</code>, <code>CHE_maxwell</code>, <code>CHE_poisson_periodic</code>). Required for DSMC, PIC, FP-Flow, BGK-Flow, Radiation, Leapfrog, Boris-Leapfrog, etc.</div>
       <div class="check-row">
         <input type="checkbox" id="chk-readin" onchange="updateAll()">
         <label for="chk-readin">PICLAS_READIN_CONSTANTS</label>
       </div>
-      <div class="desc">Read physical constants from the parameter file instead of hard-coded values. Useful for code verification and sensitivity studies.</div>
+      <div class="desc">Read physical constants from the parameter file instead of hard-coded values. Useful for code verification and sensitivity studies. Required by <code>NIG_sanitize</code> &mdash; without it the timestep collapses and the test runs forever.</div>
+      <div class="check-row">
+        <input type="checkbox" id="chk-debugmem" onchange="updateAll()">
+        <label for="chk-debugmem">PICLAS_DEBUG_MEMORY</label>
+      </div>
+      <div class="desc">Print shared-memory window sizes at startup. Used in CHE/NIG Debug+CODE_ANALYZE configurations (e.g. <code>CHE_maxwell</code>, <code>CHE_poisson</code>, <code>NIG_drift_diffusion_explicit-FV</code>). Performance cost is negligible.</div>
       <div class="check-row">
         <input type="checkbox" id="chk-unittests" onchange="updateAll()">
         <label for="chk-unittests">PICLAS_UNITTESTS</label>
@@ -157,11 +190,26 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <label for="chk-mpi">LIBS_USE_MPI (MS-MPI)</label>
       </div>
       <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. <b>Not compatible with PETSc</b> — the MSYS2 PETSc package is sequential-only and will crash at runtime when launched with more than one MPI rank.</div>
+      <div class="check-row" id="row-loadbalance" style="display:none;">
+        <input type="checkbox" id="chk-loadbalance" checked onchange="updateAll()">
+        <label for="chk-loadbalance">PICLAS_LOADBALANCE</label>
+      </div>
+      <div class="desc" id="desc-loadbalance" style="display:none;">Dynamic load balancing across MPI ranks. Default ON when MPI is enabled. Turn OFF only for ED-DVM/PLOESMA builds (these explicitly require it OFF).</div>
+      <div class="check-row" id="row-mpiwait" style="display:none;">
+        <input type="checkbox" id="chk-mpiwait" onchange="updateAll()">
+        <label for="chk-mpiwait">PICLAS_MEASURE_MPI_WAIT</label>
+      </div>
+      <div class="desc" id="desc-mpiwait" style="display:none;">Output measured wall time for <code>MPI_WAIT</code> calls per rank. Useful for identifying load-imbalance hot spots.</div>
       <div class="check-row">
         <input type="checkbox" id="chk-petsc" onchange="onPetscChange()">
         <label for="chk-petsc">LIBS_USE_PETSC</label>
       </div>
       <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman. <b>Not compatible with MPI</b> — the MSYS2 PETSc package is built without MPI support; enabling both causes a runtime abort ("MPI-uni install") when launched with more than one process.</div>
+      <div class="check-row" id="row-fv2d" style="display:none;">
+        <input type="checkbox" id="chk-fv2d" onchange="updateAll()">
+        <label for="chk-fv2d">PICLAS_FV_2D</label>
+      </div>
+      <div class="desc" id="desc-fv2d" style="display:none;">FV fluxes not calculated for dimension Z (2D simulations). Available only with <code>discrete_velocity</code> + FV-style time methods.</div>
     </div>
 
     <div class="card">
@@ -172,16 +220,17 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
       </div>
       <div class="desc">
         Enable GPU-accelerated particle position push via CUDA.<br><br>
-        <b>What is accelerated (v0.9.2):</b><br>
-        &bull; <b>DSMC position push</b> &mdash; batch <code>pos += vel &times; dt</code> for all active particles, replacing the per-particle CPU loop. Active when <code>DSMC</code> time method is selected and none of the following are enabled: variable time step, rotating reference frame, granular species, surface flux, axisymmetric geometry.<br>
-        &bull; Other time methods (Boris-Leapfrog, RK4, etc.): GPU is present but the push is not yet wired in &mdash; they still run on CPU.<br><br>
+        <b>What is accelerated (v1.0):</b><br>
+        &bull; <b>DSMC position push</b> &mdash; batch <code>pos += vel &times; dt</code> for all active particles. Active when <code>DSMC</code> time method is selected and none of: variable time step, rotating reference frame, granular species, surface flux, axisymmetric geometry.<br>
+        &bull; <b>RK4 / RK14 LSERK stage push</b> &mdash; GPU-accelerated per-stage velocity+position update (Carpenter 1994 / Niegemann 2012 coefficients). Active when <code>maxwell + RK4</code> or <code>maxwell + RK14</code> is selected and none of: variable time step, rotating reference frame, coupled power output, field ionization.<br>
+        &bull; Other time methods: GPU build is valid but particle push runs on CPU.<br><br>
         <b>Requirements:</b><br>
         &bull; <b>NVIDIA GPU</b> (Ampere / RTX 30xx or newer recommended, CC&nbsp;&ge;&nbsp;8.6)<br>
         &bull; <b>CUDA Toolkit 12+</b> &mdash; install from <a href="https://developer.nvidia.com/cuda-downloads" style="color:#64ffda;" target="_blank">developer.nvidia.com</a>; ensure <code>nvcc.exe</code> is on <code>PATH</code> or <code>CUDA_PATH</code> is set<br>
         &bull; <b>VS Build Tools 2022</b> (free) &mdash; nvcc on Windows requires <code>cl.exe</code> as host compiler (MinGW g++ unsupported); install from <a href="https://visualstudio.microsoft.com/downloads/#build-tools-for-visual-studio-2022" style="color:#64ffda;" target="_blank">visualstudio.microsoft.com</a> with the <em>Desktop development with C++</em> workload; CMake finds <code>cl.exe</code> automatically<br>
         &bull; <b>Python 3</b> &mdash; used at link time to patch CUDA object files. Any real Python 3 installation works (python.org, Conda, MSYS2). CMake locates it automatically at configure time. The Windows Store <code>python3.exe</code> stub does <em>not</em> work &mdash; disable it under <em>Settings &rarr; Apps &rarr; Advanced App Settings &rarr; App Execution Aliases</em> if you have a real Python installed and still see a Store redirect error.<br>
         &bull; <b>cudart64_13.dll</b> must be bundled with the executable for distribution (see §14.7 of the setup guide)<br><br>
-        <b>Not compatible with PETSc.</b> GPU + MPI is untested in v0.9.2.
+        <b>Not compatible with PETSc.</b> GPU + MPI: known race in the per-rank CUDA-context init during the first load-balance redistribution, which can crash the run at exit-code 3 on small / split-mesh examples (Bug-G/CUDA-context race). For CVWM-style examples disable load balance or limit MPI ranks.
       </div>
       <div id="gpu-arch-row" style="margin-top:8px;display:none;">
         <span class="field-label">CMAKE_CUDA_ARCHITECTURES &mdash; GPU compute capability</span>
@@ -199,6 +248,14 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 
     <div class="card">
       <h3>Advanced</h3>
+      <div style="margin-bottom:12px;">
+        <span class="field-label">PICLAS_NODETYPE</span>
+        <div class="opt-group" id="grp-nodetype">
+          <button class="opt-btn active" data-val="GAUSS"         onclick="sel('nodetype',this)">GAUSS</button>
+          <button class="opt-btn"        data-val="GAUSS-LOBATTO" onclick="sel('nodetype',this)">GAUSS-LOBATTO</button>
+        </div>
+        <div class="desc">Spectral element node distribution. <b>GAUSS</b>: full Legendre-Gauss (interior only). <b>GAUSS-LOBATTO</b>: Legendre-Gauss-Lobatto (includes endpoints). Almost all PICLas tests use GAUSS; GAUSS-LOBATTO is incompatible with <code>poisson</code> and <code>DSMC</code>.</div>
+      </div>
       <div class="check-row">
         <input type="checkbox" id="chk-perf" onchange="updateAll()">
         <label for="chk-perf">PICLAS_PERFORMANCE</label>
@@ -208,7 +265,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-analyze" onchange="updateAll()">
         <label for="chk-analyze">PICLAS_CODE_ANALYZE</label>
       </div>
-      <div class="desc">Enable runtime sanity checks and assertions. Significant performance hit &mdash; only for development/debugging.</div>
+      <div class="desc">Enable runtime sanity checks and assertions. Significant performance hit &mdash; only for development/debugging. Required by several CHE/NIG suites (e.g. <code>CHE_poisson</code>, <code>CHE_PIC_maxwell_RK4_p_adaption</code>, <code>NIG_code_analyze_RK4</code>).</div>
       <div style="margin-top:12px;">
         <span class="field-label">PICLAS_INSTRUCTION &mdash; target CPU instruction set</span>
         <input type="text" id="inp-instruction" value="-march=x86-64-v2 -mtune=generic" oninput="updateAll()">
@@ -293,15 +350,9 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         [GPU] CUDA device 0 : NVIDIA GeForce RTX 30xx<br>
         [GPU] PICLas GPU acceleration ENABLED.
       </code>
-      <b>Active push conditions</b> &mdash; the GPU position push fires when <em>all</em> of the following are true:
-      <ul style="margin:5px 0 8px 18px;line-height:1.7;">
-        <li>Time method = <b>DSMC</b></li>
-        <li>Constant time step (no <code>UseVarTimeStep</code>)</li>
-        <li>No rotating reference frame</li>
-        <li>No granular species</li>
-        <li>No surface flux</li>
-        <li>Not axisymmetric</li>
-      </ul>
+      <b>Active push conditions:</b><br>
+      <em>DSMC push</em> &mdash; time method = <b>DSMC</b>, constant dt, no rotating reference frame, no granular species, no surface flux, not axisymmetric.<br>
+      <em>RK4 / RK14 LSERK push</em> (v1.0) &mdash; time method = <b>RK4</b> or <b>RK14</b> with <b>maxwell</b>, constant dt, no rotating reference frame, no coupled power, no field ionization.<br>
       <b>Distribution</b> &mdash; copy <code>cudart64_13.dll</code> from
       <code>%CUDA_PATH%\bin\x64\</code> into the same folder as <code>piclas.exe</code> for deployment on machines without the CUDA Toolkit installed.
     </div>
@@ -323,6 +374,23 @@ function sel(group, btn) {
     btns[i].className = 'opt-btn';
   }
   btn.className = 'opt-btn active';
+  // Sanitize is incompatible with MPI on Windows (sanitizer errors fire inside MS-MPI) → turn MPI off
+  if (group === 'buildtype' && btn.getAttribute('data-val') === 'Sanitize') {
+    document.getElementById('chk-mpi').checked = false;
+  }
+  // poisson and DSMC don't support GAUSS-LOBATTO → flip back to GAUSS
+  if (group === 'eqnsys' || group === 'timedisc') {
+    var nt = document.getElementById('grp-nodetype');
+    if (nt) {
+      var glOnly = (getActive('grp-eqnsys') === 'poisson' || getActive('grp-timedisc') === 'DSMC');
+      if (glOnly && getActive('grp-nodetype') === 'GAUSS-LOBATTO') {
+        var nbtns = nt.getElementsByTagName('button');
+        for (var j = 0; j < nbtns.length; j++) {
+          nbtns[j].className = (nbtns[j].getAttribute('data-val') === 'GAUSS') ? 'opt-btn active' : 'opt-btn';
+        }
+      }
+    }
+  }
   updateAll();
 }
 
@@ -341,11 +409,18 @@ function getOpts() {
     eqnsys:      getActive('grp-eqnsys'),
     timedisc:    getActive('grp-timedisc'),
     buildtype:   getActive('grp-buildtype'),
+    nodetype:    getActive('grp-nodetype'),
     posti:       document.getElementById('chk-posti').checked,
+    dmd:         document.getElementById('chk-dmd').checked,
+    particles:   document.getElementById('chk-particles').checked,
     readin:      document.getElementById('chk-readin').checked,
+    debugmem:    document.getElementById('chk-debugmem').checked,
     unittests:   document.getElementById('chk-unittests').checked,
     mpi:         document.getElementById('chk-mpi').checked,
+    loadbalance: document.getElementById('chk-loadbalance').checked,
+    mpiwait:     document.getElementById('chk-mpiwait').checked,
     petsc:       document.getElementById('chk-petsc').checked,
+    fv2d:        document.getElementById('chk-fv2d').checked,
     gpu:         document.getElementById('chk-gpu').checked,
     cudaarch:    getActive('grp-cudaarch'),
     perf:        document.getElementById('chk-perf').checked,
@@ -360,10 +435,18 @@ function getOpts() {
 
 function onOff(b) { return b ? 'ON' : 'OFF'; }
 
-// MPI and PETSc are mutually exclusive: MSYS2 PETSc is sequential-only and crashes with >1 MPI rank
+// MPI and PETSc are mutually exclusive: MSYS2 PETSc is sequential-only and crashes with >1 MPI rank.
+// Sanitize and MPI are mutually exclusive on Windows: AddressSanitizer fires inside the MS-MPI library itself.
 function onMpiChange() {
   if (document.getElementById('chk-mpi').checked) {
     document.getElementById('chk-petsc').checked = false;
+    // If user enabled MPI while CMAKE_BUILD_TYPE=Sanitize, switch back to Release
+    if (getActive('grp-buildtype') === 'Sanitize') {
+      var btns = document.getElementById('grp-buildtype').getElementsByTagName('button');
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].className = (btns[i].getAttribute('data-val') === 'Release') ? 'opt-btn active' : 'opt-btn';
+      }
+    }
   }
   updateAll();
 }
@@ -391,18 +474,27 @@ function getGpuCompatMsg(o) {
   if (!o.gpu) return '';
   if (o.petsc) return '\u26A0 GPU is not compatible with PETSc. PETSc has been deselected.';
   if (o.eqnsys !== 'maxwell') {
-    return '\u26A0 GPU position push requires equation system \u201Cmaxwell\u201D + time method \u201CDSMC\u201D. The \u201C' + o.eqnsys + '\u201D solver does not support GPU acceleration in v0.9.2.';
+    return '⚠ GPU particle push requires equation system “maxwell”. The “' + o.eqnsys + '” solver does not support GPU acceleration.';
   }
   if (o.timedisc === 'DSMC') {
     return '\u2139 GPU position push active: maxwell + DSMC + constant dt + no surface flux = batch pos\u2009+=\u2009vel\u2009\u00D7\u2009dt on GPU.';
   }
-  return '\u26A0 GPU build selected but \u201C' + o.timedisc + '\u201D time method: the GPU position push is only wired for DSMC in v0.9.2. Particle pushing will still run on CPU. Switch to DSMC to activate the GPU kernel.';
+  if (o.timedisc === 'RK4' || o.timedisc === 'RK14') {
+    return 'ℹ GPU LSERK stage push active (v1.0): maxwell + ' + o.timedisc + ' = per-stage vel+pos update on GPU. Requires: constant dt, no rotating reference frame, no coupled power, no field ionization. GPU+MPI is known to hit a CUDA-context race during load balance — disable load balance or trim MPI ranks for CVWM-style small meshes.';
+  }
+  return '⚠ GPU build selected but “' + o.timedisc + '” time method: GPU particle push is not wired for this time method. Particle pushing will run on CPU.';
 }
 
 function getBuildDir(o) {
   return o.builddir ||
-    ('build-' + o.eqnsys + '-' + o.timedisc.toLowerCase() + '-' + o.buildtype.toLowerCase() +
-     (o.mpi ? '-mpi' : '') + (o.gpu ? '-gpu' : ''));
+    ('build-' + o.eqnsys + '-' + o.timedisc.toLowerCase() +
+     (o.particles ? '' : '-nopart') +
+     (o.analyze ? '-codeanalyze' : '') +
+     (o.buildtype !== 'Release' ? '-' + o.buildtype.toLowerCase() : '') +
+     (o.posti && o.dmd ? '-dmd' : '') +
+     (o.petsc ? '-petsc' : '') +
+     (o.mpi ? '-mpi' : '-serial') +
+     (o.gpu ? '-gpu' : ''));
 }
 
 function getPreset(o) {
@@ -419,18 +511,33 @@ function updateAll() {
   var o   = getOpts();
   var dir = getBuildDir(o);
   var bp  = o.buildroot + '/' + dir;
-  var tg  = o.posti ? 'piclas piclas2vtk superB' : 'piclas';
+  var tgList = ['piclas'];
+  if (o.posti) {
+    tgList.push('piclas2vtk');
+    if (o.timedisc !== 'ED-DVM') tgList.push('superB');
+    if (o.dmd) tgList.push('dmd');
+  }
+  var tg = tgList.join(' ');
 
   var defs = [
     '-DPICLAS_EQNSYSNAME='       + o.eqnsys,
     '-DPICLAS_TIMEDISCMETHOD='   + o.timedisc,
     '-DCMAKE_BUILD_TYPE='        + o.buildtype,
+    '-DPICLAS_NODETYPE='         + o.nodetype,
     '-DPICLAS_BUILD_POSTI='      + onOff(o.posti),
+    (o.posti && o.dmd) ? '-DPOSTI_BUILD_DMD=ON' : null,
+    // PICLAS_PARTICLES defaults to ON in CMake; only emit when OFF for cleanliness
+    o.particles ? null : '-DPICLAS_PARTICLES=OFF',
     '-DPICLAS_UNITTESTS='        + onOff(o.unittests),
     o.mpi ? null : '-DLIBS_USE_MPI=OFF',
+    // LoadBalance is dependent on MPI; only set when MPI is on and user unchecked
+    (o.mpi && !o.loadbalance) ? '-DPICLAS_LOADBALANCE=OFF' : null,
+    (o.mpi && o.mpiwait)      ? '-DPICLAS_MEASURE_MPI_WAIT=ON' : null,
     '-DLIBS_USE_PETSC='          + onOff(o.petsc),
     o.petsc ? '-DLIBS_BUILD_PETSC=OFF' : null,
     o.petsc ? '-DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : null,
+    // FV_2D is dependent on PICLAS_FV which is only available for discrete_velocity FV time methods
+    (o.fv2d && (o.eqnsys === 'discrete_velocity')) ? '-DPICLAS_FV_2D=ON' : null,
     // GPU: when using gpu preset the defaults are already set; but explicit flags are
     // needed when combining GPU with MPI (which uses windows-ucrt64-mpi as base preset)
     (o.gpu && o.mpi) ? '-DPICLAS_USE_GPU=ON' : null,
@@ -438,6 +545,7 @@ function updateAll() {
     // When GPU preset is chosen but a non-default arch is requested, pass it explicitly
     (o.gpu && !o.mpi && o.cudaarch !== '86') ? '-DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : null,
     '-DPICLAS_READIN_CONSTANTS=' + onOff(o.readin),
+    o.debugmem ? '-DPICLAS_DEBUG_MEMORY=ON' : null,
     '-DPICLAS_PERFORMANCE='      + onOff(o.perf),
     '-DPICLAS_CODE_ANALYZE='     + onOff(o.analyze),
     '"-DPICLAS_INSTRUCTION='     + o.instruction + '"'
@@ -457,6 +565,17 @@ function updateAll() {
   // GPU runtime note
   document.getElementById('gpu-runtime-note').style.display = o.gpu ? 'block' : 'none';
 
+  // MPI-dependent toggles (LoadBalance, MEASURE_MPI_WAIT)
+  document.getElementById('row-loadbalance').style.display  = o.mpi ? 'flex'  : 'none';
+  document.getElementById('desc-loadbalance').style.display = o.mpi ? 'block' : 'none';
+  document.getElementById('row-mpiwait').style.display      = o.mpi ? 'flex'  : 'none';
+  document.getElementById('desc-mpiwait').style.display     = o.mpi ? 'block' : 'none';
+
+  // FV_2D is only meaningful with discrete_velocity (FV solver)
+  var showFV2D = (o.eqnsys === 'discrete_velocity');
+  document.getElementById('row-fv2d').style.display  = showFV2D ? 'flex'  : 'none';
+  document.getElementById('desc-fv2d').style.display = showFV2D ? 'block' : 'none';
+
   // GPU compatibility hint
   var gpuEl  = document.getElementById('compat-gpu');
   var gpuMsg = getGpuCompatMsg(o);
@@ -469,10 +588,19 @@ function updateAll() {
   var eqMsg = '';
   var es    = o.eqnsys;
   var td    = o.timedisc;
-  var HDG_INCOMPATIBLE = ['DSMC', 'FP-Flow', 'BGK-Flow', 'RK4-implicit'];
-  if (es === 'poisson' && HDG_INCOMPATIBLE.indexOf(td) >= 0) {
-    eqMsg = '\u274C Configure will FAIL: \u201C' + td + '\u201D is not supported with the Poisson (HDG) solver. '
-          + 'Switch to maxwell for DSMC/FP-Flow/BGK-Flow, or use Boris-Leapfrog / Leapfrog / RK3 / RK4 / RK14 with poisson.';
+  // Methods that require specific equation systems
+  var POISSON_ONLY       = ['Euler-Explicit', 'Higuera-Cary', 'Boris-Leapfrog', 'Leapfrog'];
+  var MAXWELL_ONLY       = ['DSMC', 'FP-Flow', 'BGK-Flow', 'Radiation'];
+  var DISCRETE_VEL_ONLY  = ['ED-DVM', 'PLOESMA'];
+  var FV_EQNSYS          = ['Explicit-FV'];
+  if (POISSON_ONLY.indexOf(td) >= 0 && es !== 'poisson') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires PICLAS_EQNSYSNAME=poisson (HDG solver). Switch to poisson or choose a different time method.';
+  } else if (MAXWELL_ONLY.indexOf(td) >= 0 && es !== 'maxwell') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires PICLAS_EQNSYSNAME=maxwell. Switch to maxwell or choose a different time method.';
+  } else if (DISCRETE_VEL_ONLY.indexOf(td) >= 0 && es !== 'discrete_velocity') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires PICLAS_EQNSYSNAME=discrete_velocity.';
+  } else if (FV_EQNSYS.indexOf(td) >= 0 && es !== 'discrete_velocity' && es !== 'drift_diffusion') {
+    eqMsg = '❌ Configure will FAIL: ' + td + ' requires a finite-volume equation system (discrete_velocity or drift_diffusion).';
   }
   eqEl.textContent   = eqMsg;
   eqEl.style.display = eqMsg ? 'block' : 'none';
@@ -481,16 +609,30 @@ function updateAll() {
   // Time-disc compatibility hint
   var el  = document.getElementById('compat-timedisc');
   var msg = '';
-  if (es === 'maxwell' && td === 'Leapfrog') {
-    msg = '\u26A0 Leapfrog is designed for electrostatic PIC, not Maxwell. Consider RK4 or Boris-Leapfrog.';
-  } else if (td === 'DSMC') {
-    msg = '\u2139 DSMC: particle collisions via Direct Simulation Monte Carlo. Requires particles (PICLAS_PARTICLES=ON, the default). Correct setting for the dsmc-cone-3D tutorial.';
+  if (POISSON_ONLY.indexOf(td) >= 0 && es !== 'poisson') {
+    msg = '';  // already shown in eqnsys hint
+  } else if ((td === 'RK4' || td === 'RK14') && es === 'maxwell') {
+    msg = 'ℹ maxwell + ' + td + ': LSERK particle push + DGSEM EM field solver. Combined DSMC+PIC-EM: build this and enable DSMC collision physics at runtime (Particles-DSMC-CollisMode=3 etc.). GPU push available (v1.0).';
+  } else if (td === 'DSMC' && es === 'maxwell') {
+    msg = 'ℹ Pure DSMC time loop (PP_TimeDiscMethod=4) — no EM field solve. For combined DSMC+PIC-EM, use maxwell+RK4 instead and enable Particles-DSMC-CollisMode at runtime.';
   } else if (td === 'FP-Flow' || td === 'BGK-Flow') {
-    msg = '\u2139 ' + td + ': stochastic particle method for transitional flow. Requires particles (PICLAS_PARTICLES=ON, the default).';
+    msg = 'ℹ ' + td + ': stochastic particle method for transitional flow. Requires PICLAS_PARTICLES=ON (the default).';
+  } else if (td === 'Radiation') {
+    msg = 'ℹ Radiation: radiative transfer solver. Enables ray-tracing and radiative-transfer physics. Requires maxwell.';
+  } else if (td === 'ED-DVM') {
+    msg = 'ℹ ED-DVM: explicit discrete-velocity method for Boltzmann equation (FV, no HDG). Requires discrete_velocity equation system.';
+  } else if (td === 'PLOESMA') {
+    msg = 'ℹ PLOESMA: plasma+DVM coupling (HDG fields + FV particles). Requires discrete_velocity equation system.';
+  } else if (td === 'Explicit-FV') {
+    msg = 'ℹ Explicit-FV: explicit finite-volume time stepping. Requires discrete_velocity or drift_diffusion equation system.';
+  } else if (td === 'Euler-Explicit') {
+    msg = 'ℹ Euler-Explicit (PP_TimeDiscMethod=500): 1st-order explicit Euler for HDG/Poisson. Requires poisson equation system.';
+  } else if (td === 'Higuera-Cary') {
+    msg = 'ℹ Higuera-Cary (PP_TimeDiscMethod=507): energy-conserving relativistic Boris variant. Requires poisson equation system.';
   }
   el.textContent   = msg;
   el.style.display = msg ? 'block' : 'none';
-  el.className     = msg.charAt(0) === '\u2139' ? 'compat info' : 'compat';
+  el.className     = msg.charAt(0) === 'ℹ' ? 'compat info' : 'compat';
 }
 
 // ── Clipboard helpers ─────────────────────────────────────────────────────────
@@ -516,23 +658,36 @@ function downloadBat() {
   var bp  = o.buildroot + '/' + dir;
   var bpWin = bp.replace(/\//g, '\\');
   var srcWin = o.srcroot.replace(/\//g, '\\');
-  var tg  = o.posti ? 'piclas piclas2vtk superB' : 'piclas';
+  var tgList = ['piclas'];
+  if (o.posti) {
+    tgList.push('piclas2vtk');
+    if (o.timedisc !== 'ED-DVM') tgList.push('superB');
+    if (o.dmd) tgList.push('dmd');
+  }
+  var tg = tgList.join(' ');
 
   // ── cmake -D flags (CMD-style quoting: double-quote the INSTRUCTION value) ──
   var defs =
     ' -DPICLAS_EQNSYSNAME=' + o.eqnsys +
     ' -DPICLAS_TIMEDISCMETHOD=' + o.timedisc +
     ' -DCMAKE_BUILD_TYPE=' + o.buildtype +
+    ' -DPICLAS_NODETYPE=' + o.nodetype +
     ' -DPICLAS_BUILD_POSTI=' + onOff(o.posti) +
+    (o.posti && o.dmd ? ' -DPOSTI_BUILD_DMD=ON' : '') +
+    (o.particles ? '' : ' -DPICLAS_PARTICLES=OFF') +
     ' -DPICLAS_UNITTESTS=' + onOff(o.unittests) +
     (o.mpi ? '' : ' -DLIBS_USE_MPI=OFF') +
+    (o.mpi && !o.loadbalance ? ' -DPICLAS_LOADBALANCE=OFF' : '') +
+    (o.mpi && o.mpiwait      ? ' -DPICLAS_MEASURE_MPI_WAIT=ON' : '') +
     ' -DLIBS_USE_PETSC=' + onOff(o.petsc) +
     (o.petsc ? ' -DLIBS_BUILD_PETSC=OFF' : '') +
     (o.petsc ? ' -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : '') +
+    (o.fv2d && o.eqnsys === 'discrete_velocity' ? ' -DPICLAS_FV_2D=ON' : '') +
     (o.gpu && o.mpi  ? ' -DPICLAS_USE_GPU=ON' : '') +
     (o.gpu && o.mpi  ? ' -DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : '') +
     (o.gpu && !o.mpi && o.cudaarch !== '86' ? ' -DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : '') +
     ' -DPICLAS_READIN_CONSTANTS=' + onOff(o.readin) +
+    (o.debugmem ? ' -DPICLAS_DEBUG_MEMORY=ON' : '') +
     ' -DPICLAS_PERFORMANCE=' + onOff(o.perf) +
     ' -DPICLAS_CODE_ANALYZE=' + onOff(o.analyze) +
     ' "-DPICLAS_INSTRUCTION=' + o.instruction + '"';
@@ -549,7 +704,7 @@ function downloadBat() {
     // PETSC_DIR is needed by the cmake find scripts when PETSc is enabled
     (o.petsc ? 'set PETSC_DIR=C:\\msys64\\ucrt64\r\n' : '') +
     'echo.\r\n' +
-    'echo  piclas-win 0.9.3 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
+    'echo  piclas-win 1.0 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
     'echo  Config : ' + dir + '\r\n' +
     'echo  Source : ' + srcWin + '\r\n' +
     'echo  Binary : ' + bpWin + '\r\n' +

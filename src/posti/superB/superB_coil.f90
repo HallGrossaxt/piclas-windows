@@ -544,32 +544,33 @@ SWRITE(UNIT_stdOut,'(A,I0,A)',ADVANCE='NO') ' AND WRITE GEOMETRY TO VTK FILE'
 WRITE(myFileName,'(A9,I3.3,A4)')'CoilMesh_',iCoil,'.vtk'
 nNodes = CoilInfo(iCoil)%NumNodes
 
-OPEN(1112,FILE=myFileName,STATUS='replace')
-WRITE(1112,'(A)')'# vtk DataFile Version 2.0'
-WRITE(1112,'(A)')'Debug Mesh'
-WRITE(1112,'(A)')'ASCII'
-WRITE(1112,'(A)')'DATASET UNSTRUCTURED_GRID'
-WRITE(1112,'(A)')''
-WRITE(1112,'(A,I0,A)')'POINTS ',nNodes,' FLOAT'
-DO iNode=1,nNodes
-  WRITE(1112,*) CoilNodes(1:3, iNode)
-END DO
-WRITE(1112,*)''
-WRITE(1112,'(A,I0,1X,I0)')'CELLS ',nNodes - 1,3*(nNodes - 1)
-DO iElem=1,nNodes - 1
-  WRITE(1112,'(I0)',ADVANCE="NO")2
-  WRITE(1112,'(1X,I0)',ADVANCE="NO") iElem - 1
-  WRITE(1112,'(1X,I0)',ADVANCE="NO") iElem
+IF(MPIRoot)THEN
+  OPEN(1112,FILE=myFileName,STATUS='replace')
+  WRITE(1112,'(A)')'# vtk DataFile Version 2.0'
+  WRITE(1112,'(A)')'Debug Mesh'
+  WRITE(1112,'(A)')'ASCII'
+  WRITE(1112,'(A)')'DATASET UNSTRUCTURED_GRID'
+  WRITE(1112,'(A)')''
+  WRITE(1112,'(A,I0,A)')'POINTS ',nNodes,' FLOAT'
+  DO iNode=1,nNodes
+    WRITE(1112,*) CoilNodes(1:3, iNode)
+  END DO
   WRITE(1112,*)''
-END DO
-WRITE(1112,*)''
-WRITE(1112,'(A,I0)')'CELL_TYPES ',nNodes - 1
-DO iElem=1,nNodes - 1
-  WRITE(1112,'(1X,I0)',ADVANCE="NO")3
-END DO
-WRITE(1112,*)''
-
-CLOSE(1112)
+  WRITE(1112,'(A,I0,1X,I0)')'CELLS ',nNodes - 1,3*(nNodes - 1)
+  DO iElem=1,nNodes - 1
+    WRITE(1112,'(I0)',ADVANCE="NO")2
+    WRITE(1112,'(1X,I0)',ADVANCE="NO") iElem - 1
+    WRITE(1112,'(1X,I0)',ADVANCE="NO") iElem
+    WRITE(1112,*)''
+  END DO
+  WRITE(1112,*)''
+  WRITE(1112,'(A,I0)')'CELL_TYPES ',nNodes - 1
+  DO iElem=1,nNodes - 1
+    WRITE(1112,'(1X,I0)',ADVANCE="NO")3
+  END DO
+  WRITE(1112,*)''
+  CLOSE(1112)
+END IF ! MPIRoot
 
 END SUBROUTINE WriteCoilVTK
 
@@ -611,72 +612,74 @@ IF(nNodesTotal.EQ.0) RETURN
 SWRITE(UNIT_stdOut,'(A)',ADVANCE='NO') ' WRITE GEOMETRY OF LINEAR CONDUCTORS TO VTK'
 WRITE(myFileName,'(A19)')'LinearConductor.vtk'
 
-OPEN(1112,FILE=myFileName,STATUS='replace')
-WRITE(1112,'(A)')'# vtk DataFile Version 2.0'
-WRITE(1112,'(A)')'Debug Mesh'
-WRITE(1112,'(A)')'ASCII'
-WRITE(1112,'(A)')'DATASET UNSTRUCTURED_GRID'
-WRITE(1112,'(A)')''
-WRITE(1112,'(A,I0,A)')'POINTS ',nNodesTotal,' FLOAT'
+IF(MPIRoot)THEN
+  OPEN(1112,FILE=myFileName,STATUS='replace')
+  WRITE(1112,'(A)')'# vtk DataFile Version 2.0'
+  WRITE(1112,'(A)')'Debug Mesh'
+  WRITE(1112,'(A)')'ASCII'
+  WRITE(1112,'(A)')'DATASET UNSTRUCTURED_GRID'
+  WRITE(1112,'(A)')''
+  WRITE(1112,'(A,I0,A)')'POINTS ',nNodesTotal,' FLOAT'
 
-! Write all points
-DO iCoil=1,NumOfCoils
-  ! Skip other types
-  IF(TRIM(CoilInfo(iCoil)%Type).NE.'linear') CYCLE
-  nNodes = CoilInfo(iCoil)%NumNodes
-  DO iNode=1,nNodes
-    WRITE(1112,*) CoilInfo(iCoil)%CoilNodes(1:3, iNode)
-  END DO
-END DO
-
-WRITE(1112,*)''
-WRITE(1112,'(A,I0,1X,I0)')'CELLS ',nCellsTotal, 3*nCellsTotal
-
-! Write connectivity for each conductor separately
-nodeOffset = 0
-DO iCoil=1,NumOfCoils
-  ! Skip other types
-  IF(TRIM(CoilInfo(iCoil)%Type).NE.'linear') CYCLE
-  nNodes = CoilInfo(iCoil)%NumNodes
-
-  ! Create line segments within this coil only
-  DO iNode=1,nNodes-1
-    WRITE(1112,'(I0)',ADVANCE="NO") 2
-    WRITE(1112,'(1X,I0)',ADVANCE="NO") nodeOffset + iNode - 1
-    WRITE(1112,'(1X,I0)',ADVANCE="NO") nodeOffset + iNode
-    WRITE(1112,*)''
+  ! Write all points
+  DO iCoil=1,NumOfCoils
+    ! Skip other types
+    IF(TRIM(CoilInfo(iCoil)%Type).NE.'linear') CYCLE
+    nNodes = CoilInfo(iCoil)%NumNodes
+    DO iNode=1,nNodes
+      WRITE(1112,*) CoilInfo(iCoil)%CoilNodes(1:3, iNode)
+    END DO
   END DO
 
-  ! Update node offset for next coil
-  nodeOffset = nodeOffset + nNodes
-END DO
+  WRITE(1112,*)''
+  WRITE(1112,'(A,I0,1X,I0)')'CELLS ',nCellsTotal, 3*nCellsTotal
 
-WRITE(1112,*)''
-WRITE(1112,'(A,I0)')'CELL_TYPES ',nCellsTotal
-DO iElem=1,nCellsTotal
-  WRITE(1112,'(1X,I0)',ADVANCE="NO") 3
-END DO
-WRITE(1112,*)''
+  ! Write connectivity for each conductor separately
+  nodeOffset = 0
+  DO iCoil=1,NumOfCoils
+    ! Skip other types
+    IF(TRIM(CoilInfo(iCoil)%Type).NE.'linear') CYCLE
+    nNodes = CoilInfo(iCoil)%NumNodes
 
-! Add cell data for current values
-WRITE(1112,*)''
-WRITE(1112,'(A,I0)')'CELL_DATA ',nCellsTotal
-WRITE(1112,'(A)')'SCALARS Current FLOAT'
-WRITE(1112,'(A)')'LOOKUP_TABLE default'
+    ! Create line segments within this coil only
+    DO iNode=1,nNodes-1
+      WRITE(1112,'(I0)',ADVANCE="NO") 2
+      WRITE(1112,'(1X,I0)',ADVANCE="NO") nodeOffset + iNode - 1
+      WRITE(1112,'(1X,I0)',ADVANCE="NO") nodeOffset + iNode
+      WRITE(1112,*)''
+    END DO
 
-! Write current value for each cell (line segment)
-DO iCoil=1,NumOfCoils
-  ! Skip other types
-  IF(TRIM(CoilInfo(iCoil)%Type).NE.'linear') CYCLE
-  nNodes = CoilInfo(iCoil)%NumNodes
-
-  ! Write current value for each line segment in this coil
-  DO iNode=1,nNodes-1
-    WRITE(1112,*) CoilInfo(iCoil)%Current
+    ! Update node offset for next coil
+    nodeOffset = nodeOffset + nNodes
   END DO
-END DO
 
-CLOSE(1112)
+  WRITE(1112,*)''
+  WRITE(1112,'(A,I0)')'CELL_TYPES ',nCellsTotal
+  DO iElem=1,nCellsTotal
+    WRITE(1112,'(1X,I0)',ADVANCE="NO") 3
+  END DO
+  WRITE(1112,*)''
+
+  ! Add cell data for current values
+  WRITE(1112,*)''
+  WRITE(1112,'(A,I0)')'CELL_DATA ',nCellsTotal
+  WRITE(1112,'(A)')'SCALARS Current FLOAT'
+  WRITE(1112,'(A)')'LOOKUP_TABLE default'
+
+  ! Write current value for each cell (line segment)
+  DO iCoil=1,NumOfCoils
+    ! Skip other types
+    IF(TRIM(CoilInfo(iCoil)%Type).NE.'linear') CYCLE
+    nNodes = CoilInfo(iCoil)%NumNodes
+
+    ! Write current value for each line segment in this coil
+    DO iNode=1,nNodes-1
+      WRITE(1112,*) CoilInfo(iCoil)%Current
+    END DO
+  END DO
+
+  CLOSE(1112)
+END IF ! MPIRoot
 
 SWRITE(UNIT_stdOut,'(A)') ' DONE!'
 

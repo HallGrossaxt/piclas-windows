@@ -70,6 +70,9 @@ INTEGER                     :: allowedRejections, PartsEmitted, Node1, Node2, gl
 REAL                        :: Particle_pos(3), RandVal1,  xyzNod(3), RVec(2), minPos(2), xi(2), Vector1(3), Vector2(3)
 REAL                        :: ndist(3), midpoint(3)
 REAL                        :: MPF
+#if USE_MPI
+REAL                        :: tmpAdaptBCPartNumOut
+#endif /*USE_MPI*/
 LOGICAL                     :: AcceptPos
 REAL,ALLOCATABLE            :: particle_xis(:)!, particle_positions(:)
 INTEGER,ALLOCATABLE         :: PartInsSubSides(:,:,:)
@@ -95,7 +98,9 @@ DO iSpec=1,nSpecies
     ! Adaptive BC, Type = 4 (Const. massflow): Sum-up the global number of particles exiting through BC and calculate new weights
     IF(SF%AdaptiveType.EQ.4) THEN
 #if USE_MPI
-      CALL MPI_ALLREDUCE(MPI_IN_PLACE,AdaptBCPartNumOut(iSpec,iSF),1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,IERROR)
+      ! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) drops root's contribution; use an explicit send buffer.
+      tmpAdaptBCPartNumOut = AdaptBCPartNumOut(iSpec,iSF)
+      CALL MPI_ALLREDUCE(tmpAdaptBCPartNumOut,AdaptBCPartNumOut(iSpec,iSF),1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,IERROR)
 #endif
       IF(.NOT.ALMOSTEQUAL(SF%AdaptiveMassflow,0.)) CALL CalcConstMassflowWeight(iSpec,iSF)
     END IF
@@ -1146,6 +1151,9 @@ INTEGER, INTENT(IN)             :: iSpec, iSF
 INTEGER                         :: iSide, BCSideID, ElemID, SideID, currentBC, iSample, jSample, SampleElemID, iSub
 REAL                            :: VeloVec(1:3), vec_nIn(1:3), nVFRTotal, VeloIC, VeloVecIC(1:3), projFak
 REAL                            :: v_thermal, a, vSF, nVFR, area
+#if USE_MPI
+REAL                            :: tmpnVFRTotal
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 ASSOCIATE(SF => Species(iSpec)%Surfaceflux(iSF))
@@ -1252,7 +1260,11 @@ END DO
 
 ! Calculate the total volume flow rate over the whole BC across all processors
 #if USE_MPI
-CALL MPI_ALLREDUCE(MPI_IN_PLACE,nVFRTotal,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,IERROR)
+! MS-MPI MPI_ALLREDUCE(MPI_IN_PLACE,...) drops root's contribution. A corrupted (under-summed or zeroed)
+! nVFRTotal would inflate the normalised ConstMassflowWeight below, driving runaway particle insertion
+! and an OS-freezing memory exhaustion. Use an explicit send buffer.
+tmpnVFRTotal = nVFRTotal
+CALL MPI_ALLREDUCE(tmpnVFRTotal,nVFRTotal,1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,IERROR)
 #endif
 
 ! Determine the weight of each side compared to the total volume flow rate
