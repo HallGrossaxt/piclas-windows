@@ -775,6 +775,10 @@ ELSEIF(PICLAS_USE_GPU)
 ENDIF()
 ADD_EXEC(piclas ./src/piclas.f90)
 ADD_DEPENDENCIES(piclas libpiclasstatic userblocklib stacksizelib globlib memusagelib ${INTERNALLIBS})
+# piclas-win: this is an unofficial, modified Windows port of PICLas (GPLv3 §5a — mark the
+# modified work and avoid confusion with the official upstream "piclas" binary). Build the
+# executable as "piclas-win" (piclas-win.exe on Windows). The CMake target stays "piclas".
+SET_TARGET_PROPERTIES(piclas PROPERTIES OUTPUT_NAME "piclas-win")
 # GPU on Windows: piclas.exe does not link CUDA objects or cudart directly.
 # libpiclasGPU.dll is loaded via LoadLibrary in gpu_loader.c (part of libpiclas.dll).
 # No CUDA symbols in piclas.exe's IAT — no loader deadlock.

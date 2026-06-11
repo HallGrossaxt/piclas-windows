@@ -73,7 +73,7 @@ void piclas_gpu_load_library(void)
         fprintf(stderr,
             "[GPU] Cannot load libpiclasGPU.dll (error %lu).\n"
             "      Ensure libpiclasGPU.dll and cudart64_13.dll are in the\n"
-            "      same directory as piclas.exe (bin/).\n",
+            "      same directory as piclas-win.exe (bin/).\n",
             (unsigned long)GetLastError());
         exit(EXIT_FAILURE);
     }
