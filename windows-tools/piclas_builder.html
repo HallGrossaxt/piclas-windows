@@ -79,8 +79,8 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
       </div>
       <div>
         <span class="field-label">Output executable destination &mdash; copy target after build (optional)</span>
-        <input type="text" id="inp-outfile" placeholder="e.g. C:/Users/myuser/bin/piclas.exe" oninput="updateAll()">
-        <div class="desc">If set, <code>piclas.exe</code> is copied here after a successful build. Leave blank to skip the copy step.</div>
+        <input type="text" id="inp-outfile" placeholder="e.g. C:/Users/myuser/bin/piclas-win.exe" oninput="updateAll()">
+        <div class="desc">If set, <code>piclas-win.exe</code> is copied here after a successful build. Leave blank to skip the copy step.</div>
       </div>
     </div>
 
@@ -339,7 +339,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
       <code style="display:block;margin-top:6px;">
         export HDF5_USE_FILE_LOCKING=FALSE<br>
         export PATH=/c/msys64/ucrt64/bin:$PATH<br>
-        mpiexec -n 4 bin/piclas.exe parameter.ini DSMC.ini
+        mpiexec -n 4 bin/piclas-win.exe parameter.ini DSMC.ini
       </code>
     </div>
 
@@ -354,7 +354,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
       <em>DSMC push</em> &mdash; time method = <b>DSMC</b>, constant dt, no rotating reference frame, no granular species, no surface flux, not axisymmetric.<br>
       <em>RK4 / RK14 LSERK push</em> (v1.0) &mdash; time method = <b>RK4</b> or <b>RK14</b> with <b>maxwell</b>, constant dt, no rotating reference frame, no coupled power, no field ionization.<br>
       <b>Distribution</b> &mdash; copy <code>cudart64_13.dll</code> from
-      <code>%CUDA_PATH%\bin\x64\</code> into the same folder as <code>piclas.exe</code> for deployment on machines without the CUDA Toolkit installed.
+      <code>%CUDA_PATH%\bin\x64\</code> into the same folder as <code>piclas-win.exe</code> for deployment on machines without the CUDA Toolkit installed.
     </div>
 
   </div><!-- /panel-right -->
@@ -743,11 +743,11 @@ function downloadBat() {
     ')\r\n' +
     'echo.\r\n' +
     'echo BUILD SUCCEEDED\r\n' +
-    'echo Binary in: ' + bpWin + '\\bin\\piclas.exe\r\n' +
+    'echo Binary in: ' + bpWin + '\\bin\\piclas-win.exe\r\n' +
     (o.outfile ?
       'echo.\r\n' +
-      'echo Copying piclas.exe to ' + o.outfile + '\r\n' +
-      'copy /Y "' + bpWin + '\\bin\\piclas.exe" "' + o.outfile.replace(/\//g, '\\') + '"\r\n' +
+      'echo Copying piclas-win.exe to ' + o.outfile + '\r\n' +
+      'copy /Y "' + bpWin + '\\bin\\piclas-win.exe" "' + o.outfile.replace(/\//g, '\\') + '"\r\n' +
       'if %ERRORLEVEL% neq 0 (\r\n' +
       '  echo WARNING: copy to output destination failed\r\n' +
       ')\r\n'
