@@ -212,6 +212,14 @@ projects, including:
 
 ---
 
+## Disclaimer
+
+This is an unofficial, community Windows port provided **"as is", without warranty of any kind** and
+**without any guarantee of support**. It is distributed under the GNU General Public License v3.0; see
+**sections 15 and 16** of [LICENCE.md](LICENCE.md) for the full disclaimer of warranty and limitation
+of liability. Use at your own risk. The original PICLas authors and contributors are **not**
+responsible for this port.
+
 ## Support, bugs, and questions
 
 * **For this Windows port** (build problems, Windows-specific bugs): please open an issue in *this*
