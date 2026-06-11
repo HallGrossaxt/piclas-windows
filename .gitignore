@@ -98,3 +98,6 @@ reggie/
 *.lib
 build-ucrt64*/
 windows-tools/*.bak
+
+# Claude Code local settings (developer-machine specific)
+.claude/
