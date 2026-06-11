@@ -93,8 +93,8 @@ procedure and the executable name (`piclas-win.exe`) differ.
 | [LAPACK](http://www.netlib.org/lapack/) / OpenBLAS | Dense linear algebra | via MSYS2 |
 | [PETSc](https://petsc.org/) 3.24.5 *(optional)* | HDG / implicit solvers, FPC | MSYS2 build is **sequential** (MPI=1 only) |
 | [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) 12.x + VS Build Tools 2022 *(optional)* | GPU particle push | GPU builds only |
-| [HOPR (hopr-win)](https://github.com/hopr-framework/hopr) | Mesh pre-processor | Windows port; needed for most test cases |
-| [reggie2.0](https://github.com/piclas-framework/reggie2.0) | Regression-test runner | Windows-patched; see below |
+| [hopr-win](https://github.com/HallGrossaxt/hopr-win) | Mesh pre-processor | Windows port of [HOPR](https://github.com/hopr-framework/hopr); needed for most test cases |
+| [reggie2.0-win](https://github.com/HallGrossaxt/reggie2.0-win) | Regression-test runner | Windows port of [reggie2.0](https://github.com/piclas-framework/reggie2.0); see below |
 | [Python](https://www.python.org/) 3.x | reggie + helper tooling | |
 
 > **Key constraints on Windows:**
@@ -163,8 +163,8 @@ Meshes are generated with the Windows HOPR port (`hopr-win`).
 
 ## Regression Testing (Windows / reggie2.0 port)
 
-Continuous-integration regression testing uses a **Windows-patched build of the
-[reggie2.0](https://github.com/piclas-framework/reggie2.0) test runner**, driving the test
+Continuous-integration regression testing uses the **[reggie2.0-win](https://github.com/HallGrossaxt/reggie2.0-win)
+test runner** (the Windows port of [reggie2.0](https://github.com/piclas-framework/reggie2.0)), driving the test
 definitions under [`regressioncheck/`](regressioncheck/). The reggie port adds Windows fixes such as
 an `.exe` binary-lookup fallback, thread-based pipe reading (replacing POSIX `select`), and correct
 `excludeBuild.ini` handling in external-binary mode.
@@ -200,8 +200,8 @@ distributions, mean fluxes) rather than bit-for-bit agreement with Linux-generat
 `piclas-win` uses several external libraries as well as auxiliary functions from open source
 projects, including:
 
-* [HOPR (High Order Preprocessor)](https://github.com/hopr-framework/hopr) — Windows port: `hopr-win`
-* [reggie2.0](https://github.com/piclas-framework/reggie2.0) — regression-test runner (Windows-patched)
+* [hopr-win](https://github.com/HallGrossaxt/hopr-win) — Windows port of [HOPR (High Order Preprocessor)](https://github.com/hopr-framework/hopr)
+* [reggie2.0-win](https://github.com/HallGrossaxt/reggie2.0-win) — Windows port of the [reggie2.0](https://github.com/piclas-framework/reggie2.0) regression-test runner
 * [cmake](https://www.cmake.org) and [Ninja](https://ninja-build.org/)
 * [LAPACK](http://www.netlib.org/lapack/) / [OpenBLAS](https://www.openblas.net/)
 * [MS-MPI](https://learn.microsoft.com/message-passing-interface/microsoft-mpi) (Microsoft MPI)
