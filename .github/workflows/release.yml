@@ -76,6 +76,18 @@ jobs:
             echo "  packaged ${tool}-${TAG}-win64.zip"
           done
 
+          # --- DSMC 70deg cone 2D example case (source + pre-converted mesh) ---
+          # Self-contained run case: parameter.ini + DSMC.ini + the CGNS 5-BC mesh
+          # (already converted, so no HOPR needed by the end user). reference/ keeps
+          # the source geometry and hopr_cgns.ini so the mesh can be regenerated.
+          EX="tutorials/dsmc-cone-2D"
+          rm -rf example && mkdir -p example/reference
+          cp "$EX/parameter.ini" "$EX/DSMC.ini" "$EX/70degCone_2D_mesh.h5" "$EX/README.md" example/
+          cp "$EX/70degCone_2DSurf.geo" "$EX/70degCone_2DSurf.step" \
+             "$EX/70degCone_2D_mesh.cgns" "$EX/hopr_cgns.ini" example/reference/
+          ( cd example && zip -qr "$GITHUB_WORKSPACE/out/dsmc-cone-2D-example-${TAG}.zip" . )
+          echo "  packaged dsmc-cone-2D-example-${TAG}.zip"
+
           ( cd out && sha256sum *.zip > SHA256SUMS.txt )
           echo "=== release assets ==="
           ls -l out
@@ -98,10 +110,14 @@ jobs:
             | `piclas-win-*-win64.zip` | DSMC + MPI + GPU solver (`piclas-win.exe`) |
             | `piclas2vtk-*-win64.zip` | HDF5 → VTK post-processor (`piclas2vtk.exe`) |
             | `superB-*-win64.zip` | Magnetic-field POSTI tool (`superB.exe`) |
+            | `dsmc-cone-2D-example-*.zip` | Ready-to-run DSMC example case (mesh pre-converted) |
 
             **Runtime notes**
             - **MPI** (`mpiexec -n N`) needs the Microsoft MPI runtime (`msmpisetup.exe`). Single-process runs work as-is.
             - **GPU** builds need an NVIDIA driver (no CUDA Toolkit at runtime).
+
+            **Example:** unzip `dsmc-cone-2D-example-*.zip` and run
+            `piclas-win.exe parameter.ini DSMC.ini` (see its `README.md`). ~30 min single-process.
 
             Verify downloads against `SHA256SUMS.txt`. Source and license (GPLv3) are in this repository.
           files: |
