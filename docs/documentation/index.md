@@ -5,7 +5,13 @@
 % ---
 % ```
 
-# Welcome to the PICLas Documentation!
+# Welcome to the piclas-win Documentation!
+
+> This documents the **unofficial Windows port** of PICLas (`piclas-win`,
+> [HallGrossaxt/piclas-windows](https://github.com/HallGrossaxt/piclas-windows)). Platform-specific
+> pages (installation, cluster guide, git workflow) describe the **Windows** build and link to the
+> upstream Linux original; everything platform-independent (physics, parameters, usage) applies
+> unchanged. Upstream original: <https://piclas.readthedocs.io/en/latest/>
 
 ```{image} ../logo.png
 :alt: logo
