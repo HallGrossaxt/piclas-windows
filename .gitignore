@@ -67,6 +67,14 @@ userblock.tmp
 *f90.orig
 commit.h
 
+# local helper scripts / personal working notes (not part of the project)
+/gitpush.bat
+/windows-tools/tracks.txt
+
+# gmsh mesh source for the dsmc-cone-2D tutorial (the shipped example uses the
+# pre-converted CGNS mesh; regenerate this with hopr_gmsh.ini only if needed)
+/tutorials/dsmc-cone-2D/70degCone_2D.msh
+
 CMakeCache.txt
 ctags.txt
 CMakeFiles/
