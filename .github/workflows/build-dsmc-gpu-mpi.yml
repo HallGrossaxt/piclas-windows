@@ -20,6 +20,7 @@ on:
       - 'CMakeLists.txt'
       - 'CMakePresets.json'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -137,15 +138,21 @@ jobs:
           if not exist build-maxwell-dsmc-release-mpi-gpu\bin\libpiclasGPU.dll (exit /b 1)
 
       # ------------------------------------------------------------------ #
-      - name: Upload binaries
+      # Assemble a self-contained, runnable bundle (binary + full UCRT64
+      # runtime DLL closure + CUDA/MS-MPI runtime) so the artifact runs on a
+      # clean Windows box without an MSYS2 install on PATH.
+      - name: Bundle runtime DLLs
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          bash .github/scripts/bundle_dlls.sh \
+            build-maxwell-dsmc-release-mpi-gpu/bin/piclas-win.exe \
+            dist/piclas-win
+
+      - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
-          name: piclas-dsmc-gpu-mpi-win64-${{ github.sha }}
-          path: |
-            build-maxwell-dsmc-release-mpi-gpu/bin/piclas-win.exe
-            build-maxwell-dsmc-release-mpi-gpu/bin/libpiclas.dll
-            build-maxwell-dsmc-release-mpi-gpu/bin/libpiclasGPU.dll
-            build-maxwell-dsmc-release-mpi-gpu/bin/cudart64_*.dll
+          name: piclas-win-win64
+          path: dist/piclas-win
           if-no-files-found: error
           retention-days: 14
 

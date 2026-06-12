@@ -1,0 +1,110 @@
+name: Release
+
+# Build the Windows tools and publish a GitHub Release with self-contained,
+# runnable portable ZIPs (each contains the binary + its full UCRT64 runtime
+# DLL closure, so it runs on a clean Windows box without an MSYS2 install).
+#
+# Trigger: push a version tag, e.g.
+#   git tag v1.1 && git push origin v1.1
+# or run manually (workflow_dispatch) and supply the tag to release.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.1). Must already exist.'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  # --- Reuse the existing build workflows (they bundle the runtime DLLs and
+  #     upload the runnable bundle as an artifact). ---
+  build-piclas:
+    uses: ./.github/workflows/build-dsmc-gpu-mpi.yml
+  build-piclas2vtk:
+    uses: ./.github/workflows/build-piclas2vtk.yml
+  build-superb:
+    uses: ./.github/workflows/build-superb.yml
+
+  release:
+    name: Package and publish release
+    needs: [build-piclas, build-piclas2vtk, build-superb]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for LICENCE / version)
+        uses: actions/checkout@v4
+
+      - name: Download all build bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble portable ZIPs + checksums
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          echo "Releasing tag: $TAG"
+          mkdir -p out
+
+          # License file may be spelled LICENCE.md or LICENSE.
+          LIC=""
+          for f in LICENCE.md LICENSE LICENSE.md; do [ -f "$f" ] && LIC="$f" && break; done
+
+          for d in artifacts/*/; do
+            name=$(basename "$d")          # e.g. piclas-win-win64
+            tool=${name%-win64}            # e.g. piclas-win
+            [ -n "$LIC" ] && cp -f "$LIC" "$d/"
+            printf '%s\n' \
+              "$tool — unofficial Windows port  (release $TAG)" \
+              "" \
+              "Runs on Windows 10/11 x64. All required UCRT64 runtime DLLs are bundled here," \
+              "so no MSYS2 installation is needed on the target machine." \
+              "" \
+              "MPI runs (mpiexec -n N ...) additionally require the Microsoft MPI runtime —" \
+              "install msmpisetup.exe from Microsoft. Single-process runs work without it." \
+              "GPU builds require an NVIDIA driver (no CUDA Toolkit needed at runtime)." \
+              "" \
+              "Source code and license (GPLv3): https://github.com/HallGrossaxt/piclas-windows" \
+              > "$d/README.txt"
+            ( cd "$d" && zip -qr "$GITHUB_WORKSPACE/out/${tool}-${TAG}-win64.zip" . )
+            echo "  packaged ${tool}-${TAG}-win64.zip"
+          done
+
+          ( cd out && sha256sum *.zip > SHA256SUMS.txt )
+          echo "=== release assets ==="
+          ls -l out
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: piclas-win ${{ inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          body: |
+            **piclas-win ${{ inputs.tag || github.ref_name }}** — unofficial Windows port of PICLas.
+
+            Portable, self-contained Windows x64 builds (MSYS2 UCRT64 toolchain). Each ZIP contains
+            the executable plus its full runtime DLL closure, so it runs on a clean Windows 10/11
+            machine **without installing MSYS2**.
+
+            | Asset | Tool |
+            |-------|------|
+            | `piclas-win-*-win64.zip` | DSMC + MPI + GPU solver (`piclas-win.exe`) |
+            | `piclas2vtk-*-win64.zip` | HDF5 → VTK post-processor (`piclas2vtk.exe`) |
+            | `superB-*-win64.zip` | Magnetic-field POSTI tool (`superB.exe`) |
+
+            **Runtime notes**
+            - **MPI** (`mpiexec -n N`) needs the Microsoft MPI runtime (`msmpisetup.exe`). Single-process runs work as-is.
+            - **GPU** builds need an NVIDIA driver (no CUDA Toolkit at runtime).
+
+            Verify downloads against `SHA256SUMS.txt`. Source and license (GPLv3) are in this repository.
+          files: |
+            out/*.zip
+            out/SHA256SUMS.txt
+          fail_on_unmatched_files: true

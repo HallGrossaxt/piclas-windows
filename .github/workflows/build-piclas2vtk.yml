@@ -22,6 +22,7 @@ on:
       - 'CMakeLists.txt'
       - 'CMakePresets.json'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -94,12 +95,17 @@ jobs:
           dir build-maxwell-dsmc-release-mpi-posti\bin
           if not exist build-maxwell-dsmc-release-mpi-posti\bin\piclas2vtk.exe (exit /b 1)
 
-      - name: Upload binary
+      - name: Bundle runtime DLLs
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          bash .github/scripts/bundle_dlls.sh \
+            build-maxwell-dsmc-release-mpi-posti/bin/piclas2vtk.exe \
+            dist/piclas2vtk
+
+      - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
-          name: piclas2vtk-win64-${{ github.sha }}
-          path: |
-            build-maxwell-dsmc-release-mpi-posti/bin/piclas2vtk.exe
-            build-maxwell-dsmc-release-mpi-posti/bin/libpiclas.dll
+          name: piclas2vtk-win64
+          path: dist/piclas2vtk
           if-no-files-found: error
           retention-days: 14
