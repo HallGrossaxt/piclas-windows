@@ -212,10 +212,15 @@ ENDFOREACH()
 # =========================================================================
 # HOPR pre-processor
 # =========================================================================
-OPTION(LIBS_BUILD_HOPR "Build HOPR pre-processor by compiling the source code downloaded from https://github.com/hopr-framework/hopr.git" OFF)
+# Windows port: HOPR is the hopr-win fork (Windows-buildable). The upstream Linux source is
+# https://github.com/hopr-framework/hopr.git.
+OPTION(LIBS_BUILD_HOPR "Build HOPR pre-processor by compiling the source code downloaded from https://github.com/HallGrossaxt/hopr-win.git" OFF)
 SET(HOPR_TAG "v1.2.0" CACHE STRING "HOPR version tag for downloading the executable or compiling the source code (from GitHub)")
+# NOTE: the pre-built HOPR AppImage below is a Linux x86_64 binary and is NOT usable on Windows.
+# On Windows, build HOPR from source via LIBS_BUILD_HOPR (hopr-win) or use a separately built
+# hopr-win/build_windows/bin/hopr.exe. This Linux download stays OFF.
 SET(HOPR_DOWNLOAD_URL "https://github.com/hopr-framework/hopr/releases/download/${HOPR_TAG}/hopr-linux64.zip")
-OPTION(LIBS_DOWNLOAD_HOPR "Download HOPR pre-processor AppImage executable from ${HOPR_DOWNLOAD_URL}" OFF)
+OPTION(LIBS_DOWNLOAD_HOPR "Download HOPR pre-processor AppImage executable from ${HOPR_DOWNLOAD_URL} (Linux only; not for Windows)" OFF)
 
 # =========================================================================
 # ADD LIBRARIES

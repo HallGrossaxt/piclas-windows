@@ -150,7 +150,6 @@ stages:
   - reggie_nightly
   - reggie_weekly
   - reggie_tutorials
-  - deploy
   - appimage
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -737,7 +736,7 @@ build_hopr:
     - *reggie_cache
   stage: build_weekly
   script:
-    - git clone https://github.com/hopr-framework/hopr.git hopr;
+    - git clone https://github.com/HallGrossaxt/hopr-win.git hopr;   # Windows port: use the hopr-win fork, not the Linux upstream
     - cd hopr ; mkdir -p build ; cd build;
     - echo `pwd`
     - cmake .. -DLIBS_BUILD_HDF5=OFF
@@ -1607,37 +1606,12 @@ documentation:
       - docs/documentation
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------
-# Stage "github": Push the master branch to github
+# NOTE (Windows port): the upstream "github" deploy job (force-push master to the
+# piclas-framework/piclas GitHub mirror) and the "github_create_appimage" job
+# (force-push to scopplestone/piclas-testing) have been removed. This unofficial
+# Windows fork does not push to the upstream origin. Building is done by the
+# GitHub Actions workflows in .github/workflows/.
 # ----------------------------------------------------------------------------------------------------------------------------------------------------
-github:
-  stage: deploy
-  tags: [deploy]
-  rules:
-    - if: '$DO_DEPLOY'
-  script:
-    - if [ -z "${DO_DEPLOY}" ]; then exit ; fi
-    - rm -rf piclas_github || true ;
-    - git clone -b master --single-branch git@piclas.boltzplatz.eu:piclas/piclas.git piclas_github ;
-    - cd piclas_github ;
-    - git remote add piclas-framework git@github.com:piclas-framework/piclas.git ;
-    - git push --force --follow-tags piclas-framework master ;
-
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-# Stage "appimage": Push the CI_COMMIT_REF_NAME branch to github to invoke creating the AppImages
-# ----------------------------------------------------------------------------------------------------------------------------------------------------
-github_create_appimage:
-  tags: [appimage]
-  stage: appimage
-  rules:
-    - if: '$DO_CREATE_APPIMAGE'
-  script:
-    - if [ -z "${DO_CREATE_APPIMAGE}" ]; then exit; fi
-    - if [ -z "${CI_COMMIT_REF_NAME}" ]; then echo "CI_COMMIT_REF_NAME is empty"; exit; else echo "Cloning ${CI_COMMIT_REF_NAME}"; fi
-    - rm -rf piclas-testing || true ;
-    - git clone -b ${CI_COMMIT_REF_NAME} --single-branch git@piclas.boltzplatz.eu:piclas/piclas.git piclas-testing
-    - cd piclas-testing
-    - git remote add piclas-testing git@github.com-reggie2.0:scopplestone/piclas-testing.git
-    - git push --force piclas-testing ${CI_COMMIT_REF_NAME}
 
 # ----------------------------------------------------------------------------------------------------------------------------------------------------
 # Stage "appimage": Download the AppImages from the piclas-testing repository and test them

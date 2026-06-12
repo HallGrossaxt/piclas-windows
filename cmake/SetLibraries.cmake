@@ -759,7 +759,8 @@ ENDIF()
 # HOPR pre-processor
 # =========================================================================
 IF(LIBS_BUILD_HOPR)
-  SET (HOPRDOWNLOAD "https://github.com/hopr-framework/hopr.git")
+  # Windows port: build HOPR from the Windows fork (hopr-win), not the Linux upstream source.
+  SET (HOPRDOWNLOAD "https://github.com/HallGrossaxt/hopr-win.git")
   SET (HOPR_DOWNLOAD ${HOPRDOWNLOAD} CACHE STRING "HOPR Download-link")
   MESSAGE (STATUS "HOPR download link: ${HOPRDOWNLOAD}")
   MARK_AS_ADVANCED(FORCE HOPR_DOWNLOAD)
