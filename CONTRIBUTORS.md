@@ -1,6 +1,10 @@
-# List of Contributors
+# Contributors
 
-This is a (possibly incomplete) list of the people who contributed to PICLas.
+## Original PICLas authors
+
+`piclas-win` is a Windows port of [PICLas](https://github.com/piclas-framework/piclas).
+Essentially all of the solver's physics and numerics in this repository were written by the
+original PICLas contributors, to whom full credit is due (list possibly incomplete):
 
 * Christoph Altmann
 * Muhammed Atak
@@ -50,3 +54,16 @@ This is a (possibly incomplete) list of the people who contributed to PICLas.
 * Torsten Stindl
 * Andreas Stock
 * Raphael Tietz
+
+The original, unmodified work is © 2010–2018 Prof. Claus-Dieter Munz and Prof. Stefanos Fasoulas and
+the PICLas contributors, and remains available unmodified at
+https://github.com/piclas-framework/piclas.
+
+## Windows port
+
+The Windows-portability changes in this repository (see the change summary in [README.md](README.md))
+were made by:
+
+* Andreas Lopp
+
+The original authors above are **not** involved in, and bear no responsibility for, this port.

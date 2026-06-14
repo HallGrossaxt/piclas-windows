@@ -27,9 +27,9 @@ that you modified it, and giving a relevant date"), we note:
 * **This is a modified version of PICLas.** The original work is © 2010–2018 Prof. Claus-Dieter Munz
   and Prof. Stefanos Fasoulas and the PICLas contributors, and remains available unmodified at
   https://github.com/piclas-framework/piclas.
-* The Windows port (`piclas-win`) was created and has been modified during **2026** by the
-  maintainers of this repository. The nature of the changes is summarised below and tracked in the
-  commit history of this repository.
+* The Windows port (`piclas-win`) was created and modified during **2026** by Andreas Lopp
+  (see [CONTRIBUTORS.md](CONTRIBUTORS.md)). The nature of the changes is summarised below and tracked
+  in the commit history of this repository.
 * The complete corresponding source for these modifications is this repository itself.
 * The startup banner of the program identifies the running binary as
   `piclas-win <version> -- unofficial Windows port, based on PICLas 4.1.0`.
