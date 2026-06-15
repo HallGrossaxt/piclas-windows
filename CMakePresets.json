@@ -254,7 +254,7 @@
         "PICLAS_EQNSYSNAME":        "maxwell",
         "PICLAS_TIMEDISCMETHOD":    "DSMC",
         "PICLAS_USE_GPU":           "ON",
-        "CMAKE_CUDA_ARCHITECTURES": "86",
+        "CMAKE_CUDA_ARCHITECTURES": "75-real;86-real;89-real;90-virtual",
         "CMAKE_CUDA_COMPILER":      "nvcc",
         "PICLAS_UNITTESTS":         "OFF"
       }

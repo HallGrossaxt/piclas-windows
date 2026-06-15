@@ -196,13 +196,15 @@ GETLISTOFVARSSTARTINGWITH("LIBS_"   piclasVars5)
 FOREACH (_var IN LISTS piclasVars1 piclasVars2 piclasVars3 piclasVars4 piclasVars5)
   GET_PROPERTY(currentHelpString CACHE "${_var}" PROPERTY HELPSTRING)
   # Skip empty variables
-  IF(NOT ${${_var}} STREQUAL "")
-    SET(boolian (${${_var}} STREQUAL "ON" OR ${${_var}} STREQUAL "OFF"))
-    IF(${boolian})
+  # Quote every value expansion: a cache variable may hold a ;-separated list
+  # (e.g. CMAKE_CUDA_ARCHITECTURES = "75-real;86-real;89-real;90-virtual"), which
+  # would otherwise expand into multiple IF/STRING arguments and error out.
+  IF(NOT "${${_var}}" STREQUAL "")
+    IF("${${_var}}" STREQUAL "ON" OR "${${_var}}" STREQUAL "OFF")
       FILE(APPEND ${configuration} "OPTION(${_var} \"${currentHelpString}\" ${${_var}})\n")
     ELSE()
       IF(${_var})
-        STRING(REPLACE "\\" "\\\\" ${_var} ${${_var}})
+        STRING(REPLACE "\\" "\\\\" ${_var} "${${_var}}")
       ENDIF()
       FILE(APPEND ${configuration} "SET(${_var} \"${${_var}}\" CACHE STRING \"${currentHelpString}\")\n")
     ENDIF()
