@@ -2,10 +2,11 @@ name: Release
 
 # Build the Windows tools and publish a GitHub Release with two self-contained,
 # runnable portable ZIPs — an MPI build and a no-MPI (serial) build. Each ZIP has
-# a shared bin/ holding all three tool executables (piclas-win, piclas2vtk,
-# superB) plus a single copy of their common UCRT64 runtime DLL closure, plus a
-# ready-to-run example/ case — so it runs on a clean Windows box without an MSYS2
-# install. The no-MPI ZIP additionally needs no Microsoft MPI runtime installed.
+# a per-tool folder (piclas-win/, piclas2vtk/, superB/), each holding its
+# executable plus the UCRT64 runtime DLLs it needs, plus a ready-to-run example/
+# case — so it runs on a clean Windows box without an MSYS2 install. (Each tool
+# ships its own libpiclas.dll built from a different preset, so they cannot share
+# a single bin/.) The no-MPI ZIP additionally needs no Microsoft MPI runtime.
 #
 # Trigger: push a version tag, e.g.
 #   git tag v1.1 && git push origin v1.1
@@ -88,45 +89,29 @@ jobs:
           LIC=""
           for f in LICENCE.md LICENSE LICENSE.md; do [ -f "$f" ] && LIC="$f" && break; done
 
-          # Merge one tool bundle into a destination bin/, deduping byte-identical
-          # files. Each per-tool bundle (from bundle_dlls.sh) carries its own full
-          # UCRT64 runtime DLL closure; those DLLs come from the same MSYS2
-          # toolchain on the same runner and are byte-identical across tools, so we
-          # keep ONE copy. Tool executables are unique. A same-name-but-different-
-          # content file cannot coexist in a flat bin/ (Windows loader), so fail
-          # loudly rather than ship a broken bundle.
-          merge_into() {
-            local destbin="$1" src="$2"
-            for f in "$src"/*; do
-              [ -f "$f" ] || continue
-              local base; base="$(basename "$f")"
-              local dst="$destbin/$base"
-              if [ ! -e "$dst" ]; then
-                cp -f "$f" "$dst"
-              elif ! cmp -s "$f" "$dst"; then
-                echo "ERROR: '$base' differs between tool bundles; cannot merge into a single bin/." >&2
-                echo "       conflicting source: $f" >&2
-                exit 1
-              fi
-            done
-          }
-
           # Build one consolidated, self-contained ZIP from three tool bundles.
           #   $1 = package dir name (also the zip basename)
           #   $2 = mode: 'mpi' or 'nompi' (controls README wording)
-          #   $3 $4 $5 = the three artifact dirs (piclas, piclas2vtk, superB)
+          #   $3 $4 $5 = "<subdir>=<artifact-dir>" for piclas-win / piclas2vtk / superB
+          #
+          # Each tool gets its OWN subfolder. The three tools are built from
+          # different CMake presets and each ships its own libpiclas.dll (and the
+          # GPU build also libpiclasGPU.dll), which are NOT interchangeable, so a
+          # single shared bin/ is not possible — keep each bundle self-contained
+          # in its own directory next to the shared example/.
           build_bundle() {
             local pkg="$1" mode="$2"; shift 2
-            rm -rf "$pkg"; mkdir -p "$pkg/bin"
-            for d in "$@"; do
-              echo "  merging bundle: $d -> $pkg/bin"
-              merge_into "$pkg/bin" "$d"
+            rm -rf "$pkg"; mkdir -p "$pkg"
+            for spec in "$@"; do
+              local sub="${spec%%=*}" src="${spec#*=}"
+              echo "  $src -> $pkg/$sub"
+              mkdir -p "$pkg/$sub"
+              cp -a "$src"/. "$pkg/$sub/"
             done
 
-            for exe in piclas-win.exe piclas2vtk.exe superB.exe; do
-              test -f "$pkg/bin/$exe" || { echo "ERROR: missing $exe in $pkg"; exit 1; }
-            done
-            echo "  $pkg/bin: $(ls -1 "$pkg/bin" | wc -l) files"
+            test -f "$pkg/piclas-win/piclas-win.exe" || { echo "ERROR: missing piclas-win.exe in $pkg"; exit 1; }
+            test -f "$pkg/piclas2vtk/piclas2vtk.exe" || { echo "ERROR: missing piclas2vtk.exe in $pkg"; exit 1; }
+            test -f "$pkg/superB/superB.exe"         || { echo "ERROR: missing superB.exe in $pkg"; exit 1; }
 
             [ -n "$LIC" ] && cp -f "$LIC" "$pkg/"
 
@@ -141,20 +126,21 @@ jobs:
             printf '%s\n' \
               "piclas-win — unofficial Windows port of PICLas  (release $TAG)" \
               "" \
-              "Self-contained: bin/ holds all three tools plus the shared UCRT64 runtime" \
-              "DLLs, so they run on a clean Windows 10/11 x64 box without an MSYS2 install." \
+              "Self-contained: each tool has its own folder with the executable plus the" \
+              "UCRT64 runtime DLLs it needs, so they run on a clean Windows 10/11 x64 box" \
+              "without an MSYS2 install." \
               "" \
-              "  bin/piclas-win.exe   $solver" \
-              "  bin/piclas2vtk.exe   HDF5 (State / DSMCState / PartStateBoundary) -> VTK for ParaView" \
-              "  bin/superB.exe       magnetic-field (B-field) POSTI pre-processor" \
+              "  piclas-win\\piclas-win.exe   $solver" \
+              "  piclas2vtk\\piclas2vtk.exe   HDF5 (State / DSMCState / PartStateBoundary) -> VTK for ParaView" \
+              "  superB\\superB.exe           magnetic-field (B-field) POSTI pre-processor" \
               "" \
               "$mpi_note" \
               "GPU runs require an NVIDIA driver (no CUDA Toolkit needed at runtime)." \
               "" \
               "example/  ready-to-run DSMC 70deg-cone 2D case (mesh pre-converted):" \
               "    cd example" \
-              "    ..\\bin\\piclas-win.exe parameter.ini DSMC.ini" \
-              "    ..\\bin\\piclas2vtk.exe <State-file>.h5      (convert output for ParaView)" \
+              "    ..\\piclas-win\\piclas-win.exe parameter.ini DSMC.ini" \
+              "    ..\\piclas2vtk\\piclas2vtk.exe <State-file>.h5      (convert output for ParaView)" \
               "" \
               "Source code and license (GPLv3): https://github.com/HallGrossaxt/piclas-windows" \
               > "$pkg/README.txt"
@@ -174,11 +160,15 @@ jobs:
 
           # MPI variant (default presets)
           build_bundle "piclas-win-${TAG}-win64" mpi \
-            artifacts/piclas-win-win64 artifacts/piclas2vtk-win64 artifacts/superB-win64
+            "piclas-win=artifacts/piclas-win-win64" \
+            "piclas2vtk=artifacts/piclas2vtk-win64" \
+            "superB=artifacts/superB-win64"
 
           # No-MPI (serial) variant
           build_bundle "piclas-win-nompi-${TAG}-win64" nompi \
-            artifacts/piclas-win-nompi-win64 artifacts/piclas2vtk-nompi-win64 artifacts/superB-nompi-win64
+            "piclas-win=artifacts/piclas-win-nompi-win64" \
+            "piclas2vtk=artifacts/piclas2vtk-nompi-win64" \
+            "superB=artifacts/superB-nompi-win64"
 
           ( cd out && sha256sum *.zip > SHA256SUMS.txt )
           echo "=== release assets ==="
@@ -193,21 +183,22 @@ jobs:
           body: |
             **piclas-win ${{ inputs.tag || github.ref_name }}** — unofficial Windows port of PICLas.
 
-            Portable, self-contained Windows x64 downloads (MSYS2 UCRT64 toolchain). Each ZIP's `bin/`
-            holds all three tools sharing a single copy of the runtime DLL closure, so they run on a
-            clean Windows 10/11 machine **without installing MSYS2**. Pick **one**:
+            Portable, self-contained Windows x64 downloads (MSYS2 UCRT64 toolchain). Each ZIP has a
+            per-tool folder (`piclas-win/`, `piclas2vtk/`, `superB/`), each with its executable plus
+            the runtime DLLs it needs, so they run on a clean Windows 10/11 machine **without
+            installing MSYS2**. Pick **one**:
 
             | Asset | For | Contents |
             |-------|-----|----------|
-            | `piclas-win-*-win64.zip` | Has Microsoft MPI (parallel `mpiexec` runs) | `bin/piclas-win.exe` (DSMC + MPI + GPU), `bin/piclas2vtk.exe` (HDF5 → VTK), `bin/superB.exe` (B-field POSTI), shared runtime DLLs, ready-to-run `example/` |
-            | `piclas-win-nompi-*-win64.zip` | **No MPI installed** (single-process only) | Same three tools built **without MPI** (DSMC + GPU), shared runtime DLLs, ready-to-run `example/` |
+            | `piclas-win-*-win64.zip` | Has Microsoft MPI (parallel `mpiexec` runs) | `piclas-win/` (DSMC + MPI + GPU), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-nompi-*-win64.zip` | **No MPI installed** (single-process only) | Same three tools built **without MPI** (DSMC + GPU), each self-contained, plus ready-to-run `example/` |
 
             **Runtime notes**
             - The `nompi` build runs single-process only and needs **no** MS-MPI install. The MPI build's parallel runs (`mpiexec -n N`) need the Microsoft MPI runtime (`msmpisetup.exe`); its single-process runs work as-is.
             - **GPU** needs an NVIDIA driver (no CUDA Toolkit at runtime) in both builds.
 
-            **Example:** unzip, then `cd example && ..\bin\piclas-win.exe parameter.ini DSMC.ini`
-            (see its `README.md`); convert output with `..\bin\piclas2vtk.exe <State>.h5`. ~30 min single-process.
+            **Example:** unzip, then `cd example && ..\piclas-win\piclas-win.exe parameter.ini DSMC.ini`
+            (see its `README.md`); convert output with `..\piclas2vtk\piclas2vtk.exe <State>.h5`. ~30 min single-process.
 
             Verify downloads against `SHA256SUMS.txt`. Source and license (GPLv3) are in this repository.
           files: |
