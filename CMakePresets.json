@@ -448,6 +448,47 @@
         "PICLAS_EQNSYSNAME":     "maxwell",
         "PICLAS_TIMEDISCMETHOD": "BGK-Flow"
       }
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-gpu",
+      "displayName": "Windows - maxwell + DSMC + GPU (no MPI)",
+      "description": "DSMC + GPU push WITHOUT MPI (serial). No-MPI deployment variant of windows-maxwell-dsmc-release-mpi-gpu, for end users with no MPI runtime installed. Requires CUDA Toolkit + MSVC cl.exe (auto-found by SetGPU.cmake).",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-release-gpu",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":        "maxwell",
+        "PICLAS_TIMEDISCMETHOD":    "DSMC",
+        "PICLAS_USE_GPU":           "ON",
+        "CMAKE_CUDA_ARCHITECTURES": "75-real;86-real;89-real;90-virtual",
+        "CMAKE_CUDA_COMPILER":      "nvcc",
+        "PICLAS_UNITTESTS":         "OFF"
+      }
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-posti",
+      "displayName": "Windows - maxwell + DSMC + POSTI (piclas2vtk, no MPI)",
+      "description": "DSMC + POSTI tools (piclas2vtk) WITHOUT MPI (serial). No-MPI deployment variant of windows-maxwell-dsmc-release-mpi-posti. Same equation/timedisc as the no-MPI DSMC build so the resulting piclas2vtk can post-process its State / DSMCState / PartStateBoundary files.",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-maxwell-dsmc-release-posti",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "DSMC",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
+      "name": "windows-maxwell-superb",
+      "displayName": "Windows - maxwell + RK3 + SuperB POSTI (no MPI)",
+      "description": "superB magnetic-field POSTI tool WITHOUT MPI (serial). No-MPI deployment variant of windows-maxwell-superb-mpi.",
+      "inherits": "windows-ucrt64",
+      "binaryDir": "${sourceDir}/build-maxwell-superb",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "maxwell",
+        "PICLAS_TIMEDISCMETHOD": "RK3",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_SUPERB":    "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -609,6 +650,21 @@
     {
       "name": "windows-maxwell-bgk-debug-mpi",
       "configurePreset": "windows-maxwell-bgk-debug-mpi",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-gpu",
+      "configurePreset": "windows-maxwell-dsmc-release-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-dsmc-release-posti",
+      "configurePreset": "windows-maxwell-dsmc-release-posti",
+      "jobs": 0
+    },
+    {
+      "name": "windows-maxwell-superb",
+      "configurePreset": "windows-maxwell-superb",
       "jobs": 0
     }
   ]

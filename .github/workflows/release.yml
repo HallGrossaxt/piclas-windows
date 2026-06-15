@@ -1,8 +1,11 @@
 name: Release
 
-# Build the Windows tools and publish a GitHub Release with self-contained,
-# runnable portable ZIPs (each contains the binary + its full UCRT64 runtime
-# DLL closure, so it runs on a clean Windows box without an MSYS2 install).
+# Build the Windows tools and publish a GitHub Release with two self-contained,
+# runnable portable ZIPs — an MPI build and a no-MPI (serial) build. Each ZIP has
+# a shared bin/ holding all three tool executables (piclas-win, piclas2vtk,
+# superB) plus a single copy of their common UCRT64 runtime DLL closure, plus a
+# ready-to-run example/ case — so it runs on a clean Windows box without an MSYS2
+# install. The no-MPI ZIP additionally needs no Microsoft MPI runtime installed.
 #
 # Trigger: push a version tag, e.g.
 #   git tag v1.1 && git push origin v1.1
@@ -25,6 +28,7 @@ permissions:
 jobs:
   # --- Reuse the existing build workflows (they bundle the runtime DLLs and
   #     upload the runnable bundle as an artifact). ---
+  # --- MPI variant (default presets) -> piclas-win-<TAG>-win64.zip ---
   build-piclas:
     uses: ./.github/workflows/build-dsmc-gpu-mpi.yml
   build-piclas2vtk:
@@ -32,9 +36,37 @@ jobs:
   build-superb:
     uses: ./.github/workflows/build-superb.yml
 
+  # --- No-MPI (serial) variant -> piclas-win-nompi-<TAG>-win64.zip ---
+  # Same tools built against the serial (LIBS_USE_MPI=OFF) presets, for users
+  # who have no Microsoft MPI runtime installed. DSMC + GPU is retained.
+  build-piclas-nompi:
+    uses: ./.github/workflows/build-dsmc-gpu-mpi.yml
+    with:
+      preset: windows-maxwell-dsmc-release-gpu
+      build_dir: build-maxwell-dsmc-release-gpu
+      artifact_name: piclas-win-nompi-win64
+  build-piclas2vtk-nompi:
+    uses: ./.github/workflows/build-piclas2vtk.yml
+    with:
+      preset: windows-maxwell-dsmc-release-posti
+      build_dir: build-maxwell-dsmc-release-posti
+      artifact_name: piclas2vtk-nompi-win64
+  build-superb-nompi:
+    uses: ./.github/workflows/build-superb.yml
+    with:
+      preset: windows-maxwell-superb
+      build_dir: build-maxwell-superb
+      artifact_name: superB-nompi-win64
+
   release:
     name: Package and publish release
-    needs: [build-piclas, build-piclas2vtk, build-superb]
+    needs:
+      - build-piclas
+      - build-piclas2vtk
+      - build-superb
+      - build-piclas-nompi
+      - build-piclas2vtk-nompi
+      - build-superb-nompi
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (for LICENCE / version)
@@ -56,37 +88,97 @@ jobs:
           LIC=""
           for f in LICENCE.md LICENSE LICENSE.md; do [ -f "$f" ] && LIC="$f" && break; done
 
-          for d in artifacts/*/; do
-            name=$(basename "$d")          # e.g. piclas-win-win64
-            tool=${name%-win64}            # e.g. piclas-win
-            [ -n "$LIC" ] && cp -f "$LIC" "$d/"
+          # Merge one tool bundle into a destination bin/, deduping byte-identical
+          # files. Each per-tool bundle (from bundle_dlls.sh) carries its own full
+          # UCRT64 runtime DLL closure; those DLLs come from the same MSYS2
+          # toolchain on the same runner and are byte-identical across tools, so we
+          # keep ONE copy. Tool executables are unique. A same-name-but-different-
+          # content file cannot coexist in a flat bin/ (Windows loader), so fail
+          # loudly rather than ship a broken bundle.
+          merge_into() {
+            local destbin="$1" src="$2"
+            for f in "$src"/*; do
+              [ -f "$f" ] || continue
+              local base; base="$(basename "$f")"
+              local dst="$destbin/$base"
+              if [ ! -e "$dst" ]; then
+                cp -f "$f" "$dst"
+              elif ! cmp -s "$f" "$dst"; then
+                echo "ERROR: '$base' differs between tool bundles; cannot merge into a single bin/." >&2
+                echo "       conflicting source: $f" >&2
+                exit 1
+              fi
+            done
+          }
+
+          # Build one consolidated, self-contained ZIP from three tool bundles.
+          #   $1 = package dir name (also the zip basename)
+          #   $2 = mode: 'mpi' or 'nompi' (controls README wording)
+          #   $3 $4 $5 = the three artifact dirs (piclas, piclas2vtk, superB)
+          build_bundle() {
+            local pkg="$1" mode="$2"; shift 2
+            rm -rf "$pkg"; mkdir -p "$pkg/bin"
+            for d in "$@"; do
+              echo "  merging bundle: $d -> $pkg/bin"
+              merge_into "$pkg/bin" "$d"
+            done
+
+            for exe in piclas-win.exe piclas2vtk.exe superB.exe; do
+              test -f "$pkg/bin/$exe" || { echo "ERROR: missing $exe in $pkg"; exit 1; }
+            done
+            echo "  $pkg/bin: $(ls -1 "$pkg/bin" | wc -l) files"
+
+            [ -n "$LIC" ] && cp -f "$LIC" "$pkg/"
+
+            local solver mpi_note
+            if [ "$mode" = nompi ]; then
+              solver="DSMC + GPU solver (no MPI)"
+              mpi_note=$'This build is compiled WITHOUT MPI: it runs single-process only and needs\nno Microsoft MPI installation. (For multi-process mpiexec runs, use the\npiclas-win-'"$TAG"$'-win64.zip build instead.)'
+            else
+              solver="DSMC + MPI + GPU solver"
+              mpi_note=$'These are MPI builds. Parallel runs (mpiexec -n N ...) require the Microsoft\nMPI runtime — install msmpisetup.exe from Microsoft. Single-process runs work\nwithout it.'
+            fi
             printf '%s\n' \
-              "$tool — unofficial Windows port  (release $TAG)" \
+              "piclas-win — unofficial Windows port of PICLas  (release $TAG)" \
               "" \
-              "Runs on Windows 10/11 x64. All required UCRT64 runtime DLLs are bundled here," \
-              "so no MSYS2 installation is needed on the target machine." \
+              "Self-contained: bin/ holds all three tools plus the shared UCRT64 runtime" \
+              "DLLs, so they run on a clean Windows 10/11 x64 box without an MSYS2 install." \
               "" \
-              "MPI runs (mpiexec -n N ...) additionally require the Microsoft MPI runtime —" \
-              "install msmpisetup.exe from Microsoft. Single-process runs work without it." \
-              "GPU builds require an NVIDIA driver (no CUDA Toolkit needed at runtime)." \
+              "  bin/piclas-win.exe   $solver" \
+              "  bin/piclas2vtk.exe   HDF5 (State / DSMCState / PartStateBoundary) -> VTK for ParaView" \
+              "  bin/superB.exe       magnetic-field (B-field) POSTI pre-processor" \
+              "" \
+              "$mpi_note" \
+              "GPU runs require an NVIDIA driver (no CUDA Toolkit needed at runtime)." \
+              "" \
+              "example/  ready-to-run DSMC 70deg-cone 2D case (mesh pre-converted):" \
+              "    cd example" \
+              "    ..\\bin\\piclas-win.exe parameter.ini DSMC.ini" \
+              "    ..\\bin\\piclas2vtk.exe <State-file>.h5      (convert output for ParaView)" \
               "" \
               "Source code and license (GPLv3): https://github.com/HallGrossaxt/piclas-windows" \
-              > "$d/README.txt"
-            ( cd "$d" && zip -qr "$GITHUB_WORKSPACE/out/${tool}-${TAG}-win64.zip" . )
-            echo "  packaged ${tool}-${TAG}-win64.zip"
-          done
+              > "$pkg/README.txt"
 
-          # --- DSMC 70deg cone 2D example case (source + pre-converted mesh) ---
-          # Self-contained run case: parameter.ini + DSMC.ini + the CGNS 5-BC mesh
-          # (already converted, so no HOPR needed by the end user). reference/ keeps
-          # the source geometry and hopr_cgns.ini so the mesh can be regenerated.
-          EX="tutorials/dsmc-cone-2D"
-          rm -rf example && mkdir -p example/reference
-          cp "$EX/parameter.ini" "$EX/DSMC.ini" "$EX/70degCone_2D_mesh.h5" "$EX/README.md" example/
-          cp "$EX/70degCone_2DSurf.geo" "$EX/70degCone_2DSurf.step" \
-             "$EX/70degCone_2D_mesh.cgns" "$EX/hopr_cgns.ini" example/reference/
-          ( cd example && zip -qr "$GITHUB_WORKSPACE/out/dsmc-cone-2D-example-${TAG}.zip" . )
-          echo "  packaged dsmc-cone-2D-example-${TAG}.zip"
+            # DSMC 70deg cone 2D example: parameter.ini + DSMC.ini + the pre-converted
+            # CGNS 5-BC mesh (no HOPR needed by the end user); reference/ keeps the
+            # source geometry + hopr_cgns.ini so the mesh can be regenerated.
+            local EX="tutorials/dsmc-cone-2D"
+            mkdir -p "$pkg/example/reference"
+            cp "$EX/parameter.ini" "$EX/DSMC.ini" "$EX/70degCone_2D_mesh.h5" "$EX/README.md" "$pkg/example/"
+            cp "$EX/70degCone_2DSurf.geo" "$EX/70degCone_2DSurf.step" \
+               "$EX/70degCone_2D_mesh.cgns" "$EX/hopr_cgns.ini" "$pkg/example/reference/"
+
+            ( cd "$pkg" && zip -qr "$GITHUB_WORKSPACE/out/${pkg}.zip" . )
+            echo "  packaged ${pkg}.zip"
+          }
+
+          # MPI variant (default presets)
+          build_bundle "piclas-win-${TAG}-win64" mpi \
+            artifacts/piclas-win-win64 artifacts/piclas2vtk-win64 artifacts/superB-win64
+
+          # No-MPI (serial) variant
+          build_bundle "piclas-win-nompi-${TAG}-win64" nompi \
+            artifacts/piclas-win-nompi-win64 artifacts/piclas2vtk-nompi-win64 artifacts/superB-nompi-win64
 
           ( cd out && sha256sum *.zip > SHA256SUMS.txt )
           echo "=== release assets ==="
@@ -101,23 +193,21 @@ jobs:
           body: |
             **piclas-win ${{ inputs.tag || github.ref_name }}** — unofficial Windows port of PICLas.
 
-            Portable, self-contained Windows x64 builds (MSYS2 UCRT64 toolchain). Each ZIP contains
-            the executable plus its full runtime DLL closure, so it runs on a clean Windows 10/11
-            machine **without installing MSYS2**.
+            Portable, self-contained Windows x64 downloads (MSYS2 UCRT64 toolchain). Each ZIP's `bin/`
+            holds all three tools sharing a single copy of the runtime DLL closure, so they run on a
+            clean Windows 10/11 machine **without installing MSYS2**. Pick **one**:
 
-            | Asset | Tool |
-            |-------|------|
-            | `piclas-win-*-win64.zip` | DSMC + MPI + GPU solver (`piclas-win.exe`) |
-            | `piclas2vtk-*-win64.zip` | HDF5 → VTK post-processor (`piclas2vtk.exe`) |
-            | `superB-*-win64.zip` | Magnetic-field POSTI tool (`superB.exe`) |
-            | `dsmc-cone-2D-example-*.zip` | Ready-to-run DSMC example case (mesh pre-converted) |
+            | Asset | For | Contents |
+            |-------|-----|----------|
+            | `piclas-win-*-win64.zip` | Has Microsoft MPI (parallel `mpiexec` runs) | `bin/piclas-win.exe` (DSMC + MPI + GPU), `bin/piclas2vtk.exe` (HDF5 → VTK), `bin/superB.exe` (B-field POSTI), shared runtime DLLs, ready-to-run `example/` |
+            | `piclas-win-nompi-*-win64.zip` | **No MPI installed** (single-process only) | Same three tools built **without MPI** (DSMC + GPU), shared runtime DLLs, ready-to-run `example/` |
 
             **Runtime notes**
-            - **MPI** (`mpiexec -n N`) needs the Microsoft MPI runtime (`msmpisetup.exe`). Single-process runs work as-is.
-            - **GPU** builds need an NVIDIA driver (no CUDA Toolkit at runtime).
+            - The `nompi` build runs single-process only and needs **no** MS-MPI install. The MPI build's parallel runs (`mpiexec -n N`) need the Microsoft MPI runtime (`msmpisetup.exe`); its single-process runs work as-is.
+            - **GPU** needs an NVIDIA driver (no CUDA Toolkit at runtime) in both builds.
 
-            **Example:** unzip `dsmc-cone-2D-example-*.zip` and run
-            `piclas-win.exe parameter.ini DSMC.ini` (see its `README.md`). ~30 min single-process.
+            **Example:** unzip, then `cd example && ..\bin\piclas-win.exe parameter.ini DSMC.ini`
+            (see its `README.md`); convert output with `..\bin\piclas2vtk.exe <State>.h5`. ~30 min single-process.
 
             Verify downloads against `SHA256SUMS.txt`. Source and license (GPLv3) are in this repository.
           files: |

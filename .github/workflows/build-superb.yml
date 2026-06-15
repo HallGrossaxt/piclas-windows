@@ -22,15 +22,36 @@ on:
       - 'CMakePresets.json'
   workflow_dispatch:
   workflow_call:
+    inputs:
+      preset:
+        description: 'CMake configure/build preset'
+        type: string
+        required: false
+      build_dir:
+        description: 'CMake binary directory for the preset'
+        type: string
+        required: false
+      artifact_name:
+        description: 'Name for the uploaded bundle artifact'
+        type: string
+        required: false
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: SuperB (Windows / MSYS2-UCRT64 + MS-MPI)
+    name: SuperB (Windows / MSYS2-UCRT64)
     runs-on: windows-2022
     timeout-minutes: 45
+
+    # Default to the MPI superB preset; release.yml overrides these to also build
+    # the no-MPI (serial) variant. The '|| default' fallback keeps push /
+    # pull_request CI runs (empty inputs context) building the MPI one.
+    env:
+      PRESET:    ${{ inputs.preset        || 'windows-maxwell-superb-mpi' }}
+      BUILD_DIR: ${{ inputs.build_dir     || 'build-maxwell-superb-mpi' }}
+      ARTIFACT:  ${{ inputs.artifact_name || 'superB-win64' }}
 
     defaults:
       run:
@@ -68,7 +89,7 @@ jobs:
           gfortran --version | head -1
           PREFIX=$(cygpath -m "$MINGW_PREFIX")
           echo "MSYS2 UCRT64 prefix (Windows form): $PREFIX"
-          cmake --preset windows-maxwell-superb-mpi \
+          cmake --preset "$PRESET" \
             -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"                    \
             -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"                        \
             -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"                      \
@@ -87,25 +108,25 @@ jobs:
       - name: Build superB target
         run: |
           export PATH="/ucrt64/bin:/usr/bin:$PATH"
-          cmake --build build-maxwell-superb-mpi --target superB -j
+          cmake --build "$BUILD_DIR" --target superB -j
 
       - name: Verify binary exists
         shell: cmd
         run: |
-          dir build-maxwell-superb-mpi\bin
-          if not exist build-maxwell-superb-mpi\bin\superB.exe (exit /b 1)
+          dir %BUILD_DIR%\bin
+          if not exist %BUILD_DIR%\bin\superB.exe (exit /b 1)
 
       - name: Bundle runtime DLLs
         run: |
           export PATH="/ucrt64/bin:/usr/bin:$PATH"
           bash .github/scripts/bundle_dlls.sh \
-            build-maxwell-superb-mpi/bin/superB.exe \
+            "$BUILD_DIR/bin/superB.exe" \
             dist/superB
 
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
-          name: superB-win64
+          name: ${{ env.ARTIFACT }}
           path: dist/superB
           if-no-files-found: error
           retention-days: 14
