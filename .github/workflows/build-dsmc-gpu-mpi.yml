@@ -34,11 +34,11 @@ on:
         description: 'Name for the uploaded bundle artifact'
         type: string
         required: false
-      gpu:
-        description: 'Build with CUDA GPU support (false = CPU-only fallback build)'
+      cpu_only:
+        description: 'Build WITHOUT CUDA GPU support (CPU-only fallback). Default false = GPU build.'
         type: boolean
         required: false
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -50,13 +50,17 @@ jobs:
     timeout-minutes: 90
 
     # Defaults to the MPI + GPU preset; release.yml overrides these to also build
-    # the CPU-only (gpu=false) fallback. The '|| default' / '!= false' patterns keep
-    # push / pull_request CI runs (empty inputs context) building the GPU one.
+    # the CPU-only (cpu_only=true) fallback. On push/PR the inputs context is empty,
+    # so inputs.cpu_only is null (falsy) -> GPU build, matching the default.
+    # NOTE: decide via truthiness (inputs.cpu_only / !inputs.cpu_only), NOT '!= false'.
+    # A prior 'gpu' input with 'inputs.gpu != false' broke push builds: on push
+    # inputs.gpu is null and GitHub coerces 'null != false' to FALSE, which disabled
+    # CUDA install while still selecting the GPU preset -> nvcc-not-found configure fail.
     env:
       PRESET:    ${{ inputs.preset        || 'windows-maxwell-dsmc-release-mpi-gpu' }}
       BUILD_DIR: ${{ inputs.build_dir     || 'build-maxwell-dsmc-release-mpi-gpu' }}
       ARTIFACT:  ${{ inputs.artifact_name || 'piclas-win-win64' }}
-      GPU:       ${{ inputs.gpu != false }}    # 'true' (default/push) or 'false'
+      GPU:       ${{ inputs.cpu_only && 'false' || 'true' }}    # 'false' only when explicitly cpu_only=true
 
     defaults:
       run:
@@ -103,7 +107,7 @@ jobs:
 
       # ------------------------------------------------------------------ #
       - name: Verify MSVC cl.exe is available (CUDA host compiler)
-        if: ${{ inputs.gpu != false }}
+        if: ${{ !inputs.cpu_only }}
         shell: cmd
         run: |
           dir "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" 2>nul || ^
@@ -116,7 +120,7 @@ jobs:
       # CUDAToolkit_VERSION_MAJOR.  RTX 3060 ⇒ compute capability 8.6.
       # ------------------------------------------------------------------ #
       - name: Install CUDA Toolkit
-        if: ${{ inputs.gpu != false }}
+        if: ${{ !inputs.cpu_only }}
         uses: Jimver/cuda-toolkit@v0.2.21
         id: cuda-toolkit
         with:
@@ -126,7 +130,7 @@ jobs:
           use-github-cache: true
 
       - name: Verify CUDA + nvcc
-        if: ${{ inputs.gpu != false }}
+        if: ${{ !inputs.cpu_only }}
         shell: cmd
         run: |
           where nvcc
@@ -147,17 +151,21 @@ jobs:
           gfortran --version | head -1
           PREFIX=$(cygpath -m "$MINGW_PREFIX")
           echo "MSYS2 UCRT64 prefix (Windows form): $PREFIX"
-          CUDA_ARG=""
+          # Build extra args in an array so the nvcc path (which contains spaces,
+          # e.g. C:/Program Files/NVIDIA GPU Computing Toolkit/...) stays a single
+          # argument. An unquoted string here word-splits and CMake misreads the
+          # tail as a stray preset path ("Could not read presets from .../Files/NVIDIA").
+          EXTRA=()
           if [ "$GPU" = "true" ]; then
             NVCC=$(cygpath -m "$CUDA_PATH")/bin/nvcc.exe
             echo "nvcc : $NVCC"
             test -x "$NVCC" || { echo "nvcc not at expected path"; ls "$(cygpath -m "$CUDA_PATH")/bin/"; exit 1; }
-            CUDA_ARG="-DCMAKE_CUDA_COMPILER=$NVCC"
+            EXTRA+=(-DCMAKE_CUDA_COMPILER="$NVCC")
           else
             echo "GPU disabled — CPU-only fallback build"
           fi
           cmake --preset "$PRESET" \
-            $CUDA_ARG                                                       \
+            "${EXTRA[@]}"                                                   \
             -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"                    \
             -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"                        \
             -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"                      \

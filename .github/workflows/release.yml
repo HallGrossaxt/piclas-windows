@@ -41,12 +41,12 @@ jobs:
     uses: ./.github/workflows/build-superb.yml
 
   # CPU-only fallback bundle -> piclas-win-nogpu-<TAG>-win64.zip
-  # Only the solver is rebuilt without GPU (gpu=false, no CUDA dll) for machines
+  # Only the solver is rebuilt without GPU (cpu_only=true, no CUDA dll) for machines
   # the GPU dll can't run on; piclas2vtk + superB are reused from above.
   build-piclas-nogpu:
     uses: ./.github/workflows/build-dsmc-gpu-mpi.yml
     with:
-      gpu: false
+      cpu_only: true
       preset: windows-maxwell-dsmc-release-mpi
       build_dir: build-maxwell-dsmc-release-mpi
       artifact_name: piclas-win-nogpu-win64
