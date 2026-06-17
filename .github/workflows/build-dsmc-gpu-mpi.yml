@@ -34,23 +34,29 @@ on:
         description: 'Name for the uploaded bundle artifact'
         type: string
         required: false
+      gpu:
+        description: 'Build with CUDA GPU support (false = CPU-only fallback build)'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   build:
-    name: DSMC + GPU (Windows / MSYS2-UCRT64 + CUDA + MSVC)
+    name: DSMC solver (Windows / MSYS2-UCRT64, +CUDA when gpu=true)
     runs-on: windows-2022
     timeout-minutes: 90
 
-    # Default to the MPI + GPU preset; release.yml overrides these to also build
-    # the no-MPI (serial) GPU variant. The '|| default' fallback keeps push /
-    # pull_request CI runs (where the inputs context is empty) building the MPI one.
+    # Defaults to the MPI + GPU preset; release.yml overrides these to also build
+    # the CPU-only (gpu=false) fallback. The '|| default' / '!= false' patterns keep
+    # push / pull_request CI runs (empty inputs context) building the GPU one.
     env:
       PRESET:    ${{ inputs.preset        || 'windows-maxwell-dsmc-release-mpi-gpu' }}
       BUILD_DIR: ${{ inputs.build_dir     || 'build-maxwell-dsmc-release-mpi-gpu' }}
       ARTIFACT:  ${{ inputs.artifact_name || 'piclas-win-win64' }}
+      GPU:       ${{ inputs.gpu != false }}    # 'true' (default/push) or 'false'
 
     defaults:
       run:
@@ -82,7 +88,22 @@ jobs:
             mingw-w64-ucrt-x86_64-python
 
       # ------------------------------------------------------------------ #
+      # Install the redistributable MS-MPI runtime so bundle_dlls.sh ships
+      # msmpi.dll in the zip (lets it run single-process with NO MS-MPI install).
+      - name: Install MS-MPI runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/microsoft/Microsoft-MPI/releases/download/v10.1.1/msmpisetup.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'msmpisetup.exe'
+          Invoke-WebRequest -Uri $url -OutFile $exe
+          Start-Process -FilePath $exe -ArgumentList '-unattend' -Wait
+          $dll = Join-Path $env:SystemRoot 'System32\msmpi.dll'
+          if (-not (Test-Path $dll)) { throw "msmpi.dll not found after install" }
+          Write-Host "MS-MPI runtime: $((Get-Item $dll).VersionInfo.FileVersion)"
+
+      # ------------------------------------------------------------------ #
       - name: Verify MSVC cl.exe is available (CUDA host compiler)
+        if: ${{ inputs.gpu != false }}
         shell: cmd
         run: |
           dir "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" 2>nul || ^
@@ -95,6 +116,7 @@ jobs:
       # CUDAToolkit_VERSION_MAJOR.  RTX 3060 ⇒ compute capability 8.6.
       # ------------------------------------------------------------------ #
       - name: Install CUDA Toolkit
+        if: ${{ inputs.gpu != false }}
         uses: Jimver/cuda-toolkit@v0.2.21
         id: cuda-toolkit
         with:
@@ -104,6 +126,7 @@ jobs:
           use-github-cache: true
 
       - name: Verify CUDA + nvcc
+        if: ${{ inputs.gpu != false }}
         shell: cmd
         run: |
           where nvcc
@@ -123,12 +146,18 @@ jobs:
           which gfortran
           gfortran --version | head -1
           PREFIX=$(cygpath -m "$MINGW_PREFIX")
-          NVCC=$(cygpath -m "$CUDA_PATH")/bin/nvcc.exe
           echo "MSYS2 UCRT64 prefix (Windows form): $PREFIX"
-          echo "nvcc                              : $NVCC"
-          test -x "$NVCC" || { echo "nvcc not at expected path"; ls "$(cygpath -m "$CUDA_PATH")/bin/"; exit 1; }
+          CUDA_ARG=""
+          if [ "$GPU" = "true" ]; then
+            NVCC=$(cygpath -m "$CUDA_PATH")/bin/nvcc.exe
+            echo "nvcc : $NVCC"
+            test -x "$NVCC" || { echo "nvcc not at expected path"; ls "$(cygpath -m "$CUDA_PATH")/bin/"; exit 1; }
+            CUDA_ARG="-DCMAKE_CUDA_COMPILER=$NVCC"
+          else
+            echo "GPU disabled — CPU-only fallback build"
+          fi
           cmake --preset "$PRESET" \
-            -DCMAKE_CUDA_COMPILER="$NVCC"                                   \
+            $CUDA_ARG                                                       \
             -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"                    \
             -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"                        \
             -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"                      \
@@ -156,7 +185,7 @@ jobs:
           dir %BUILD_DIR%\bin
           if not exist %BUILD_DIR%\bin\piclas-win.exe (exit /b 1)
           if not exist %BUILD_DIR%\bin\libpiclas.dll (exit /b 1)
-          if not exist %BUILD_DIR%\bin\libpiclasGPU.dll (exit /b 1)
+          if "%GPU%"=="true" if not exist %BUILD_DIR%\bin\libpiclasGPU.dll (exit /b 1)
 
       # ------------------------------------------------------------------ #
       # Assemble a self-contained, runnable bundle (binary + full UCRT64

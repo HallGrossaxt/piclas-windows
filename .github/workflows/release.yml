@@ -1,12 +1,13 @@
 name: Release
 
 # Build the Windows tools and publish a GitHub Release with two self-contained,
-# runnable portable ZIPs — an MPI build and a no-MPI (serial) build. Each ZIP has
-# a per-tool folder (piclas-win/, piclas2vtk/, superB/), each holding its
-# executable plus the UCRT64 runtime DLLs it needs, plus a ready-to-run example/
-# case — so it runs on a clean Windows box without an MSYS2 install. (Each tool
-# ships its own libpiclas.dll built from a different preset, so they cannot share
-# a single bin/.) The no-MPI ZIP additionally needs no Microsoft MPI runtime.
+# runnable portable ZIPs — a GPU build and a CPU-only (no-GPU) fallback. Each ZIP
+# has a per-tool folder (piclas-win/, piclas2vtk/, superB/), each holding its
+# executable plus the UCRT64 + MS-MPI runtime DLLs it needs (incl. bundled
+# msmpi.dll), plus a ready-to-run example/ case — so it runs on a clean Windows
+# box with NEITHER MSYS2 NOR MS-MPI installed (single-process; parallel mpiexec
+# still needs the full MS-MPI runtime). (Each tool ships its own libpiclas.dll
+# built from a different preset, so they cannot share a single bin/.)
 #
 # Trigger: push a version tag, e.g.
 #   git tag v1.1 && git push origin v1.1
@@ -27,9 +28,9 @@ permissions:
   contents: write
 
 jobs:
-  # --- Reuse the existing build workflows (they bundle the runtime DLLs and
-  #     upload the runnable bundle as an artifact). ---
-  # --- MPI variant (default presets) -> piclas-win-<TAG>-win64.zip ---
+  # --- Reuse the build workflows. Each bundles its full UCRT64 runtime DLL
+  #     closure + the redistributable msmpi.dll, and uploads a runnable bundle. ---
+  # GPU bundle: piclas-win (GPU) + piclas2vtk + superB  -> piclas-win-<TAG>-win64.zip
   build-piclas:
     uses: ./.github/workflows/build-dsmc-gpu-mpi.yml
   build-piclas2vtk:
@@ -37,27 +38,16 @@ jobs:
   build-superb:
     uses: ./.github/workflows/build-superb.yml
 
-  # --- No-MPI (serial) variant -> piclas-win-nompi-<TAG>-win64.zip ---
-  # Same tools built against the serial (LIBS_USE_MPI=OFF) presets, for users
-  # who have no Microsoft MPI runtime installed. DSMC + GPU is retained.
-  build-piclas-nompi:
+  # CPU-only fallback bundle -> piclas-win-nogpu-<TAG>-win64.zip
+  # Only the solver is rebuilt without GPU (gpu=false, no CUDA dll) for machines
+  # the GPU dll can't run on; piclas2vtk + superB are reused from above.
+  build-piclas-nogpu:
     uses: ./.github/workflows/build-dsmc-gpu-mpi.yml
     with:
-      preset: windows-maxwell-dsmc-release-gpu
-      build_dir: build-maxwell-dsmc-release-gpu
-      artifact_name: piclas-win-nompi-win64
-  build-piclas2vtk-nompi:
-    uses: ./.github/workflows/build-piclas2vtk.yml
-    with:
-      preset: windows-maxwell-dsmc-release-posti
-      build_dir: build-maxwell-dsmc-release-posti
-      artifact_name: piclas2vtk-nompi-win64
-  build-superb-nompi:
-    uses: ./.github/workflows/build-superb.yml
-    with:
-      preset: windows-maxwell-superb
-      build_dir: build-maxwell-superb
-      artifact_name: superB-nompi-win64
+      gpu: false
+      preset: windows-maxwell-dsmc-release-mpi
+      build_dir: build-maxwell-dsmc-release-mpi
+      artifact_name: piclas-win-nogpu-win64
 
   release:
     name: Package and publish release
@@ -65,9 +55,7 @@ jobs:
       - build-piclas
       - build-piclas2vtk
       - build-superb
-      - build-piclas-nompi
-      - build-piclas2vtk-nompi
-      - build-superb-nompi
+      - build-piclas-nogpu
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (for LICENCE / version)
@@ -91,7 +79,7 @@ jobs:
 
           # Build one consolidated, self-contained ZIP from three tool bundles.
           #   $1 = package dir name (also the zip basename)
-          #   $2 = mode: 'mpi' or 'nompi' (controls README wording)
+          #   $2 = mode: 'gpu' or 'nogpu' (controls README wording)
           #   $3 $4 $5 = "<subdir>=<artifact-dir>" for piclas-win / piclas2vtk / superB
           #
           # Each tool gets its OWN subfolder. The three tools are built from
@@ -115,27 +103,29 @@ jobs:
 
             [ -n "$LIC" ] && cp -f "$LIC" "$pkg/"
 
-            local solver mpi_note
-            if [ "$mode" = nompi ]; then
-              solver="DSMC + GPU solver (no MPI)"
-              mpi_note=$'This build is compiled WITHOUT MPI: it runs single-process only and needs\nno Microsoft MPI installation. (For multi-process mpiexec runs, use the\npiclas-win-'"$TAG"$'-win64.zip build instead.)'
+            local solver gpu_note
+            if [ "$mode" = nogpu ]; then
+              solver="DSMC + MPI solver (CPU-only, no GPU)"
+              gpu_note=$'CPU-only fallback build (no CUDA, no GPU DLL). Use this if the GPU build does\nnot run on your machine (unsupported GPU / driver). No NVIDIA driver required.'
             else
               solver="DSMC + MPI + GPU solver"
-              mpi_note=$'These are MPI builds. Parallel runs (mpiexec -n N ...) require the Microsoft\nMPI runtime — install msmpisetup.exe from Microsoft. Single-process runs work\nwithout it.'
+              gpu_note=$'Uses the GPU when an NVIDIA card + driver is present, else falls back to CPU.\nIf this build fails to start on your machine, use piclas-win-nogpu-'"$TAG"$'-win64.zip.'
             fi
+            local mpi_note=$'Self-contained MPI build: msmpi.dll is bundled, so SINGLE-PROCESS runs work on a\nmachine with NO Microsoft MPI installed. Parallel runs (mpiexec -n N ...) need the\nfull Microsoft MPI runtime (install msmpisetup.exe).'
             printf '%s\n' \
               "piclas-win — unofficial Windows port of PICLas  (release $TAG)" \
               "" \
               "Self-contained: each tool has its own folder with the executable plus the" \
-              "UCRT64 runtime DLLs it needs, so they run on a clean Windows 10/11 x64 box" \
-              "without an MSYS2 install." \
+              "UCRT64 + MS-MPI runtime DLLs it needs, so they run on a clean Windows 10/11" \
+              "x64 box without an MSYS2 or MS-MPI install." \
               "" \
               "  piclas-win\\piclas-win.exe   $solver" \
               "  piclas2vtk\\piclas2vtk.exe   HDF5 (State / DSMCState / PartStateBoundary) -> VTK for ParaView" \
               "  superB\\superB.exe           magnetic-field (B-field) POSTI pre-processor" \
               "" \
               "$mpi_note" \
-              "GPU runs require an NVIDIA driver (no CUDA Toolkit needed at runtime)." \
+              "" \
+              "$gpu_note" \
               "" \
               "example/  ready-to-run DSMC 70deg-cone 2D case (mesh pre-converted):" \
               "    cd example" \
@@ -158,17 +148,17 @@ jobs:
             echo "  packaged ${pkg}.zip"
           }
 
-          # MPI variant (default presets)
-          build_bundle "piclas-win-${TAG}-win64" mpi \
+          # GPU variant
+          build_bundle "piclas-win-${TAG}-win64" gpu \
             "piclas-win=artifacts/piclas-win-win64" \
             "piclas2vtk=artifacts/piclas2vtk-win64" \
             "superB=artifacts/superB-win64"
 
-          # No-MPI (serial) variant
-          build_bundle "piclas-win-nompi-${TAG}-win64" nompi \
-            "piclas-win=artifacts/piclas-win-nompi-win64" \
-            "piclas2vtk=artifacts/piclas2vtk-nompi-win64" \
-            "superB=artifacts/superB-nompi-win64"
+          # CPU-only (no-GPU) fallback variant — reuses the same piclas2vtk + superB
+          build_bundle "piclas-win-nogpu-${TAG}-win64" nogpu \
+            "piclas-win=artifacts/piclas-win-nogpu-win64" \
+            "piclas2vtk=artifacts/piclas2vtk-win64" \
+            "superB=artifacts/superB-win64"
 
           ( cd out && sha256sum *.zip > SHA256SUMS.txt )
           echo "=== release assets ==="
@@ -185,17 +175,17 @@ jobs:
 
             Portable, self-contained Windows x64 downloads (MSYS2 UCRT64 toolchain). Each ZIP has a
             per-tool folder (`piclas-win/`, `piclas2vtk/`, `superB/`), each with its executable plus
-            the runtime DLLs it needs, so they run on a clean Windows 10/11 machine **without
-            installing MSYS2**. Pick **one**:
+            the UCRT64 **and MS-MPI** runtime DLLs it needs — so they run on a clean Windows 10/11
+            machine **with neither MSYS2 nor MS-MPI installed**. Pick **one**:
 
             | Asset | For | Contents |
             |-------|-----|----------|
-            | `piclas-win-*-win64.zip` | Has Microsoft MPI (parallel `mpiexec` runs) | `piclas-win/` (DSMC + MPI + GPU), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
-            | `piclas-win-nompi-*-win64.zip` | **No MPI installed** (single-process only) | Same three tools built **without MPI** (DSMC + GPU), each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-*-win64.zip` | **Default** — NVIDIA GPU machines (falls back to CPU if no GPU) | `piclas-win/` (DSMC + MPI + **GPU**), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-nogpu-*-win64.zip` | **Fallback** — machines the GPU build can't run on | Same three tools, solver built **CPU-only (no CUDA/GPU dll)**, each self-contained, plus ready-to-run `example/` |
 
             **Runtime notes**
-            - The `nompi` build runs single-process only and needs **no** MS-MPI install. The MPI build's parallel runs (`mpiexec -n N`) need the Microsoft MPI runtime (`msmpisetup.exe`); its single-process runs work as-is.
-            - **GPU** needs an NVIDIA driver (no CUDA Toolkit at runtime) in both builds.
+            - **No install needed for single-process runs:** `msmpi.dll` is bundled, so the tools run on a machine with no Microsoft MPI installed. Parallel runs (`mpiexec -n N`) still need the full MS-MPI runtime (`msmpisetup.exe`).
+            - The **GPU** build uses the GPU when an NVIDIA driver is present and otherwise runs on CPU; use the **`-nogpu`** build only if the GPU build won't start on your hardware.
 
             **Example:** unzip, then `cd example && ..\piclas-win\piclas-win.exe parameter.ini DSMC.ini`
             (see its `README.md`); convert output with `..\piclas2vtk\piclas2vtk.exe <State>.h5`. ~30 min single-process.

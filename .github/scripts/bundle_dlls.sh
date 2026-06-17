@@ -48,6 +48,18 @@ collect "$exe"
 for d in "$out"/*.dll; do collect "$d"; done
 for d in "$out"/*.dll; do collect "$d"; done
 
+# Explicitly add the redistributable MS-MPI runtime (msmpi.dll). The binary imports
+# it, but it lives in C:\Windows\System32 (installed via msmpisetup on the runner),
+# which the ldd closure above does not reliably resolve. Bundling it makes the zip
+# run SINGLE-PROCESS on a machine with NO MS-MPI installed. (Multi-rank mpiexec
+# still needs the full MS-MPI runtime — that part is not a redistributable DLL.)
+if [ ! -f "$out/msmpi.dll" ]; then
+  for sys in /c/Windows/System32/msmpi.dll "$(cygpath -u "$SYSTEMROOT" 2>/dev/null)/System32/msmpi.dll"; do
+    if [ -f "$sys" ]; then cp -f "$sys" "$out"/ && echo "  + MS-MPI runtime bundled: $sys"; break; fi
+  done
+  [ -f "$out/msmpi.dll" ] || echo "  WARNING: msmpi.dll not found in System32 — bundle will need an MS-MPI install to run"
+fi
+
 echo "== bundle: $out =="
 ls -1 "$out"
 echo "== $(ls -1 "$out" | wc -l) files total =="

@@ -80,6 +80,19 @@ jobs:
             mingw-w64-ucrt-x86_64-pkgconf
             mingw-w64-ucrt-x86_64-python
 
+      # Install the redistributable MS-MPI runtime so bundle_dlls.sh ships
+      # msmpi.dll in the zip (lets it run single-process with NO MS-MPI install).
+      - name: Install MS-MPI runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/microsoft/Microsoft-MPI/releases/download/v10.1.1/msmpisetup.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'msmpisetup.exe'
+          Invoke-WebRequest -Uri $url -OutFile $exe
+          Start-Process -FilePath $exe -ArgumentList '-unattend' -Wait
+          $dll = Join-Path $env:SystemRoot 'System32\msmpi.dll'
+          if (-not (Test-Path $dll)) { throw "msmpi.dll not found after install" }
+          Write-Host "MS-MPI runtime: $((Get-Item $dll).VersionInfo.FileVersion)"
+
       # Override the C:/msys64/... hardcoded developer paths in the base
       # preset with the runner's actual MSYS2 install prefix.
       - name: CMake configure
