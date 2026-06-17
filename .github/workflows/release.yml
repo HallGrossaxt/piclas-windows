@@ -1,7 +1,9 @@
 name: Release
 
 # Build the Windows tools and publish a GitHub Release with two self-contained,
-# runnable portable ZIPs — a GPU build and a CPU-only (no-GPU) fallback. Each ZIP
+# runnable portable ZIPs — a CPU-only (no-GPU) build, which is the recommended
+# download for almost everyone (incl. all DSMC cases since the GPU only speeds up
+# the particle push, not the CPU-bound DSMC collisions), and a GPU build. Each ZIP
 # has a per-tool folder (piclas-win/, piclas2vtk/, superB/), each holding its
 # executable plus the UCRT64 + MS-MPI runtime DLLs it needs (incl. bundled
 # msmpi.dll), plus a ready-to-run example/ case — so it runs on a clean Windows
@@ -106,10 +108,10 @@ jobs:
             local solver gpu_note
             if [ "$mode" = nogpu ]; then
               solver="DSMC + MPI solver (CPU-only, no GPU)"
-              gpu_note=$'CPU-only fallback build (no CUDA, no GPU DLL). Use this if the GPU build does\nnot run on your machine (unsupported GPU / driver). No NVIDIA driver required.'
+              gpu_note=$'RECOMMENDED build for almost everyone, including all DSMC cases. CPU-only (no\nCUDA, no GPU DLL); no NVIDIA driver required.'
             else
               solver="DSMC + MPI + GPU solver"
-              gpu_note=$'Uses the GPU when an NVIDIA card + driver is present, else falls back to CPU.\nIf this build fails to start on your machine, use piclas-win-nogpu-'"$TAG"$'-win64.zip.'
+              gpu_note=$'NOT the recommended download for most users -- prefer piclas-win-nogpu-'"$TAG"$'-win64.zip.\nThe GPU only accelerates the particle push; DSMC runtime is dominated by CPU-side\ncollisions, so this build gives NO meaningful speedup for the DSMC solver shipped here.\nGPU push acceleration is currently only worthwhile for PIC/Poisson field workloads.\nNeeds an NVIDIA driver; falls back to CPU if none is present.'
             fi
             local mpi_note=$'Self-contained MPI build: msmpi.dll is bundled, so SINGLE-PROCESS runs work on a\nmachine with NO Microsoft MPI installed. Parallel runs (mpiexec -n N ...) need the\nfull Microsoft MPI runtime (install msmpisetup.exe).'
             printf '%s\n' \
@@ -180,12 +182,14 @@ jobs:
 
             | Asset | For | Contents |
             |-------|-----|----------|
-            | `piclas-win-*-win64.zip` | **Default** — NVIDIA GPU machines (falls back to CPU if no GPU) | `piclas-win/` (DSMC + MPI + **GPU**), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
-            | `piclas-win-nogpu-*-win64.zip` | **Fallback** — machines the GPU build can't run on | Same three tools, solver built **CPU-only (no CUDA/GPU dll)**, each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-nogpu-*-win64.zip` | **Recommended — start here.** Best choice for almost everyone, including all DSMC cases | Three tools, solver built **CPU-only (no CUDA/GPU dll)**, each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-*-win64.zip` | Only if you have a specific reason to want the GPU push (see note below) | `piclas-win/` (DSMC + MPI + **GPU**), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
+
+            **Which build should I download?**
+            - **Pick `-nogpu` unless you know you need the GPU.** The GPU build currently accelerates only the particle **push** (position update). DSMC runtime is dominated by **CPU-side** collision/pairing, tracking and sampling, so the GPU gives **no meaningful speedup for DSMC** — and these release binaries are DSMC builds. GPU push acceleration is presently only worthwhile for **PIC / Poisson** field-push workloads, which are not shipped in these release zips. So for what's in this release, `-nogpu` is the right choice for essentially everyone; the GPU build needs an NVIDIA driver and adds startup/transfer overhead with no payback for DSMC.
 
             **Runtime notes**
             - **No install needed for single-process runs:** `msmpi.dll` is bundled, so the tools run on a machine with no Microsoft MPI installed. Parallel runs (`mpiexec -n N`) still need the full MS-MPI runtime (`msmpisetup.exe`).
-            - The **GPU** build uses the GPU when an NVIDIA driver is present and otherwise runs on CPU; use the **`-nogpu`** build only if the GPU build won't start on your hardware.
 
             **Example:** unzip, then `cd example && ..\piclas-win\piclas-win.exe parameter.ini DSMC.ini`
             (see its `README.md`); convert output with `..\piclas2vtk\piclas2vtk.exe <State>.h5`. ~30 min single-process.
