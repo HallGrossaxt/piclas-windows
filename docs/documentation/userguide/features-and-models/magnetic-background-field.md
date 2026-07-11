@@ -1,47 +1,49 @@
 # Magnetic Background Field
 
 Certain application cases allow the utilization of a constant magnetic background field.
-This background field can either be supplied via .csv (1D) or .h5 (2D) file, however, in this case the field must be based on an equidistant
+This background field can either be supplied via .csv (1D) or .h5 (2D axisymmetric/3D) file, however, in this case the field must be based on an equidistant
 Cartesian mesh.
 Another method is to use the built-in tool **superB**, which is also available as stand-alone executable to generate magnetic fields
-based on magnets or coils, which results in the creation of a .h5 file containing the field data based on a PICLas (HOPR) mesh file.
+based on magnets or coils, which results in the creation of a .h5 file containing the field data based on a PICLas (PyHOPE) mesh file.
+Both methods can be combined through super-position to include an external read-in with a superB-generated magnetic field.
 The following two sections give an overview of using the different methods.
 
 (sec:variableExternalField)=
-## Variable External Field
+## Read-in of an External Field
 
-One-, two- and three-dimensional magnetic fields can be used as fixed background fields for certain time discretization methods
-(full Maxwell time discs and the Poisson Boris-Leapfrog scheme)
+One-, two- and three-dimensional magnetic fields can be used as fixed background fields for certain equation systems
+(full Maxwell and Poisson with the Boris-Leapfrog time discretization).
 The read-in variable for either .csv (only for 1D along $z$-direction) or .h5 (only for 2D axis symmetric $z$-direction or fully 3D)
 files is set via
 
     PIC-variableExternalField = X.csv, X.h5
 
-Three examples are located within the regression test directory
+Examples are located within the regression test directory
 
     regressioncheck/CHE_PIC_maxwell_RK4/gyrotron_variable_Bz
     regressioncheck/CHE_PIC_maxwell_RK4/2D_variable_B
     regressioncheck/CHE_PIC_maxwell_RK4/3D_variable_B
+    regressioncheck/WEK_PIC_poisson_Boris-Leapfrog/EBeam_2D-axisym-with-B-field
 
-for 1D, 2D and 3D fields, respectively. Note that 1D currently only allows magnetic fields of type $B_{z}(z)$ and 2D only allows the 
+for 1D, 2D and 3D fields, respectively. Note that 1D currently only allows magnetic fields of type $B_{z}(z)$ and 2D only allows the
 components $B_{r}(r,z)$ and $B_{z}(r,z)$ that comprise a rotationally symmetric vector field $\textbf{B}$.
 
 The first example (1D and .csv file) uses data via
 
     PIC-variableExternalField = variable_Bz.csv
 
-which is csv-based data in the form (the delimiter is actually not a comma)
+which contains comma-separated values in the form
 
-    -0.00132 	2.7246060625
-    -0.000217551020408	2.700481016
-    0.0008848979591837	2.6762685135
-    0.0019873469387755	2.6519260266
-    0.0030897959183674	2.6274128336
+    -0.00132,2.7246060625
+    -0.000217551020408,2.700481016
+    0.0008848979591837,2.6762685135
+    0.0019873469387755,2.6519260266
+    0.0030897959183674,2.6274128336
     ....
 
 and the second (2D and .h5 file)
 
-    PIC-variableExternalField = reggie-linear-rot-symmetry.h5 
+    PIC-variableExternalField = reggie-linear-rot-symmetry.h5
 
 that is read from a .h5 file.
 The data structure in the .h5 file must be of the form (dataset is labelled "data") and contains
@@ -60,17 +62,13 @@ $z$ is the inner loop variable when unrolling the data into an array).
 This is automatically checked by comparing the distances in $r$ and $z$ direction, which must be equidistant.
 In addition, the attributes r, z, Br and Bz, which contain the indices of the corresponding column number in "data".
 
+Axisymmetric external fields can be utilized in a 3D simulation. For this purpose the axis in the 3D domain that corresponds to the rotational axis has to be defined:
+
+    PIC-variableExternalFieldSymAxis = 1        ! 1: x, 2: y, 3: z
+
+Axisymmetric simulations, which are per definition in the x-y-plane, will correctly interpolate the external field without additional user input.
+
 Three-dimensional fields must be supplied in the following format
-
-    x1 y1 z1 Bx1 By1 Bz1
-    x2 y2 z2 Bx2 By2 Bz2
-    x3 y3 z3 Bx3 By3 Bz3
-    x4 y4 z4 Bx4 By4 Bz4
-    x5 y5 z5 Bx5 By5 Bz5
-    ....
-
-where the data (dataset is labelled "data" in the .h5 file) is sorted in lines in ascending coordinates.
-For everything to work, the order must be like this
 
     x1 y1 z1 Bx1 By1 Bz1
     x2 y1 z1 Bx2 By2 Bz2
@@ -80,13 +78,13 @@ For everything to work, the order must be like this
     x2 y1 z2 Bx6 By6 Bz6
     ....
 
-where first the $x$-coordinate changes, then $y$ and finally the $z$.
+where the data (dataset is labelled "data" in the .h5 file) is sorted in lines in ascending coordinates, where first the $x$-, then $y$- and finally the $z$-coordinate is varied.
 
 (sec:superB)=
-## superB
-The magnetic field resulting from certain types of coils and permanent magnets can be calculated during the initialization within 
-PICLas or with the standalone tool **superB** (see Section {ref}`sec:compiler-options` for compilation), which can be used to solely
-create a .h5 file that contains the B-field data via
+## Calculation with superB
+The magnetic field resulting from certain types of coils (using the Biot-Savart law or Jefimenko's equations) and permanent magnets (using the magnetic potential) can be calculated during the initialization within
+PICLas or with the standalone tool **superB** (see Section {ref}`sec:compiler-options` for compilation).
+The latter can solely be used to create a .h5 file that contains the B-field data via
 
     superB parameter_superB.ini
 
@@ -94,7 +92,7 @@ For usage in PICLas, the background field can be enabled by
 
     PIC-BG-Field = T
 
-The first option is to use a previously calculated background field. It can be read-in with
+The first option is to use a background field that was previously calculated with superB. It can be read-in with
 
     PIC-BGFileName     = BField.h5 ! Path to a .h5 file that contains the B-field data
     PIC-NBG            = 1         ! Polynomial degree of the B-field

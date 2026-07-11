@@ -11,8 +11,20 @@ MARK_AS_ADVANCED(FORCE C_PATH CXX_PATH Fortran_PATH)
 # =========================================================================
 # Set machine-specific definitions and settings
 # =========================================================================
+# HLRS Hunter
+IF (CMAKE_FQDN_HOST MATCHES "^hunter")
+  MESSAGE(STATUS "Compiling on Hunter for AMD EPYC Genoa (CPU queue)")
+  # Overwrite compiler target architecture
+  IF (CMAKE_Fortran_COMPILER_ID MATCHES "GNU" OR CMAKE_Fortran_COMPILER_ID MATCHES "Flang")
+    SET(PICLAS_INSTRUCTION "-march=znver4 -mtune=znver4" CACHE STRING "Compiler optimization options")
+  ELSEIF (CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
+    SET(PICLAS_INSTRUCTION "-xCORE-AVX2" CACHE STRING "Compiler optimization options")
+  ENDIF()
+  # Set LUSTRE definition to account for filesystem and MPI implementation
+  ADD_COMPILE_DEFINITIONS(LUSTRE)
+
 # HLRS Vulcan
-IF (CMAKE_FQDN_HOST MATCHES "^cl[0-9]fr")
+ELSEIF (CMAKE_FQDN_HOST MATCHES "^cl[0-9]fr")
   MESSAGE(STATUS "Compiling on Vulcan for AMD EPYC Genoa")
   # Overwrite compiler target architecture
   IF (CMAKE_Fortran_COMPILER_ID MATCHES "GNU" OR CMAKE_Fortran_COMPILER_ID MATCHES "Flang")
@@ -63,7 +75,7 @@ ELSE()
   ENDIF()
 ENDIF()
 
-MESSAGE(STATUS "Compiling Nitro/Release/Profile with [${CMAKE_Fortran_COMPILER_ID}] (v${CMAKE_Fortran_COMPILER_VERSION}) fortran compiler using PICLAS_INSTRUCTION [${PICLAS_INSTRUCTION}] instructions.")
+MESSAGE(STATUS "Compiling Nitro/Release/Profile with [${CMAKE_Fortran_COMPILER_ID}] (${BoldBlue}v${CMAKE_Fortran_COMPILER_VERSION}${ColourReset}) fortran compiler using PICLAS_INSTRUCTION [${PICLAS_INSTRUCTION}] instructions.")
 
 # =========================================================================
 # CHECK SUPPORT FOR VARIOUS FORTRAN (2003,2008) FEATURES
@@ -117,7 +129,7 @@ GCC13Check
 SRC_EXT F90)
 
 IF(NOT GCC13Check)
-  MESSAGE(WARNING "The requested compiler ${CMAKE_Fortran_COMPILER_ID} (v${CMAKE_Fortran_COMPILER_VERSION}) contains a bug in parse_associate. Ensure ASSOCIATE is only use with explicit array bounds or use a different compiler version. Please see the upstream issue, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109948")
+  MESSAGE(WARNING "The requested compiler ${CMAKE_Fortran_COMPILER_ID} (${BoldBlue}v${CMAKE_Fortran_COMPILER_VERSION}${ColourReset}) contains a bug in parse_associate. Ensure ASSOCIATE is only use with explicit array bounds or use a different compiler version. Please see the upstream issue, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109948")
 ENDIF()
 
 # =========================================================================

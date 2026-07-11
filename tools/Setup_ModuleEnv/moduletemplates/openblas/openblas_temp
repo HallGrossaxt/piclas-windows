@@ -21,5 +21,5 @@ set     topdir          OPENBLASTOPDIR
 set     version         openblasversion
 set     sys             linux64
 
-prepend-path    PATH            $topdir/bin
+prepend-path    PATH            $topdir/include
 prepend-path    LD_LIBRARY_PATH $topdir/lib

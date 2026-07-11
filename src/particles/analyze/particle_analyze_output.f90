@@ -14,6 +14,7 @@
 
 MODULE MOD_Particle_Analyze_Output
 ! IMPLICIT VARIABLE HANDLING
+USE MOD_Globals_Vars, ONLY: i8
 IMPLICIT NONE
 #ifdef PARTICLES
 PRIVATE
@@ -50,7 +51,7 @@ USE MOD_Globals_Vars          ,ONLY: c2_inv
 IMPLICIT NONE
 ! INPUT / OUTPUT VARIABLES
 REAL,INTENT(IN)                  :: time
-INTEGER(KIND=8),INTENT(IN)       :: iter
+INTEGER(KIND=i8),INTENT(IN)       :: iter
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 CHARACTER(LEN=20),PARAMETER              :: outfile='ParticlePosition.csv'

@@ -87,7 +87,7 @@ SUBROUTINE PerfectReflection(PartID,SideID,n_Loc,opt_Symmetry)
 USE MOD_Globals
 USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
 USE MOD_Particle_Vars           ,ONLY: PartState,LastPartPos,PartSpecies,Species,PartLorentzType,UseRotRefSubCycling,nSubCyclingSteps
-USE MOD_DSMC_Vars               ,ONLY: DSMC, AmbipolElecVelo
+USE MOD_DSMC_Vars               ,ONLY: DSMC, PartIntEn
 USE MOD_Globals_Vars            ,ONLY: c2_inv
 #if defined(LSERK)
 USE MOD_Particle_Vars           ,ONLY: Pt_temp
@@ -176,16 +176,16 @@ IF(SUM(ABS(WallVelo)).GT.0.)THEN
 ELSE
   PartState(4:6,PartID) = PartState(4:6,PartID) - 2.*DOT_PRODUCT(PartState(4:6,PartID),n_loc)*n_loc
   IF (DSMC%DoAmbipolarDiff) THEN
-    IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) THEN
-      v_old_Ambi = AmbipolElecVelo(PartID)%ElecVelo(1:3)
-      AmbipolElecVelo(PartID)%ElecVelo(1:3) = AmbipolElecVelo(PartID)%ElecVelo(1:3) &
-                     - 2.*DOT_PRODUCT(AmbipolElecVelo(PartID)%ElecVelo(1:3),n_loc)*n_loc
+    IF(Species(SpecID)%ChargeIC.GT.0.0) THEN
+      v_old_Ambi = PartIntEn(PartID)%ElecVelo(1:3)
+      PartIntEn(PartID)%ElecVelo(1:3) = PartIntEn(PartID)%ElecVelo(1:3) &
+                     - 2.*DOT_PRODUCT(PartIntEn(PartID)%ElecVelo(1:3),n_loc)*n_loc
     END IF
   END IF
 END IF
 
 ! Considering energy loss due to deformation in granular particles
-IF(Species(PartSpecies(PartID))%InterID.EQ.100) PartState(4:6,PartID) = PartState(4:6,PartID) * (1.0 - PartBound%DeformEnergyLoss(locBCID))
+IF(Species(SpecID)%InterID.EQ.100) PartState(4:6,PartID) = PartState(4:6,PartID) * (1.0 - PartBound%DeformEnergyLoss(locBCID))
 
 ! Set particle position on face
 LastPartPos(1:3,PartID) = POI_vec(1:3)
@@ -205,7 +205,7 @@ IF(UseRotRefFrame) THEN
     IF(DOT_PRODUCT(n_loc,NewVeloPush(1:3)).GT.0.) THEN
       ! Normal component of new velo push v = (v dot n / |n|^2) * n, |n| = 1
       NormNewVeloPush(1:3) = DOT_PRODUCT(n_loc,NewVeloPush(1:3)) * n_loc
-      ! Nullyfy normal component and keeping rest of NewVeloPush
+      ! Nullify normal component and keeping rest of NewVeloPush
       NewVeloPush(1:3) = NewVeloPush(1:3) - NormNewVeloPush(1:3)
       ! Move particle a little bit into the domain to avoid losing particles
       NewVeloPush(1:3) = NewVeloPush(1:3) - 1E-6 * n_loc
@@ -273,7 +273,7 @@ SUBROUTINE DiffuseReflection(PartID,SideID,n_loc)
 USE MOD_Globals
 USE MOD_Globals_Vars            ,ONLY: TwoepsMach
 USE MOD_Particle_Mesh_Vars
-USE MOD_DSMC_Vars               ,ONLY: DSMC, AmbipolElecVelo
+USE MOD_DSMC_Vars               ,ONLY: DSMC, PartIntEn
 USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
 USE MOD_Particle_Vars           ,ONLY: PartState,LastPartPos,Species,PartSpecies
 USE MOD_Particle_Vars           ,ONLY: UseRotRefFrame,InRotRefFrame,PartVeloRotRef
@@ -373,7 +373,7 @@ END IF
 VeloC(1:3) = CalcPostWallCollVelo(SpecID,DOTPRODUCT(PartState(4:6,PartID)),WallTemp,TransACC)
 IF (DSMC%DoAmbipolarDiff) THEN
   IF(Species(SpecID)%ChargeIC.GT.0.0) THEN
-    VeloCAmbi(1:3) = CalcPostWallCollVelo(DSMC%AmbiDiffElecSpec,DOTPRODUCT(AmbipolElecVelo(PartID)%ElecVelo(1:3)),WallTemp,TransACC)
+    VeloCAmbi(1:3) = CalcPostWallCollVelo(DSMC%AmbiDiffElecSpec,DOTPRODUCT(PartIntEn(PartID)%ElecVelo(1:3)),WallTemp,TransACC)
   END IF
 END IF
 
@@ -486,7 +486,7 @@ END IF
 ! 8.) Saving new particle velocity and recompute the trajectory based on new and old particle position
 PartState(4:6,PartID)   = NewVelo(1:3)
 IF (DSMC%DoAmbipolarDiff) THEN
-  IF(Species(SpecID)%ChargeIC.GT.0.0) AmbipolElecVelo(PartID)%ElecVelo(1:3) = NewVeloAmbi(1:3)
+  IF(Species(SpecID)%ChargeIC.GT.0.0) PartIntEn(PartID)%ElecVelo(1:3) = NewVeloAmbi(1:3)
 END IF
 
 ! Recompute trajectory etc
@@ -653,13 +653,13 @@ END SUBROUTINE SurfaceModelParticleEmission
 
 SUBROUTINE SurfaceModelEnergyAccommodation(PartID,locBCID,WallTemp)
 !===================================================================================================================================
-!> Energy accommodation at the surface: Particle internal energies PartStateIntEn() are sampled at surface temperature
+!> Energy accommodation at the surface: Particle internal energies PartIntEn are sampled at surface temperature
 !===================================================================================================================================
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, Species
 USE MOD_Particle_Boundary_Vars,ONLY: PartBound
 USE MOD_DSMC_Vars             ,ONLY: CollisMode, PolyatomMolDSMC, useDSMC
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, DSMC, VibQuantsPar, AHO
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, DSMC, AHO
 USE MOD_DSMC_ElectronicModel  ,ONLY: RelaxElectronicShellWall
 USE MOD_part_tools            ,ONLY: RotInitPolyRoutineFuncPTR
 #if (PP_TimeDiscMethod==400)
@@ -700,7 +700,7 @@ IF ((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
   ! model identical to the one used for initial rotational energy sampling
   CALL RANDOM_NUMBER(RanNum)
   IF(RotACC.GT.RanNum) THEN
-    PartStateIntEn(2,PartID) = RotInitPolyRoutineFuncPTR(SpecID,WallTemp,PartID)
+    PartIntEn(PartID)%ERot = RotInitPolyRoutineFuncPTR(SpecID,WallTemp,PartID)
   END IF
 #if (PP_TimeDiscMethod==400)
   IF (BGKDoVibRelaxation) THEN
@@ -715,14 +715,14 @@ IF ((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
         VibDOF = PolyatomMolDSMC(iPolyatMole)%VibDOF
         ALLOCATE(RanNumPoly(VibDOF))
         CALL RANDOM_NUMBER(RanNumPoly)
-        VibQuantsPar(PartID)%Quants(:) = INT(-LOG(RanNumPoly(:)) * WallTemp / PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(:))
-        DO WHILE (ALL(VibQuantsPar(PartID)%Quants.GE.PolyatomMolDSMC(iPolyatMole)%MaxVibQuantDOF))
-          CALL RANDOM_NUMBER(RanNumPoly)
-          VibQuantsPar(PartID)%Quants(:) = INT(-LOG(RanNumPoly(:)) * WallTemp / PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(:))
-        END DO
-        PartStateIntEn(1,PartID) = 0.0
+        PartIntEn(PartID)%QVib(:) = INT(-LOG(RanNumPoly(:)) * WallTemp / PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(:))
+        PartIntEn(PartID)%EVib = 0.0
         DO iDOF = 1, VibDOF
-          PartStateIntEn(1,PartID) = PartStateIntEn(1,PartID) + (VibQuantsPar(PartID)%Quants(iDOF) + DSMC%GammaQuant) &
+          DO WHILE (PartIntEn(PartID)%QVib(iDOF).GE.PolyatomMolDSMC(iPolyatMole)%MaxVibQuantDOF(iDOF))
+            CALL RANDOM_NUMBER(RanNum)
+            PartIntEn(PartID)%QVib(iDOF) = INT(-LOG(RanNum) * WallTemp / PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF))
+          END DO
+          PartIntEn(PartID)%EVib = PartIntEn(PartID)%EVib + (PartIntEn(PartID)%QVib(iDOF) + DSMC%GammaQuant) &
                                    * BoltzmannConst*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)
         END DO
       ELSE
@@ -742,10 +742,10 @@ IF ((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
               VibPartitionTemp = EXP(- AHO%VibEnergy(SpecID,VibQuantWall) / (BoltzmannConst * WallTemp))
               CALL RANDOM_NUMBER(RanNum)
             END DO
-            PartStateIntEn(1,PartID) = AHO%VibEnergy(SpecID,VibQuantWall)
+            PartIntEn(PartID)%EVib = AHO%VibEnergy(SpecID,VibQuantWall)
           ! use ground state quantum number
           ELSE
-            PartStateIntEn(1,PartID) = AHO%VibEnergy(SpecID,1)
+            PartIntEn(PartID)%EVib = AHO%VibEnergy(SpecID,1)
           END IF
         ELSE ! SHO
           CALL RANDOM_NUMBER(RanNum)
@@ -754,7 +754,7 @@ IF ((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
             CALL RANDOM_NUMBER(RanNum)
             VibQuantWall = INT(-LOG(RanNum) * WallTemp / SpecDSMC(SpecID)%CharaTVib)
           END DO
-          PartStateIntEn(1,PartID) = (VibQuantWall + DSMC%GammaQuant)*BoltzmannConst*SpecDSMC(SpecID)%CharaTVib
+          PartIntEn(PartID)%EVib = (VibQuantWall + DSMC%GammaQuant)*BoltzmannConst*SpecDSMC(SpecID)%CharaTVib
         END IF
       END IF
     END IF ! DO vib relax: VibACC.LE.RanNum
@@ -767,7 +767,7 @@ IF (DSMC%ElectronicModel.GT.0) THEN
   IF((Species(SpecID)%InterID.NE.4).AND.(.NOT.SpecDSMC(SpecID)%FullyIonized).AND.(Species(SpecID)%InterID.NE.100)) THEN
     CALL RANDOM_NUMBER(RanNum)
     IF (ElecACC.GT.RanNum) THEN
-      PartStateIntEn(3,PartID) = RelaxElectronicShellWall(PartID, WallTemp)
+      PartIntEn(PartID)%EElec = RelaxElectronicShellWall(PartID, WallTemp)
     END IF
   END IF
 END IF

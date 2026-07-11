@@ -20,7 +20,7 @@ import sphinx_rtd_theme
 # -- Project information -----------------------------------------------------
 
 project = 'PICLas Documentation'
-copyright = '2025, PICLas Developers'
+copyright = '2026 PICLas Developers'
 author = 'Institute for Aerodynamics and Gas Dynamics (University of Stuttgart), Institute for Space Systems (University of Stuttgart), boltzplatz - numerical plasma dynamics GmbH'
 
 # latex config
@@ -39,9 +39,10 @@ latex_documents = [
 extensions = [
         'sphinx.ext.autosectionlabel',
         'sphinxcontrib.bibtex',
-        'sphinx_rtd_theme',
         'sphinx_rtd_size',
-        'myst_parser'
+        'myst_parser',
+        'sphinx_copybutton',
+        'sphinx_rtd_theme'
         ]
 
 # Set width

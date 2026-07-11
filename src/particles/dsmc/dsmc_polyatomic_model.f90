@@ -32,7 +32,7 @@ ABSTRACT INTERFACE
   SUBROUTINE RotRelaxPolyRoutine(iPair,iPart,FakXi)
     INTEGER,INTENT(IN)          :: iPair, iPart               ! index of collision pair
     REAL,INTENT(IN)             :: FakXi
-  END SUBROUTINE
+  END SUBROUTINE RotRelaxPolyRoutine
 END INTERFACE
 
 PROCEDURE(RotRelaxPolyRoutine),POINTER :: RotRelaxPolyRoutineFuncPTR !< pointer defining the function called for rotational relaxation
@@ -408,7 +408,7 @@ SUBROUTINE DSMC_SetInternalEnr(iSpec, iInit, iPart, init_or_sf)
 ! MODULES
 USE MOD_Globals                 ,ONLY: abort
 USE MOD_Globals_Vars            ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars               ,ONLY: PartStateIntEn, SpecDSMC, DSMC, BGGas
+USE MOD_DSMC_Vars               ,ONLY: PartIntEn, SpecDSMC, DSMC, BGGas
 USE MOD_Particle_Vars           ,ONLY: Species, PEM
 USE MOD_Particle_Sampling_Vars  ,ONLY: AdaptBCMacroVal, AdaptBCMapElemToSample
 USE MOD_DSMC_ElectronicModel    ,ONLY: InitElectronShell
@@ -428,14 +428,11 @@ REAL                            :: TVib                       ! vibrational temp
 REAL                            :: TRot                       ! rotational temperature
 INTEGER                         :: ElemID
 !===================================================================================================================================
-! Nullify energy for atomic species
-!-----------------------------------------------------------------------------------------------------------------------------------
-PartStateIntEn( 1,iPart) = 0
-PartStateIntEn( 2,iPart) = 0
-!-----------------------------------------------------------------------------------------------------------------------------------
 ! Set vibrational and rotational energies for molecules
 !-----------------------------------------------------------------------------------------------------------------------------------
 IF ((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
+  IF (.NOT.ALLOCATED(PartIntEn(iPart)%EVib)) ALLOCATE(PartIntEn(iPart)%EVib(1))
+  IF (.NOT.ALLOCATED(PartIntEn(iPart)%ERot)) ALLOCATE(PartIntEn(iPart)%ERot(1))
   ElemID = PEM%LocalElemID(iPart)
   SELECT CASE (init_or_sf)
   CASE(1) !iInit
@@ -477,31 +474,37 @@ IF ((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
   IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
     CALL DSMC_SetInternalEnr_Poly(iSpec, iInit, iPart, init_or_sf)
   ELSE
-    ! Nullify energy for atomic species
-    PartStateIntEn(1:2,iPart) = 0
     ! set initial vibrational and rotational energy for diatomic molecules
-    PartStateIntEn( 1,iPart) = CalcEVib_particle(iSpec,TVib)
-    PartStateIntEn( 2,iPart) = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
+    PartIntEn(iPart)%EVib = CalcEVib_particle(iSpec,TVib)
+    PartIntEn(iPart)%ERot = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
   END IF
 ! For granular species E vib is used as value for bulk temperatur
 ELSE IF (Species(iSpec)%InterID.EQ.100) THEN
+  IF (.NOT.ALLOCATED(PartIntEn(iPart)%TSolid)) ALLOCATE(PartIntEn(iPart)%TSolid(1))
   SELECT CASE (init_or_sf)
   CASE(1) !iInit
-    PartStateIntEn( 1,iPart) = Species(iSpec)%Init(iInit)%MWTemperatureIC
+    PartIntEn(iPart)%TSolid = Species(iSpec)%Init(iInit)%MWTemperatureIC
   CASE(2) !SurfaceFlux
-    PartStateIntEn( 1,iPart) = Species(iSpec)%Surfaceflux(iInit)%MWTemperatureIC
+    PartIntEn(iPart)%TSolid = Species(iSpec)%Surfaceflux(iInit)%MWTemperatureIC
   CASE DEFAULT
     CALL abort(__STAMP__,'ERROR: Neither iInit nor Surfaceflux defined as reference in DSMC_SetInternalEnr!')
   END SELECT
+ELSE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! Nullify energy for atomic species
+!-----------------------------------------------------------------------------------------------------------------------------------
+  SDEALLOCATE(PartIntEn(iPart)%EVib)
+  SDEALLOCATE(PartIntEn(iPart)%ERot)
 END IF
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Set electronic energy
 !-----------------------------------------------------------------------------------------------------------------------------------
 IF (DSMC%ElectronicModel.GT.0) THEN
   IF((Species(iSpec)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
+    IF (.NOT.ALLOCATED(PartIntEn(iPart)%EElec)) ALLOCATE(PartIntEn(iPart)%EElec(1))
     CALL InitElectronShell(iSpec,iPart,iInit,init_or_sf)
   ELSE
-    PartStateIntEn( 3,iPart) = 0.
+    SDEALLOCATE(PartIntEn(iPart)%EElec)
   END IF
 END IF
 
@@ -513,12 +516,12 @@ END SUBROUTINE DSMC_SetInternalEnr
 !===================================================================================================================================
 SUBROUTINE DSMC_SetInternalEnr_Poly_ARM_SingleMode(iSpecies, iInit, iPart, init_or_sf)
 ! MODULES
-USE MOD_Globals                ,ONLY: Abort
-USE MOD_Globals_Vars           ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars              ,ONLY: PartStateIntEn, SpecDSMC, DSMC,PolyatomMolDSMC,VibQuantsPar,BGGas
-USE MOD_Particle_Vars          ,ONLY: PEM, Species
-USE MOD_Particle_Sampling_Vars ,ONLY: AdaptBCMacroVal, AdaptBCMapElemToSample
-USE MOD_DSMC_ElectronicModel   ,ONLY: InitElectronShell
+USE MOD_Globals               ,ONLY: Abort
+USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, DSMC,PolyatomMolDSMC,BGGas
+USE MOD_Particle_Vars         ,ONLY: PEM, Species
+USE MOD_Particle_Sampling_Vars,ONLY: AdaptBCMacroVal, AdaptBCMapElemToSample
+USE MOD_DSMC_ElectronicModel  ,ONLY: InitElectronShell
 USE MOD_part_tools             ,ONLY: RotInitPolyRoutineFuncPTR
 USE MOD_Particle_Boundary_Vars ,ONLY: PartBound
 ! IMPLICIT VARIABLE HANDLING
@@ -581,14 +584,15 @@ IF(BGGas%NumberOfSpecies.GT.0) THEN
 END IF
 
 IF (DSMC%ElectronicModel.GT.0) THEN
+  IF (.NOT.ALLOCATED(PartIntEn(iPart)%EElec)) ALLOCATE(PartIntEn(iPart)%EElec(1))
   CALL InitElectronShell(iSpecies,iPart,iInit,init_or_sf)
 ENDIF
 
 ! Set vibrational energy
 iPolyatMole = SpecDSMC(iSpecies)%SpecToPolyArray
-IF(ALLOCATED(VibQuantsPar(iPart)%Quants)) DEALLOCATE(VibQuantsPar(iPart)%Quants)
-ALLOCATE(VibQuantsPar(iPart)%Quants(PolyatomMolDSMC(iPolyatMole)%VibDOF))
-PartStateIntEn( 1,iPart) = 0.0
+IF(ALLOCATED(PartIntEn(iPart)%QVib)) DEALLOCATE(PartIntEn(iPart)%QVib)
+ALLOCATE(PartIntEn(iPart)%QVib(PolyatomMolDSMC(iPolyatMole)%VibDOF))
+PartIntEn(iPart)%EVib = 0.0
 DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
   CALL RANDOM_NUMBER(iRan)
   iQuant = INT(-LOG(iRan)*TVib/PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF))
@@ -596,12 +600,12 @@ DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
     CALL RANDOM_NUMBER(iRan)
     iQuant = INT(-LOG(iRan)*TVib/PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF))
   END DO
-  PartStateIntEn( 1,iPart) = PartStateIntEn( 1,iPart) &
+  PartIntEn(iPart)%EVib = PartIntEn(iPart)%EVib &
                               + (iQuant + DSMC%GammaQuant)*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
-  VibQuantsPar(iPart)%Quants(iDOF)=iQuant
+  PartIntEn(iPart)%QVib(iDOF)=iQuant
 END DO
-! set initial rotational internal energy
-PartStateIntEn( 2,iPart) = RotInitPolyRoutineFuncPTR(iSpecies,TRot,iPart)
+
+PartIntEn(iPart)%ERot = RotInitPolyRoutineFuncPTR(iSpecies,TRot,iPart)
 
 END SUBROUTINE DSMC_SetInternalEnr_Poly_ARM_SingleMode
 
@@ -614,7 +618,7 @@ SUBROUTINE DSMC_SetInternalEnr_Poly_ARM(iSpec, iInit, iPart, init_or_sf)
 ! MODULES
 USE MOD_Globals               ,ONLY: Abort
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, DSMC,PolyatomMolDSMC,VibQuantsPar
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, DSMC,PolyatomMolDSMC
 USE MOD_Particle_Vars         ,ONLY: PEM
 USE MOD_DSMC_ElectronicModel  ,ONLY: InitElectronShell
 USE MOD_part_tools            ,ONLY: RotInitPolyRoutineFuncPTR
@@ -650,14 +654,15 @@ SELECT CASE (init_or_sf)
 END SELECT
 
 IF (DSMC%ElectronicModel.GT.0) THEN
+  IF (.NOT.ALLOCATED(PartIntEn(iPart)%EElec)) ALLOCATE(PartIntEn(iPart)%EElec(1))
   CALL InitElectronShell(iSpec,iPart,iInit,init_or_sf)
 ENDIF
 
 ! Set vibrational energy of new molecule
 IF (SpecDSMC(iSpec)%PolyatomicMol) THEN
   iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
-  IF(ALLOCATED(VibQuantsPar(iPart)%Quants)) DEALLOCATE(VibQuantsPar(iPart)%Quants)
-  ALLOCATE(VibQuantsPar(iPart)%Quants(PolyatomMolDSMC(iPolyatMole)%VibDOF))
+  IF(ALLOCATED(PartIntEn(iPart)%QVib)) DEALLOCATE(PartIntEn(iPart)%QVib)
+  ALLOCATE(PartIntEn(iPart)%QVib(PolyatomMolDSMC(iPolyatMole)%VibDOF))
   ALLOCATE(iRan(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
           ,tempEng(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
           ,iQuant(PolyatomMolDSMC(iPolyatMole)%VibDOF))
@@ -679,18 +684,15 @@ IF (SpecDSMC(iSpec)%PolyatomicMol) THEN
     END DO
     CALL RANDOM_NUMBER(iRan2)
   END DO
-  PartStateIntEn( 1,iPart) = 0.0
-  VibQuantsPar(iPart)%Quants(:)=iQuant(:)
+  PartIntEn(iPart)%EVib = 0.0
+  PartIntEn(iPart)%QVib(:)=iQuant(:)
   DO iDOF = 1 , PolyatomMolDSMC(iPolyatMole)%VibDOF
-    PartStateIntEn( 1,iPart)= PartStateIntEn( 1,iPart) &
+    PartIntEn(iPart)%EVib= PartIntEn(iPart)%EVib &
       +(iQuant(iDOF) + DSMC%GammaQuant)*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
   END DO
   ! set initial rotational internal energy
-  PartStateIntEn( 2,iPart) = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
+  PartIntEn(iPart)%ERot = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
   DEALLOCATE(iRan, tempEng, iQuant)
-ELSE
-  PartStateIntEn( 1,iPart) = 0
-  PartStateIntEn( 2,iPart) = 0
 END IF
 
 END SUBROUTINE DSMC_SetInternalEnr_Poly_ARM
@@ -704,7 +706,7 @@ SUBROUTINE DSMC_SetInternalEnr_Poly_MH_FirstPick(iSpec, iInit, iPart, init_or_sf
 ! MODULES
 USE MOD_Globals               ,ONLY: Abort
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, DSMC,PolyatomMolDSMC,VibQuantsPar
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, DSMC,PolyatomMolDSMC
 USE MOD_Particle_Vars         ,ONLY: PEM
 USE MOD_DSMC_ElectronicModel  ,ONLY: InitElectronShell
 USE MOD_part_tools            ,ONLY: RotInitPolyRoutineFuncPTR
@@ -740,6 +742,7 @@ ElemID = PEM%LocalElemID(iPart)
   END SELECT
 
   IF (DSMC%ElectronicModel.GT.0) THEN
+    IF (.NOT.ALLOCATED(PartIntEn(iPart)%EElec)) ALLOCATE(PartIntEn(iPart)%EElec(1))
     CALL InitElectronShell(iSpec,iPart,iInit,init_or_sf)
   ENDIF
 
@@ -748,8 +751,8 @@ ElemID = PEM%LocalElemID(iPart)
     ALLOCATE(iRan(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
             ,iQuant(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
             ,iQuant_old(PolyatomMolDSMC(iPolyatMole)%VibDOF))
-    IF(ALLOCATED(VibQuantsPar(iPart)%Quants)) DEALLOCATE(VibQuantsPar(iPart)%Quants)
-    ALLOCATE(VibQuantsPar(iPart)%Quants(PolyatomMolDSMC(iPolyatMole)%VibDOF))
+    IF(ALLOCATED(PartIntEn(iPart)%QVib)) DEALLOCATE(PartIntEn(iPart)%QVib)
+    ALLOCATE(PartIntEn(iPart)%QVib(PolyatomMolDSMC(iPolyatMole)%VibDOF))
 
     CALL RANDOM_NUMBER(iRan)
     iQuant(:) = INT(iRan(:)*PolyatomMolDSMC(iPolyatMole)%MaxVibQuantDOF(:))
@@ -767,19 +770,16 @@ ElemID = PEM%LocalElemID(iPart)
       IF (NormProb.LT.iRan2) iQuant(:)=iQuant_old(:)
     END DO
 
-    PartStateIntEn( 1,iPart) = 0.0
+    PartIntEn(iPart)%EVib = 0.0
     DO iDOF = 1 , PolyatomMolDSMC(iPolyatMole)%VibDOF
-      PartStateIntEn( 1,iPart)= PartStateIntEn( 1,iPart) &
+      PartIntEn(iPart)%EVib= PartIntEn(iPart)%EVib &
         +(iQuant(iDOF) + DSMC%GammaQuant)*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
     END DO
-    VibQuantsPar(iPart)%Quants(:)=iQuant(:)
+    PartIntEn(iPart)%QVib(:)=iQuant(:)
     DEALLOCATE(iRan, iQuant,iQuant_old)
 
     ! set initial rotational internal energy
-    PartStateIntEn( 2,iPart) = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
-  ELSE
-    PartStateIntEn( 1,iPart) = 0
-    PartStateIntEn( 2,iPart) = 0
+    PartIntEn(iPart)%ERot = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
   END IF
 
 END SUBROUTINE DSMC_SetInternalEnr_Poly_MH_FirstPick
@@ -793,7 +793,7 @@ SUBROUTINE DSMC_SetInternalEnr_Poly_MH(iSpec, iInitTmp, iPart, init_or_sf)
 ! MODULES
 USE MOD_Globals               ,ONLY: Abort
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, DSMC,PolyatomMolDSMC,VibQuantsPar
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, DSMC,PolyatomMolDSMC
 USE MOD_Particle_Vars         ,ONLY: Species, PEM
 USE MOD_DSMC_ElectronicModel  ,ONLY: InitElectronShell
 USE MOD_part_tools            ,ONLY: RotInitPolyRoutineFuncPTR
@@ -830,6 +830,7 @@ SELECT CASE (init_or_sf)
 END SELECT
 
 IF (DSMC%ElectronicModel.GT.0) THEN
+  IF (.NOT.ALLOCATED(PartIntEn(iPart)%EElec)) ALLOCATE(PartIntEn(iPart)%EElec(1))
   CALL InitElectronShell(iSpec,iPart,iInit,init_or_sf)
 ENDIF
 
@@ -837,8 +838,8 @@ IF (SpecDSMC(iSpec)%PolyatomicMol) THEN
   iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
   ALLOCATE(iRan(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
           ,iQuant_old(PolyatomMolDSMC(iPolyatMole)%VibDOF))
-  IF(ALLOCATED(VibQuantsPar(iPart)%Quants)) DEALLOCATE(VibQuantsPar(iPart)%Quants)
-  ALLOCATE(VibQuantsPar(iPart)%Quants(PolyatomMolDSMC(iPolyatMole)%VibDOF))
+  IF(ALLOCATED(PartIntEn(iPart)%QVib)) DEALLOCATE(PartIntEn(iPart)%QVib)
+  ALLOCATE(PartIntEn(iPart)%QVib(PolyatomMolDSMC(iPolyatMole)%VibDOF))
 ! Set vibrational energy
   DO iWalk = 1, 150
     iQuant_old(:)=PolyatomMolDSMC(iPolyatMole)%LastVibQuantNums(:, iInit)
@@ -857,20 +858,16 @@ IF (SpecDSMC(iSpec)%PolyatomicMol) THEN
     CALL RANDOM_NUMBER(iRan2)
     IF (NormProb.LT.iRan2) PolyatomMolDSMC(iPolyatMole)%LastVibQuantNums(:, iInit)=iQuant_old(:)
   END DO
-  PartStateIntEn( 1,iPart) = 0.0
+  PartIntEn(iPart)%EVib = 0.0
   DO iDOF = 1 , PolyatomMolDSMC(iPolyatMole)%VibDOF
-    PartStateIntEn( 1,iPart)= PartStateIntEn( 1,iPart) &
+    PartIntEn(iPart)%EVib= PartIntEn(iPart)%EVib &
       +(PolyatomMolDSMC(iPolyatMole)%LastVibQuantNums(iDOF, iInit) &
       + DSMC%GammaQuant)*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
   END DO
-  VibQuantsPar(iPart)%Quants(:)=PolyatomMolDSMC(iPolyatMole)%LastVibQuantNums(:, iInit)
+  PartIntEn(iPart)%QVib(:)=PolyatomMolDSMC(iPolyatMole)%LastVibQuantNums(:, iInit)
   DEALLOCATE(iRan, iQuant_old)
-
   ! set initial rotational internal energy
-  PartStateIntEn( 2,iPart) = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
-ELSE
-  PartStateIntEn( 1,iPart) = 0
-  PartStateIntEn( 2,iPart) = 0
+  PartIntEn(iPart)%ERot = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
 END IF
 
 END SUBROUTINE DSMC_SetInternalEnr_Poly_MH
@@ -884,7 +881,7 @@ SUBROUTINE DSMC_RelaxVibPolyProduct(iPair, iPart, FakXi, Xi_Vib, WeightProd)
 ! MODULES
 USE MOD_Globals
 USE MOD_Globals_Vars,         ONLY : BoltzmannConst
-USE MOD_DSMC_Vars,            ONLY : PartStateIntEn, SpecDSMC, DSMC, PolyatomMolDSMC, Coll_pData, VibQuantsPar
+USE MOD_DSMC_Vars,            ONLY : PartIntEn, SpecDSMC, DSMC, PolyatomMolDSMC, Coll_pData
 USE MOD_Particle_Vars,        ONLY : PartSpecies
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
@@ -907,9 +904,9 @@ IF (PRESENT(WeightProd)) THEN
 ELSE
   Weight = 1.
 END IF
-IF(ALLOCATED(VibQuantsPar(iPart)%Quants)) DEALLOCATE(VibQuantsPar(iPart)%Quants)
-ALLOCATE(VibQuantsPar(iPart)%Quants(PolyatomMolDSMC(iPolyatMole)%VibDOF))
-PartStateIntEn( 1,iPart) = 0.0
+IF(ALLOCATED(PartIntEn(iPart)%QVib)) DEALLOCATE(PartIntEn(iPart)%QVib)
+ALLOCATE(PartIntEn(iPart)%QVib(PolyatomMolDSMC(iPolyatMole)%VibDOF))
+PartIntEn(iPart)%EVib = 0.0
 DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
   ! Addition of the zero-point energy part for the respective dofs (avoiding the redistribution of too much vibrational energy)
   Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec  &
@@ -922,16 +919,16 @@ DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
   iQua = INT(iRan * iQuaMax)
   CALL RANDOM_NUMBER(iRan)
   DO WHILE (iRan.GT.(1 - iQua/MaxColQua)**FakXi)
-    !laux diss page 31
-    CALL RANDOM_NUMBER(iRan)
-    iQua = INT(iRan * iQuaMax)
-    CALL RANDOM_NUMBER(iRan)
+   !laux diss page 31
+   CALL RANDOM_NUMBER(iRan)
+   iQua = INT(iRan * iQuaMax)
+   CALL RANDOM_NUMBER(iRan)
   END DO
-  PartStateIntEn(1,iPart) = PartStateIntEn(1,iPart)     &
+  PartIntEn(iPart)%EVib = PartIntEn(iPart)%EVib     &
     + (iQua + DSMC%GammaQuant) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)
   Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec &
       - (iQua + DSMC%GammaQuant) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*Weight
-  VibQuantsPar(iPart)%Quants(iDOF) = iQua
+  PartIntEn(iPart)%QVib(iDOF) = iQua
   IF (iDOF.LT.PolyatomMolDSMC(iPolyatMole)%VibDOF) FakXi = FakXi - 0.5*Xi_vib(iDOF + 1)
 END DO
 END SUBROUTINE DSMC_RelaxVibPolyProduct
@@ -943,7 +940,7 @@ END SUBROUTINE DSMC_RelaxVibPolyProduct
 !===================================================================================================================================
 SUBROUTINE DSMC_VibRelaxPoly_ARM(iPair, iPart, FakXi)
 ! MODULES
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, PolyatomMolDSMC,VibQuantsPar, Coll_pData
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, PolyatomMolDSMC, Coll_pData
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
 USE MOD_part_tools            ,ONLY: GetParticleWeight
@@ -994,8 +991,8 @@ DO
     IF (iRan2.LE.((Ec-tempProb)**FakXi/NormProb)) EXIT
   END IF
 END DO
-PartStateIntEn(1,iPart)=tempProb
-VibQuantsPar(iPart)%Quants(:) = iQuant(:)
+PartIntEn(iPart)%EVib=tempProb
+PartIntEn(iPart)%QVib(:) = iQuant(:)
 
 DEALLOCATE(iRan ,tempEng ,iQuant ,iMaxQuant)
 
@@ -1007,7 +1004,7 @@ END SUBROUTINE DSMC_VibRelaxPoly_ARM
 !===================================================================================================================================
 SUBROUTINE DSMC_VibRelaxPoly_MH(iPair, iPart,FakXi)
 ! MODULES
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, PolyatomMolDSMC,VibQuantsPar, Coll_pData
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, PolyatomMolDSMC, Coll_pData
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
@@ -1038,12 +1035,12 @@ ALLOCATE(iRan(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
         ,iQuant(PolyatomMolDSMC(iPolyatMole)%VibDOF) &
         ,iMaxQuant(PolyatomMolDSMC(iPolyatMole)%VibDOF))
 DO iWalk=1,750
-  NormProb = Ec - PartStateIntEn(1,iPart)
+  NormProb = Ec - PartIntEn(iPart)%EVib(1)
   ! Proper modelling of energy transfer between old and new state in chemistry
   NormProb = NormProb**FakXi
 
   CALL RANDOM_NUMBER(iRan)
-  iQuant(:) = VibQuantsPar(iPart)%Quants(:)+FLOOR(3*iRan(:)-1)
+  iQuant(:) = PartIntEn(iPart)%QVib(:)+FLOOR(3*iRan(:)-1)
   DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
     IF(iQuant(iDOF).LT.0) iQuant(iDOF) = -1*iQuant(iDOF) -1
   END DO
@@ -1057,11 +1054,11 @@ DO iWalk=1,750
     NormProb = MIN(1.0,tempProb**FakXi/NormProb)
     CALL RANDOM_NUMBER(iRan2)
     IF(NormProb.GE.iRan2) THEN
-      PartStateIntEn(1,iPart) = 0.0
+      PartIntEn(iPart)%EVib = 0.0
       DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
-        PartStateIntEn(1,iPart) = PartStateIntEn(1,iPart) + tempEng(iDOF)
+        PartIntEn(iPart)%EVib = PartIntEn(iPart)%EVib + tempEng(iDOF)
       END DO
-      VibQuantsPar(iPart)%Quants(:) = iQuant(:)
+      PartIntEn(iPart)%QVib(:) = iQuant(:)
     END IF
   END IF
 END DO
@@ -1075,7 +1072,7 @@ END SUBROUTINE DSMC_VibRelaxPoly_MH
 SUBROUTINE DSMC_VibRelaxPoly_GibbsSampling(iPair, iPart, FakXi)
 ! MODULES
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, PolyatomMolDSMC,VibQuantsPar, Coll_pData
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, PolyatomMolDSMC, Coll_pData
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 ! IMPLICIT VARIABLE HANDLING
@@ -1100,7 +1097,7 @@ ELSE
 END IF
 iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
 ALLOCATE(iQuant(PolyatomMolDSMC(iPolyatMole)%VibDOF),iMaxQuant(PolyatomMolDSMC(iPolyatMole)%VibDOF))
-iQuant(:) = VibQuantsPar(iPart)%Quants(:)
+iQuant(:) = PartIntEn(iPart)%QVib(:)
 
 NormProbZero = Ec - SpecDSMC(iSpec)%EZeroPoint
 
@@ -1137,8 +1134,8 @@ DO iLoop = 1,4
   END DO
 END DO
 
-PartStateIntEn(1,iPart) = tempProb
-VibQuantsPar(iPart)%Quants(:) = iQuant(:)
+PartIntEn(iPart)%EVib = tempProb
+PartIntEn(iPart)%QVib(:) = iQuant(:)
 
 DEALLOCATE(iQuant ,iMaxQuant)
 
@@ -1185,7 +1182,7 @@ END SUBROUTINE DSMC_VibRelaxPoly_ARM_MH
 !===================================================================================================================================
 SUBROUTINE DSMC_VibRelaxPolySingle(iPair, iPart, FakXi, DOFRelax)
 ! MODULES
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC, PolyatomMolDSMC, VibQuantsPar, Coll_pData, DSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC, PolyatomMolDSMC, Coll_pData, DSMC
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, usevMPF, UseVarTimeStep
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
 USE MOD_part_tools            ,ONLY: GetParticleWeight
@@ -1203,11 +1200,11 @@ REAL                          :: iRan, MaxColQua, Ec
 INTEGER                       :: iPolyatMole, iQua, iQuaMax
 !===================================================================================================================================
 ! Not all vibrational energy is redistributed but only the energy of the selected vibrational degree of freedom
-Ec = Coll_pData(iPair)%Ec - PartStateIntEn(1,iPart)*GetParticleWeight(iPart)
+Ec = Coll_pData(iPair)%Ec - PartIntEn(iPart)%EVib(1)*GetParticleWeight(iPart)
 
 iPolyatMole = SpecDSMC(PartSpecies(iPart))%SpecToPolyArray
 ! Adding the vibrational energy of the selected vibrational mode DOFRelax
-Ec = Ec + (VibQuantsPar(iPart)%Quants(DOFRelax) + DSMC%GammaQuant) * BoltzmannConst  &
+Ec = Ec + (PartIntEn(iPart)%QVib(DOFRelax) + DSMC%GammaQuant) * BoltzmannConst  &
                                                 * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(DOFRelax)*GetParticleWeight(iPart)
 IF (usevMPF.OR.UseVarTimeStep) THEN
   Ec = Ec / GetParticleWeight(iPart)
@@ -1226,14 +1223,14 @@ DO WHILE (iRan.GT.(1 - iQua/MaxColQua)**FakXi)
   CALL RANDOM_NUMBER(iRan)
 END DO
 ! Setting the new vibrational state
-PartStateIntEn(1,iPart) = PartStateIntEn(1,iPart) &
+PartIntEn(iPart)%EVib = PartIntEn(iPart)%EVib &
   ! Substracting the old energy of the specific mode
-  - VibQuantsPar(iPart)%Quants(DOFRelax) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(DOFRelax) &
+  - PartIntEn(iPart)%QVib(DOFRelax) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(DOFRelax) &
   ! Adding the new energy of the specific mode
   + iQua * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(DOFRelax)
 
 ! Saving the vibrational quantum number
-VibQuantsPar(iPart)%Quants(DOFRelax) = iQua
+PartIntEn(iPart)%QVib(DOFRelax) = iQua
 
 END SUBROUTINE DSMC_VibRelaxPolySingle
 
@@ -1246,10 +1243,9 @@ SUBROUTINE DSMC_RotRelaxPoly(iPair, iPart,FakXi)
 USE MOD_Globals               ,ONLY: Abort
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst, PlanckConst, PI
 USE MOD_Particle_Vars         ,ONLY: UseVarTimeStep, usevMPF
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, Coll_pData, SpecDSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, Coll_pData, SpecDSMC
 USE MOD_Particle_Vars         ,ONLY: PartSpecies
 USE MOD_part_tools            ,ONLY: GetParticleWeight
-
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1285,12 +1281,12 @@ IF(SpecDSMC(iSpec)%Xi_Rot.EQ.3) THEN
     NormProb = (fak1*tempProb/CollEnergy)**(3.0/2.0-1.0)*(fak2*(1.0-tempProb/CollEnergy))**(FakXi)
     CALL RANDOM_NUMBER(iRan)
   END DO
-  PartStateIntEn(2,iPart)=tempProb
+  PartIntEn(iPart)%ERot=tempProb
 ELSE    ! continous treatment of linear molecules
   ! fix for changed FakXi for polyatomic
   LocalFakXi = FakXi + 0.5*SpecDSMC(iSpec)%Xi_Rot
   CALL RANDOM_NUMBER(iRan)
-  PartStateIntEn(2, iPart) = CollEnergy * (1.0 - iRan**(1.0/LocalFakXi))
+  PartIntEn(iPart)%ERot = CollEnergy * (1.0 - iRan**(1.0/LocalFakXi))
 END IF
 
 END SUBROUTINE DSMC_RotRelaxPoly
@@ -1306,7 +1302,7 @@ SUBROUTINE DSMC_RotRelaxQuantPoly(iPair,iPart,FakXi)
 ! MODULES
 USE MOD_Globals               ,ONLY: Abort
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst, PlanckConst, PI
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, Coll_pData, SpecDSMC, PolyatomMolDSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, Coll_pData, SpecDSMC, PolyatomMolDSMC
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 
@@ -1355,7 +1351,7 @@ IF(PolyatomMolDSMC(iPolyatMole)%LinearMolec)THEN        ! check if molecule is l
       ARM = .FALSE.
     END IF
   END DO
-  PartStateIntEn( 2,iPart) = REAL(iQuant) * (REAL(iQuant) + 1.) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTRotDOF(1)
+  PartIntEn(iPart)%ERot = REAL(iQuant) * (REAL(iQuant) + 1.) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTRotDOF(1)
 
 ELSE IF(PolyatomMolDSMC(iPolyatMole)%RotationalGroup.EQ.1)THEN
   ! molecule is non-linear -> spherical top molecule with all moments of inertia are the same
@@ -1381,7 +1377,7 @@ ELSE IF(PolyatomMolDSMC(iPolyatMole)%RotationalGroup.EQ.1)THEN
       ARM = .FALSE.
     END IF
   END DO
-  PartStateIntEn( 2,iPart) = REAL(iQuant) * (REAL(iQuant) + 1.) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTRotDOF(1)
+  PartIntEn(iPart)%ERot = REAL(iQuant) * (REAL(iQuant) + 1.) * BoltzmannConst * PolyatomMolDSMC(iPolyatMole)%CharaTRotDOF(1)
 
 ELSE IF(PolyatomMolDSMC(iPolyatMole)%RotationalGroup.EQ.10)THEN
   ! molecule is non-linear -> symmetric top molecule where two are equal and third is different -> oblate top
@@ -1453,7 +1449,7 @@ ELSE IF(PolyatomMolDSMC(iPolyatMole)%RotationalGroup.EQ.10)THEN
     END IF
   END DO
 
-  PartStateIntEn( 2,iPart) = PlanckConst**2. / (8.*PI**2.) * (REAL(iQuant)*(REAL(iQuant)+1.) / &
+  PartIntEn(iPart)%ERot = PlanckConst**2. / (8.*PI**2.) * (REAL(iQuant)*(REAL(iQuant)+1.) / &
       PolyatomMolDSMC(iPolyatMole)%MomentOfInertia(1) + (1./PolyatomMolDSMC(iPolyatMole)%MomentOfInertia(3) &
       - 1./PolyatomMolDSMC(iPolyatMole)%MomentOfInertia(1)) * REAL(kQuant)**2)
 
@@ -1526,7 +1522,7 @@ ELSE IF(PolyatomMolDSMC(iPolyatMole)%RotationalGroup.EQ.11)THEN
     END IF
   END DO
 
-  PartStateIntEn( 2,iPart) = PlanckConst**2. / (8.*PI**2.) * (REAL(iQuant)*(REAL(iQuant)+1.) / &
+  PartIntEn(iPart)%ERot = PlanckConst**2. / (8.*PI**2.) * (REAL(iQuant)*(REAL(iQuant)+1.) / &
       PolyatomMolDSMC(iPolyatMole)%MomentOfInertia(1) + (1./PolyatomMolDSMC(iPolyatMole)%MomentOfInertia(3) &
       - 1./PolyatomMolDSMC(iPolyatMole)%MomentOfInertia(1)) * REAL(kQuant)**2)
 ELSE IF(PolyatomMolDSMC(iPolyatMole)%RotationalGroup.EQ.3)THEN
@@ -1545,7 +1541,7 @@ END SUBROUTINE DSMC_RotRelaxQuantPoly
 SUBROUTINE DSMC_RotRelaxDatabasePoly(iPair,iPart,FakXi)
   USE MOD_Globals
   USE MOD_Globals_Vars           ,ONLY: BoltzmannConst
-  USE MOD_DSMC_Vars              ,ONLY: SpecDSMC, PartStateIntEn, Coll_pData
+  USE MOD_DSMC_Vars              ,ONLY: SpecDSMC, PartIntEn, Coll_pData
   USE MOD_Particle_Vars          ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
   USE MOD_part_tools             ,ONLY: GetParticleWeight
 ! IMPLICIT VARIABLE HANDLING
@@ -1604,7 +1600,7 @@ DO WHILE ( iRan2 .GE. gtemp / gmax )
           ( CollisionEnergy - BoltzmannConst * SpecDSMC(iSpec)%RotationalState(2,iQua))**FakXi
   CALL RANDOM_NUMBER(iRan2)
 END DO
-PartStateIntEn(2,iPart) = BoltzmannConst * SpecDSMC(iSpec)%RotationalState(2,iQua)
+PartIntEn(iPart)%ERot = BoltzmannConst * SpecDSMC(iSpec)%RotationalState(2,iQua)
 
 END SUBROUTINE DSMC_RotRelaxDatabasePoly
 

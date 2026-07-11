@@ -87,8 +87,8 @@ REAL              :: E_GV
 INTEGER           :: ii,jj
 INTEGER,PARAMETER :: NN=16
 INTEGER,PARAMETER :: KK=9
-REAL(KIND=8)      :: a(NN) = (/(10.0**ii, ii=1,NN, 1)/)
-REAL(KIND=8)      :: b(KK) = (/(ii, ii=1,KK, 1)/)
+REAL(KIND=dp)     :: a(NN) = (/(10.0**ii, ii=1,NN, 1)/)
+REAL(KIND=dp)     :: b(KK) = (/(ii, ii=1,KK, 1)/)
 #endif /* CODE_ANALYZE */
 !===================================================================================================================================
 
@@ -191,8 +191,8 @@ REAL                :: n
 INTEGER             :: ii,jj
 INTEGER,PARAMETER   :: NN=16
 INTEGER,PARAMETER   :: KK=9
-REAL(KIND=8)        :: a(NN) = (/(10.0**ii, ii=1,NN, 1)/)
-REAL(KIND=8)        :: b(KK) = (/(ii, ii=1,KK, 1)/)
+REAL(KIND=dp)       :: a(NN) = (/(10.0**ii, ii=1,NN, 1)/)
+REAL(KIND=dp)       :: b(KK) = (/(ii, ii=1,KK, 1)/)
 REAL                :: E
 #endif /* CODE_ANALYZE */
 !===================================================================================================================================

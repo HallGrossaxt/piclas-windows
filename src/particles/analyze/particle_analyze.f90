@@ -887,6 +887,7 @@ USE MOD_Particle_Vars          ,ONLY: usevMPF
 #if USE_MPI
 USE MOD_Particle_Vars          ,ONLY: ForceAverage
 #endif /*USE_MPI*/
+USE MOD_Mesh_Vars              ,ONLY: nGlobalElems
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1412,6 +1413,19 @@ ParticleAnalyzeSampleTime = Time - ParticleAnalyzeSampleTime ! Set ParticleAnaly
             END DO
           END IF
         END IF ! CalcEnergyScalingRatioVMPF
+        ! Percentage (a value of 1.0 is 100%) of elements where the max. particle displacement is the characteristic length of the
+        ! element. Ideally, when the particle is only allowed to travel the length of an element in each time step, this value
+        ! should be 1.0 over the whole simulation
+        IF(CalcMaxPartDisplacement)THEN
+          WRITE(unit_index,'(A1,I3.3,A,I3.3,A)',ADVANCE='NO') ',',OutputCounter,'-PercentMaxPartDisplacement3D'
+          OutputCounter = OutputCounter + 1
+          WRITE(unit_index,'(A1,I3.3,A,I3.3,A)',ADVANCE='NO') ',',OutputCounter,'-PercentMaxPartDisplacementDirX'
+          OutputCounter = OutputCounter + 1
+          WRITE(unit_index,'(A1,I3.3,A,I3.3,A)',ADVANCE='NO') ',',OutputCounter,'-PercentMaxPartDisplacementDirY'
+          OutputCounter = OutputCounter + 1
+          WRITE(unit_index,'(A1,I3.3,A,I3.3,A)',ADVANCE='NO') ',',OutputCounter,'-PercentMaxPartDisplacementDirZ'
+          OutputCounter = OutputCounter + 1
+        END IF ! CalcMaxPartDisplacement
         ! Finish the line with new line character
         WRITE(unit_index,'(A)') ''
       END IF
@@ -1980,6 +1994,15 @@ IF (MPIRoot) THEN
       EnergyScalingRatioVMPF = 0.
     END IF
   END IF ! CalcEnergyScalingRatioVMPF
+  ! Percentage (a value of 1.0 is 100%) of elements where the max. particle displacement is the characteristic length of the
+  ! element. Ideally, when the particle is only allowed to travel the length of an element in each time step, this value
+  ! should be 1.0 over the whole simulation
+  IF(CalcMaxPartDisplacement)THEN
+    WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',', REAL(MaxPartDisplacementSmallerOne(1)) / REAL(nGlobalElems)
+    WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',', REAL(MaxPartDisplacementSmallerOne(2)) / REAL(nGlobalElems)
+    WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',', REAL(MaxPartDisplacementSmallerOne(3)) / REAL(nGlobalElems)
+    WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',', REAL(MaxPartDisplacementSmallerOne(4)) / REAL(nGlobalElems)
+  END IF ! CalcMaxPartDisplacement
   ! Finish the line with new line character
   WRITE(unit_index,'(A)') ''
 #if USE_MPI

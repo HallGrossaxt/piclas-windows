@@ -36,7 +36,6 @@ SUBROUTINE TimeStepByLSERK()
 ! MODULES
 USE MOD_Globals
 USE MOD_PreProc
-USE MOD_Vector
 USE MOD_Mesh_Vars              ,ONLY: nElems
 USE MOD_TimeDisc_Vars          ,ONLY: dt,iStage,time
 USE MOD_TimeDisc_Vars          ,ONLY: RK_a,RK_b,RK_c,nRKStages

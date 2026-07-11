@@ -53,13 +53,13 @@ REAL                                           :: BGK_ThermalConductivity
 
 TYPE tElemNodeAveraging
     TYPE (tNodeAverage), POINTER               :: Root => null()
-END TYPE
+END TYPE tElemNodeAveraging
 
 TYPE tNodeAverage
     TYPE (tNodeAverage), POINTER               :: SubNode(:) => null()
     REAL, ALLOCATABLE                          :: AverageValues(:)
     INTEGER                                    :: CorrectStep
-END TYPE
+END TYPE tNodeAverage
 
 TYPE (tElemNodeAveraging), ALLOCATABLE         :: ElemNodeAveraging(:)
 

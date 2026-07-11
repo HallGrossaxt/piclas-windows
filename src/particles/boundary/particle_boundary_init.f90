@@ -78,6 +78,13 @@ CALL prms%CreateLogicalOption('Part-Boundary[$]-Dielectric' , 'Define if particl
                               , '.FALSE.', numberedmulti=.TRUE.)
 CALL prms%CreateRealOption(   'Part-Boundary[$]-PermittivityVDL', 'Permittivity of the virtual dielectric layer model. Impacting particles will be removed and deposited in the volume via CVWM.', '0.0', numberedmulti=.TRUE.)
 CALL prms%CreateRealOption(   'Part-Boundary[$]-ThicknessVDL'   , 'Thickness of the real dielectric layer in the virtual dielectric layer model. Impacting particles will be removed and deposited in the volume via CVWM.', numberedmulti=.TRUE.)
+CALL prms%CreateLogicalOption('Part-Boundary[$]-UseSurfaceCharge' , '2D surface charging via particle deposition on surfaces (PIC). ', '.FALSE.', numberedmulti=.TRUE.)
+#if USE_HDG
+CALL prms%CreateRealOption(   'Part-Boundary[$]-DC-BiasVoltage'         ,'Distributed Capacitance bias voltage (phi)'             , '0.0' , numberedmulti=.TRUE.)
+CALL prms%CreateRealOption(   'Part-Boundary[$]-DC-Permittivity'        ,'Distributed Capacitance relative permittivity (eps_r)'  , '1.0' , numberedmulti=.TRUE.)
+CALL prms%CreateRealOption(   'Part-Boundary[$]-DC-SurfaceChargeDensity','Distributed Capacitance surface charge density (sigma)' , '0.0' , numberedmulti=.TRUE.)
+CALL prms%CreateRealOption(   'Part-Boundary[$]-DC-Thickness'           ,'Distributed Capacitance thickness (d)'                  , '1.0' , numberedmulti=.TRUE.)
+#endif /*USE_HDG*/
 CALL prms%CreateLogicalOption('Part-Boundary[$]-BoundaryParticleOutput' , 'Define if the properties of particles impacting on '//&
                               'boundary [$] are to be stored in an additional .h5 file for post-processing analysis [.TRUE.] '//&
                               'or not [.FALSE.].', '.FALSE.', numberedmulti=.TRUE.)
@@ -220,7 +227,7 @@ USE MOD_Particle_Vars          ,ONLY: nSpecies, PartMeshHasPeriodicBCs, RotRefFr
 USE MOD_Particle_Vars          ,ONLY: InterPlanePartIndx, PDM
 USE MOD_SurfaceModel_Vars      ,ONLY: nPorousBC
 USE MOD_Particle_Boundary_Vars ,ONLY: PartBound,nPartBound,DoBoundaryParticleOutputHDF5,DoVirtualDielectricLayer
-USE MOD_Particle_Boundary_Vars ,ONLY: nVarPartStateBoundary
+USE MOD_Particle_Boundary_Vars ,ONLY: nVarPartStateBoundary,Do2DSurfaceCharge
 USE MOD_Particle_Tracking_Vars ,ONLY: TrackingMethod
 USE MOD_Particle_Surfaces_Vars ,ONLY: BCdata_auxSF
 USE MOD_Particle_Emission_Init ,ONLY: InitializeVariablesSpeciesBoundary
@@ -242,14 +249,14 @@ USE MOD_LoadBalance_Vars       ,ONLY: PerformLoadBalance
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER               :: iPartBound, iBC, iPBC, iSwaps, MaxNbrOfSpeciesSwaps, RotAxis, nRotPeriodicBCs, TempGradDir
+INTEGER               :: iPartBound, iBC, iPBC, iSwaps, MaxNbrOfSpeciesSwaps, RotAxis, nRotPeriodicBCs, TempGradDir, iInit, iSpec
 INTEGER               :: dummy_int
 REAL                  :: omegaTemp, RotFreq
 CHARACTER(32)         :: hilf,hilf2
 CHARACTER(200)        :: tmpString
 CHARACTER(LEN=64)     :: dsetname
-LOGICAL               :: StickingCoefficientExists,FoundPartBoundPhotonSEE,BoundaryUsesSEE,AnyBoundaryUsesSEE
-INTEGER               :: iInit,iSpec
+LOGICAL               :: StickingCoefficientExists
+LOGICAL               :: FoundPartBoundPhotonSEE,BoundaryUsesSEE,AnyBoundaryUsesSEE
 INTEGER               :: ALLOCSTAT
 !===================================================================================================================================
 ! Read in boundary parameters
@@ -379,6 +386,20 @@ PartBound%PermittivityVDL = 0.0
 ALLOCATE(PartBound%ThicknessVDL(1:nPartBound))
 PartBound%ThicknessVDL = 0.0
 DoVirtualDielectricLayer  = .FALSE.
+! 2D surface charging
+ALLOCATE(PartBound%UseSurfaceCharge(1:nPartBound))
+PartBound%UseSurfaceCharge = .FALSE.
+Do2DSurfaceCharge = .FALSE.
+#if USE_HDG
+ALLOCATE(PartBound%DCBiasVoltage(1:nPartBound))
+PartBound%DCBiasVoltage = 0.0
+ALLOCATE(PartBound%DCPermittivity(1:nPartBound))
+PartBound%DCPermittivity = 0.0
+ALLOCATE(PartBound%DCSurfaceChargeDensity(1:nPartBound))
+PartBound%DCSurfaceChargeDensity = 0.0
+ALLOCATE(PartBound%DCThickness(1:nPartBound))
+PartBound%DCThickness = 0.0
+#endif /*USE_HDG*/
 ! Surface particle output to .h5
 ALLOCATE(PartBound%BoundaryParticleOutputHDF5(1:nPartBound))
 PartBound%BoundaryParticleOutputHDF5=.FALSE.
@@ -524,6 +545,8 @@ DO iPartBound=1,nPartBound
         AnyBoundaryUsesSEE = .TRUE.
       CASE (VDL_MODEL_ID) ! VDL - cannot be actively selected! See ./src/piclas.h for numbers
         CALL abort(__STAMP__,'Part-Boundary'//TRIM(hilf)//'-SurfaceModel = VDL_MODEL_ID,SEE_VDL_MODEL_ID cannot be selected!')
+      CASE (SURF_CHARGE_ID) ! SURF_CHARGE_ID - cannot be actively selected! See ./src/piclas.h for numbers
+        CALL abort(__STAMP__,'Part-Boundary'//TRIM(hilf)//'-SurfaceModel = SURF_CHARGE_ID cannot be selected!')
       CASE DEFAULT
         CALL abort(__STAMP__,'Error in particle init: only allowed SurfaceModels: 0,1,2,20,SEE_MODELS_ID! SurfaceModel=',&
                   IntInfoOpt=PartBound%SurfaceModel(iPartBound))
@@ -563,8 +586,7 @@ DO iPartBound=1,nPartBound
     ! Virtual dielectric layer (VDL)
     PartBound%PermittivityVDL(iPartBound) = GETREAL('Part-Boundary'//TRIM(hilf)//'-PermittivityVDL')
     IF(PartBound%PermittivityVDL(iPartBound).GT.0.0)THEN
-      IF(.NOT.DoDeposition) CALL abort(__STAMP__,&
-        'Part-Boundary'//TRIM(hilf)//'-PermittivityVDL requires PIC-DoDeposition=T')
+      IF(.NOT.DoDeposition) CALL abort(__STAMP__,'Part-Boundary'//TRIM(hilf)//'-PermittivityVDL requires PIC-DoDeposition=T')
       IF(TRIM(DepositionType).NE.'cell_volweight_mean') CALL CollectiveStop(__STAMP__,&
         'Part-Boundary'//TRIM(hilf)//'-PermittivityVDL requires cell_volweight_mean (12) as deposition method')
       IF(PartBound%NbrOfSpeciesSwaps(iPartBound).GT.0) CALL CollectiveStop(__STAMP__,&
@@ -583,13 +605,50 @@ DO iPartBound=1,nPartBound
       DoDielectricSurfaceCharge          = .TRUE. ! Global setting indicating surface charging via VDL or PartBound%Dielectric
       DoHaloDepo                         = .TRUE. ! Activate deposition in the halo region (shape function)
       ! Check if pure VDL or SEE+VDL boundary. Only set SurfaceModel=99 when not other model is present
-      IF(.NOT.BoundaryUsesSEE) PartBound%SurfaceModel(iPartBound) = 99 ! VDL only
+      IF(.NOT.BoundaryUsesSEE) PartBound%SurfaceModel(iPartBound) = VDL_MODEL_ID ! VDL only
 #if !((PP_TimeDiscMethod==500) || (PP_TimeDiscMethod==501) || (PP_TimeDiscMethod==502) || (PP_TimeDiscMethod==506) || (PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509))
       CALL abort(__STAMP__,'VDL model not implemented for the given time discretisation!')
 #endif /*!((PP_TimeDiscMethod==500) || (PP_TimeDiscMethod==501) || (PP_TimeDiscMethod==502) || (PP_TimeDiscMethod==506) || (PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509))*/
     ELSEIF(PartBound%PermittivityVDL(iPartBound).LT.0.0)THEN
       CALL abort(__STAMP__,'Part-Boundary'//TRIM(hilf)//'-PermittivityVDL cannot be negative')
     END IF ! PartBound%PermittivityVDL(iPartBound)
+
+    ! 2D Surface charging
+    PartBound%UseSurfaceCharge(iPartBound) = GETLOGICAL('Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge')
+    IF (PartBound%UseSurfaceCharge(iPartBound)) THEN
+      IF(.NOT.DoDeposition) CALL CollectiveStop(__STAMP__,&
+        'Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge requires PIC-DoDeposition=T')
+      IF(TRIM(DepositionType).NE.'cell_volweight_mean') CALL CollectiveStop(__STAMP__,&
+        'Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge = T requires cell_volweight_mean (12) as deposition method')
+      IF(PartBound%NbrOfSpeciesSwaps(iPartBound).GT.0) CALL CollectiveStop(__STAMP__,&
+        'Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge = T cannot be combined with Part-Boundary'//TRIM(hilf)//'-NbrOfSpeciesSwaps')
+      IF(PartBound%Dielectric(iPartBound)) CALL CollectiveStop(__STAMP__,&
+        'Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge = T cannot be combined with Part-Boundary'//TRIM(hilf)//'-Dielectric')
+      IF(PartBound%PermittivityVDL(iPartBound).GT.0.0) CALL CollectiveStop(__STAMP__,&
+        'Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge = T cannot be combined with Part-Boundary'//TRIM(hilf)//'-PermittivityVDL')
+#if USE_HDG
+      ! NOTE: What should be done with DoDirichletDeposition=T/F (can both options be used or must it be either T or F?)
+      IF(.NOT.DoDirichletDeposition) CALL abort(__STAMP__,'Part-Boundary'//TRIM(hilf)//'-PermittivityVDL requires PIC-DoDirichletDeposition=T')
+#endif /*USE_HDG*/
+      ! UseSurfaceCharge settings
+      Do2DSurfaceCharge              = .TRUE. ! Global setting indicating that 2d surface charging is active
+      PartBound%Reactive(iPartBound) = .TRUE. ! Surface charge requires reactive BC for analysis
+      DoHaloDepo                     = .TRUE. ! Activate deposition in the halo region (shape function)
+      ! Check if pure 2D surface charging or SEE+surface charging boundary. Only set SurfaceModel=999 when not other model is present
+      IF(.NOT.BoundaryUsesSEE) PartBound%SurfaceModel(iPartBound) = SURF_CHARGE_ID ! surface charging only
+#if !((PP_TimeDiscMethod==500) || (PP_TimeDiscMethod==501) || (PP_TimeDiscMethod==502) || (PP_TimeDiscMethod==506) || (PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509))
+      CALL abort(__STAMP__,'Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge = T model not implemented for the given time discretisation!')
+#endif /*!((PP_TimeDiscMethod==500) || (PP_TimeDiscMethod==501) || (PP_TimeDiscMethod==502) || (PP_TimeDiscMethod==506) || (PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509))*/
+    END IF ! PartBound%UseSurfaceCharge(iPartBound)
+
+#if USE_HDG
+    ! DCBC - Distributed Capacitance BC
+    PartBound%DCBiasVoltage(iPartBound)          = GETREAL('Part-Boundary'//TRIM(hilf)//'-DC-BiasVoltage')
+    PartBound%DCPermittivity(iPartBound)         = GETREAL('Part-Boundary'//TRIM(hilf)//'-DC-Permittivity')
+    PartBound%DCSurfaceChargeDensity(iPartBound) = GETREAL('Part-Boundary'//TRIM(hilf)//'-DC-SurfaceChargeDensity')
+    PartBound%DCThickness(iPartBound)            = GETREAL('Part-Boundary'//TRIM(hilf)//'-DC-Thickness')
+    IF(PartBound%DCThickness(iPartBound).LE.0.0) CALL CollectiveStop(__STAMP__, 'ERROR: DC-Thickness <= 0')
+#endif /*USE_HDG*/
 
 
   CASE('periodic')
@@ -625,6 +684,8 @@ DO iPartBound=1,nPartBound
     SWRITE(*,*) ' Boundary does not exist: ', TRIM(tmpString)
     CALL abort(__STAMP__,'Particle Boundary Condition does not exist')
   END SELECT
+
+  ! Get boundary condition name
   PartBound%SourceBoundName(iPartBound) = TRIM(GETSTR('Part-Boundary'//TRIM(hilf)//'-SourceName'))
   ! Surface particle output to .h5
   PartBound%BoundaryParticleOutputHDF5(iPartBound)      = GETLOGICAL('Part-Boundary'//TRIM(hilf)//'-BoundaryParticleOutput')
@@ -632,7 +693,8 @@ DO iPartBound=1,nPartBound
     DoBoundaryParticleOutputHDF5=.TRUE.
     PartBound%BoundaryParticleOutputEmission(iPartBound)      = GETLOGICAL('Part-Boundary'//TRIM(hilf)//'-BoundaryParticleOutput-Emission')
   END IF
-END DO
+
+END DO ! iPartBound=1,nPartBound
 
 ! Check if there is an particle init with photon SEE
 FoundPartBoundPhotonSEE=.FALSE.
@@ -651,7 +713,7 @@ CALL InitializeVariablesSpeciesBoundary(FoundPartBoundPhotonSEE)
 PartBound%AdaptWallTemp = GETLOGICAL('Part-AdaptWallTemp')
 
 ! Surface particle output to .h5
-IF(DoBoundaryParticleOutputHDF5) CALL InitPartStateBoundary()
+IF(DoBoundaryParticleOutputHDF5) CALL InitPartStateBoundary(ReInitialise=.FALSE.)
 
 ! Set mapping from field boundary to particle boundary index and vice versa
 ALLOCATE(PartBound%MapToPartBC(1:nBCs))
@@ -670,12 +732,31 @@ DO iPBC=1,nPartBound
         CALL abort(__STAMP__,' Analyze-BCs cannot be used for internal reflection in general cases! ')
       END IF
     END IF
-    ! Check if names are equal: Use case insensitive string comparison
+    ! Check if BoundaryName(iBC) == PartBound%SourceBoundName(iPBC) names are equal: Use case insensitive string comparison
     IF (STRICMP(BoundaryName(iBC),PartBound%SourceBoundName(iPBC))) THEN
       PartBound%MapToPartBC(iBC) = iPBC !PartBound%TargetBoundCond(iPBC)
       PartBound%MapToFieldBC(iPBC) = iBC ! part BC to field BC
       LBWRITE(*,*) "| Mapped PartBound",iPBC,"on FieldBound", iBC,", i.e.: ",TRIM(BoundaryName(iBC))
+
+#if USE_HDG
+      ! DCBC - Distributed Capacitance BC - requires boundary condition reflective
+    IF (BoundaryType(iBC,BC_TYPE).EQ.30) THEN
+      WRITE(UNIT=hilf,FMT='(I0)') iPBC
+      ! Check if BC is reflective
+      IF (PartBound%TargetBoundCond(iPBC).NE.PartBound%ReflectiveBC) THEN
+        SWRITE(*,*) 'BoundaryType(iBC,BC_TYPE):      ', BoundaryType(iBC,BC_TYPE)
+        SWRITE(*,*) 'PartBound%TargetBoundCond(iPBC):', (PartBound%TargetBoundCond(iPBC))
+        SWRITE(*,*) 'PartBound%ReflectiveBC:         ', PartBound%ReflectiveBC
+        CALL CollectiveStop(__STAMP__, 'ERROR: BCType=30 requires Part-Boundary'//TRIM(hilf)//'-Condition = reflective')
+      END IF ! PartBound%TargetBoundCond(iPBC).NE.PartBound%ReflectiveBC
+      ! Check that surface charging is actiavted as well
+      IF (.NOT.Do2DSurfaceCharge) THEN
+        CALL CollectiveStop(__STAMP__, 'ERROR: BCType=30 requires Part-Boundary'//TRIM(hilf)//'-UseSurfaceCharge = T')
+      END IF ! .NOT.Do2DSurfaceCharge
+    END IF ! BoundaryType(iBC,BC_TYPE).EQ.30
+#endif /*USE_HDG*/
     END IF
+
   END DO
 END DO
 ! Errorhandler for PartBound-Types that could not be mapped to the FieldBound-Types
@@ -693,7 +774,7 @@ DO iPartBound=1,nPartBound
   BCdata_auxSF(iPartBound)%SideNumber=-1 ! initial value deactivates the mapping of sides (when required for surface flux is set to 0)
   BCdata_auxSF(iPartBound)%GlobalArea=0.
   BCdata_auxSF(iPartBound)%LocalArea=0.
-END DO
+END DO ! iPartBound=1,nPartBound
 
 !-- Surface model: Sticking coefficient
 IF(ANY(PartBound%SurfaceModel.EQ.1)) THEN
@@ -732,6 +813,13 @@ IF(Symmetry%Order.LT.3) THEN
     END IF
   END IF
 END IF
+
+! If global deposition is deactivated, turn off the surface deposition flags
+IF (.NOT.DoDeposition) THEN
+  Do2DSurfaceCharge = .FALSE.
+  DoHaloDepo        = .FALSE. ! Deactivate deposition in the halo region (shape function)
+  DoDielectricSurfaceCharge = .FALSE.
+END IF ! .NOT.DoDeposition
 
 END SUBROUTINE InitializeVariablesPartBoundary
 
@@ -869,7 +957,7 @@ SUBROUTINE InitParticleBoundarySurfSides()
 !----------------------------------------------------------------------------------------------------------------------------------!
 USE MOD_Globals
 USE MOD_Particle_Mesh_Vars      ,ONLY: SideInfo_Shared
-USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
+USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound,DoVirtualDielectricLayer
 USE MOD_Particle_Boundary_Vars  ,ONLY: nComputeNodeSurfSides,nComputeNodeSurfTotalSides,nComputeNodeSurfOutputSides
 USE MOD_Particle_Boundary_Vars  ,ONLY: GlobalSide2SurfSide,SurfSide2GlobalSide
 #if USE_MPI
@@ -898,7 +986,7 @@ IMPLICIT NONE
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER                                :: iSide,firstSide,lastSide,iSurfSide,GlobalSideID
+INTEGER                                :: iSide,firstSide,lastSide,iSurfSide,GlobalSideID,iPartBound
 INTEGER                                :: nSurfSidesProc
 INTEGER                                :: offsetSurfTotalSidesProc
 INTEGER,ALLOCATABLE                    :: GlobalSide2SurfSideProc(:,:)
@@ -1103,6 +1191,14 @@ IF(nComputeNodeSurfTotalSides.GT.0)THEN
       GlobalSideID = SurfSide2GlobalSide(SURF_SIDEID,iSurfSide)
       ! Check if the surface side has a neighbor (and is therefore an inner BCs)
       IF(SideInfo_Shared(SIDE_NBSIDEID,GlobalSideID).GT.0) THEN
+        ! Abort inner BC + VDL
+        IF(DoVirtualDielectricLayer) THEN
+          iPartBound = PartBound%MapToPartBC(SideInfo_Shared(SIDE_BCID,GlobalSideID))
+          IF(PartBound%PermittivityVDL(iPartBound).GT.0.0) THEN
+            CALL abort(__STAMP__,'ERROR in InitParticleBoundarySurfSides: VDL on an inner BC is not implemented! Found VDL on boundary: '&
+                        //TRIM(PartBound%SourceBoundName(iPartBound)))
+          END IF
+        END IF
         ! Abort inner BC + Mortar! (too complex and confusing to implement)
         ! This test catches large Mortar sides, i.e.,  SideInfo_Shared(SIDE_NBELEMID,NonUniqueGlobalSideID) gives the 2 or 4
         ! connecting small Mortar sides. It is assumed that inner BC result in being flagged as a "SurfSide" and therefore are checked
@@ -1129,7 +1225,8 @@ IF(nComputeNodeSurfTotalSides.GT.0)THEN
             nComputeNodeInnerBCs(1) = nComputeNodeInnerBCs(1) + 1
           END IF
 #endif
-          CYCLE! Skip sides with the larger index
+          ! Skip sides with the larger index
+          CYCLE
         END IF
       END IF
       ! Skip rotationally periodic boundary sides for the output
@@ -1549,26 +1646,56 @@ END SUBROUTINE WriteInterPlanePosition
 
 !===================================================================================================================================
 !> Check if PartStateBoundary is already allocated (e.g. if this routine is called during load balance) and if not allocate it
+!> RAM in bit: SIZE(Array,KIND=i8)*STORAGE_SIZE(Array,KIND=i8)
+!> RAM in byte SIZE(Array,KIND=i8)*STORAGE_SIZE(Array,KIND=i8)/(8)
+!> RAM in KiB: SIZE(Array,KIND=i8)*STORAGE_SIZE(Array,KIND=i8)/(8*1024)
+!> RAM in MiB: SIZE(Array,KIND=i8)*STORAGE_SIZE(Array,KIND=i8)/(8*1024*1024)
+!> RAM in GiB: SIZE(Array,KIND=i8)*STORAGE_SIZE(Array,KIND=i8)/(8*1024*1024*1024)
 !===================================================================================================================================
-SUBROUTINE InitPartStateBoundary()
+SUBROUTINE InitPartStateBoundary(ReInitialise)
 ! MODULES
-USE MOD_Globals                ,ONLY: abort
-USE MOD_Particle_Boundary_Vars ,ONLY: PartStateBoundary
+USE MOD_Globals
+USE MOD_Globals_Vars
+USE MOD_Globals                ,ONLY: abort,CollectMemUsage
 USE MOD_Particle_Vars          ,ONLY: PDM
-USE MOD_Particle_Boundary_Vars ,ONLY: nVarPartStateBoundary
+USE MOD_Particle_Boundary_Vars ,ONLY: nVarPartStateBoundary,PartStateBoundaryMemory,PartStateBoundary,PartStateBoundaryResizeCounter
+USE MOD_Particle_Boundary_Vars ,ONLY: PartStateBoundaryMemoryLimit
+#if USE_MPI
+USE MOD_MPI_Shared_Vars        ,ONLY: nComputeNodeProcessors
+#endif /*USE_MPI*/
+USE MOD_ReadInTools            ,ONLY: PrintOption
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! INPUT / OUTPUT VARIABLES
+LOGICAL,INTENT(IN) :: ReInitialise
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER :: ALLOCSTAT
 !===================================================================================================================================
 ! This array is not de-allocated during load balance as it is only written to .h5 during WriteStateToHDF5()
-
-IF(ALLOCATED(PartStateBoundary)) RETURN
-ALLOCATE(PartStateBoundary(1:nVarPartStateBoundary,1:MIN(1000,PDM%maxParticleNumber)), STAT=ALLOCSTAT)
+IF(ALLOCATED(PartStateBoundary).AND.(.NOT.ReInitialise)) RETURN
+! When the ReInitialise flag is passed, deallocate the array
+IF(ReInitialise) DEALLOCATE(PartStateBoundary)
+! Allocate the array using the smaller number of 1000 or max. particle number
+ALLOCATE(PartStateBoundary(1:nVarPartStateBoundary,1:MIN(1000,MAX(PDM%maxParticleNumber,100))), STAT=ALLOCSTAT)
+! Check if an error occurs during allocation
 IF (ALLOCSTAT.NE.0) CALL abort(__STAMP__,'ERROR in particle_init.f90: Cannot allocate PartStateBoundary array!')
+! Nullify
 PartStateBoundary=0.
+! Set initial memory requirement in GiB
+PartStateBoundaryMemory = SIZE(PartStateBoundary,KIND=i8)*STORAGE_SIZE(PartStateBoundary,KIND=i8)/(8.0*1024.0*1024.0*1024.0)
+! Initialise counter
+PartStateBoundaryResizeCounter = 1
+! Get node memory at the beginning of the simulation
+IF(.NOT.ReInitialise) THEN
+  CALL CollectMemUsage(Mode=1) ! Mode=1: Memory per node (NOT over all nodes)
+  ! Set warning limit
+  PartStateBoundaryMemoryLimit = memory(3)/1048576. ! Convert KiB to GiB: ḿemory(1:3)/(1024*1024)
+#if USE_MPI
+  PartStateBoundaryMemoryLimit = PartStateBoundaryMemoryLimit/REAL(nComputeNodeProcessors) ! Divide equally among the compute node
+#endif /*USE_MPI*/
+  CALL PrintOption('PartStateBoundary warning memory limit per process in GB ','INFO',RealOpt=PartStateBoundaryMemoryLimit)
+END IF ! .NOT.ReInitialise
 END SUBROUTINE InitPartStateBoundary
 
 
@@ -1587,7 +1714,7 @@ USE MOD_TimeDisc_Vars     ,ONLY: ManualTimeStep
 USE MOD_ReadInTools       ,ONLY: GETLOGICAL
 USE MOD_Globals_Vars      ,ONLY: ProjectName
 #if USE_LOADBALANCE
-USE MOD_LoadBalance_Vars       ,ONLY: PerformLoadBalance
+USE MOD_LoadBalance_Vars  ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
@@ -2447,6 +2574,13 @@ SDEALLOCATE(PartBound%BoundaryParticleOutputEmission)
 SDEALLOCATE(PartBound%RadiativeEmissivity)
 SDEALLOCATE(PartBound%PermittivityVDL)
 SDEALLOCATE(PartBound%ThicknessVDL)
+SDEALLOCATE(PartBound%UseSurfaceCharge)
+#if USE_HDG
+SDEALLOCATE(PartBound%DCBiasVoltage)
+SDEALLOCATE(PartBound%DCPermittivity)
+SDEALLOCATE(PartBound%DCSurfaceChargeDensity)
+SDEALLOCATE(PartBound%DCThickness)
+#endif /*USE_HDG*/
 
 ! Mapping arrays are allocated even if the node does not have sampling surfaces
 #if USE_MPI

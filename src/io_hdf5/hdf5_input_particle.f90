@@ -26,13 +26,17 @@ PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
+#if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
 PUBLIC :: ReadNodeSourceExtFromHDF5
+PUBLIC :: ReadSurfNodeSourceFromHDF5
+#endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))*/
 PUBLIC :: ReadEmissionVariablesFromHDF5
 !===================================================================================================================================
 
 CONTAINS
 
 
+#if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
 !===================================================================================================================================
 !> Read NodeSourceExt from h5 file, which is stored as DG solution type field 'DG_SourceExt'.
 !> Map this solution to equidistant-node polynomial (NodeTypeVISU with N=1) and then map the solution to the global nodes
@@ -42,7 +46,6 @@ SUBROUTINE ReadNodeSourceExtFromHDF5()
 USE MOD_Globals
 USE MOD_PreProc
 USE MOD_ChangeBasis            ,ONLY: ChangeBasis3D
-! USE MOD_Dielectric_Vars        ,ONLY: DoDielectric
 USE MOD_HDF5_Input             ,ONLY: ReadArray,GetDataSize,nDims,HSize
 USE MOD_HDF5_Input             ,ONLY: File_ID,DatasetExists
 USE MOD_Interpolation_Vars     ,ONLY: NodeTypeVISU,NodeType
@@ -54,17 +57,11 @@ USE MOD_PICDepo_Vars           ,ONLY: NodeSourceExt,NodeVolume,DoDeposition
 USE MOD_Restart_Vars           ,ONLY: N_Restart
 USE MOD_DG_vars                ,ONLY: N_DG_Mapping
 USE MOD_Interpolation_Vars     ,ONLY: NMax,NMin
-!#if USE_MPI
-!USE MOD_MPI_Shared             ,ONLY: BARRIER_AND_SYNC
-!USE MOD_MPI_Shared_Vars        ,ONLY: MPI_COMM_SHARED
-!USE MOD_MPI_Shared_Vars        ,ONLY: nComputeNodeProcessors,myComputeNodeRank
-!#endif /*USE_MPI*/
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! insert modules here
 !----------------------------------------------------------------------------------------------------------------------------------!
 IMPLICIT NONE
 ! INPUT / OUTPUT VARIABLES
-! Space-separated list of input and output types. Use: (int|real|logical|...)_(in|out|inout)_dim(n)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 REAL,ALLOCATABLE                   :: U_local(:,:,:,:,:)
@@ -151,7 +148,7 @@ IF(DG_SourceExtExists)THEN
         NodeSourceExt_N(Nloc)%U(1:1,i,j,k) = U_N_2D_local(1:1,iDOF)
       END DO; END DO; END DO
 
-      ! Map G/GL (current node type) to equidistant distribution
+      ! Map G/GL (current node type) to equidistant distribution with N=1
       CALL ChangeBasis3D(1, Nloc, 1, Vdm_N_EQ(Nloc)%Vdm, NodeSourceExt_N(Nloc)%U(1:1,0:Nloc,0:Nloc,0:Nloc),&
                                                                NodeSourceExtEqui(1:1,0:1   ,0:1   ,0:1))
 
@@ -254,6 +251,67 @@ END SUBROUTINE ReadNodeSourceExtFromHDF5
 
 
 !===================================================================================================================================
+!> Read SurfNodeSource from State.h5 file, which is stored as SurfNodeSource (FEMVertex type field).
+!===================================================================================================================================
+SUBROUTINE ReadSurfNodeSourceFromHDF5()
+USE MOD_Globals
+USE MOD_PreProc
+USE MOD_HDF5_Input   ,ONLY: ReadArray,GetDataSize!,nDims!,HSize
+USE MOD_HDF5_Input   ,ONLY: File_ID,DatasetExists
+USE MOD_PICDepo_Vars ,ONLY: SurfNodeSource,nDepoSurfNodesTotal,SurfNodeArea
+#if USE_MPI
+USE MOD_PICDepo_MPI  ,ONLY: LBReverseExchangeSurfNodeSource,ReverseExchangeSurfNodeArea
+#endif /*USE_MPI*/
+USE MOD_IO_HDF5      ,ONLY: OpenDataFile,CloseDataFile,File_ID
+USE MOD_Restart_Vars ,ONLY: RestartFile
+!----------------------------------------------------------------------------------------------------------------------------------!
+! insert modules here
+!----------------------------------------------------------------------------------------------------------------------------------!
+IMPLICIT NONE
+! INPUT / OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+CHARACTER(LEN=255),PARAMETER :: SurfNodeSourceDataset='SurfNodeSource'
+INTEGER                      :: offsetFEMVertex
+LOGICAL                      :: SurfNodeSourceExists
+REAL,ALLOCATABLE             :: SurfNodeSourceH5(:,:)
+!===================================================================================================================================
+! Only the MPIRoot reads the data
+IF (MPIRoot) THEN
+  ! Root opens .h5 state file
+  CALL OpenDataFile(RestartFile,create=.FALSE.,single=.TRUE.,readOnly=.TRUE.)
+  ! Check if the dataset exists
+  CALL DatasetExists(File_ID,TRIM(SurfNodeSourceDataset),SurfNodeSourceExists)
+  IF(.NOT.SurfNodeSourceExists) CALL abort(__STAMP__,&
+    'Error in ReadSurfNodeSourceFromHDF5(): Cannot find '//TRIM(SurfNodeSourceDataset)//' in state file.')
+  ! Get process offset
+  offsetFEMVertex = 0
+  ! Sanity check
+  IF(.NOT.ALLOCATED(SurfNodeSource)) CALL abort(__STAMP__,'Error in ReadSurfNodeSourceFromHDF5(): SurfNodeSource not allocated.')
+  IF(nDepoSurfNodesTotal.LE.0) CALL abort(__STAMP__,'Error in ReadSurfNodeSourceFromHDF5(): nDepoSurfNodesTotal<=0')
+  ! Allocate local 2D array
+  ALLOCATE(SurfNodeSourceH5(2,nDepoSurfNodesTotal))
+  CALL ReadArray(TRIM(SurfNodeSourceDataset),2,(/2_IK,INT(nDepoSurfNodesTotal,IK)/),0_IK,2,RealArray=SurfNodeSourceH5)
+  SurfNodeSource(:) = SurfNodeSourceH5(1,:)
+  SurfNodeArea(:)   = SurfNodeSourceH5(2,:)
+  ! print*,"ROOT: ReadSurfNodeSourceFromHDF5()"
+  ! read*
+  ! Root closes the .h5 state file
+  CALL CloseDataFile()
+END IF ! MPIRoot
+
+#if USE_MPI
+! Initialize the the SurfNodeArea(iDepoSurfNodeID) container on all processes except MPIRoot, which distribtues the data to all others
+CALL ReverseExchangeSurfNodeArea()
+! The MPIRoot distributes the data directly to the processes
+CALL LBReverseExchangeSurfNodeSource()
+#endif /*USE_MPI*/
+
+END SUBROUTINE ReadSurfNodeSourceFromHDF5
+#endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))*/
+
+
+!===================================================================================================================================
 !> Read particle emission variables from state.h5
 !> E.g. arrays containing information that have to be restored after restart (not necessarily required for automatic load balance
 !> restarts, but maybe required for some)
@@ -265,12 +323,9 @@ SUBROUTINE ReadEmissionVariablesFromHDF5()
 #if USE_MPI
 USE mpi_f08
 #endif /*USE_MPI*/
-!USE MOD_io_HDF5
 USE MOD_Globals
-!USE MOD_PreProc
 USE MOD_Particle_Vars     ,ONLY: Species,nSpecies
-USE MOD_Particle_Vars     ,ONLY: NeutralizationBalanceGlobal
-!USE MOD_Particle_Vars     ,ONLY: NeutralizationBalance
+USE MOD_Particle_Vars     ,ONLY: NeutralizationBalance,NeutralizationBalanceGlobal
 USE MOD_HDF5_Input        ,ONLY: ReadArray,DatasetExists
 USE MOD_Restart_Vars      ,ONLY: RestartFile
 ! IMPLICIT VARIABLE HANDLING
@@ -284,7 +339,7 @@ IMPLICIT NONE
 INTEGER           :: iSpec,iInit ! ,InitGroup
 LOGICAL           :: DataExists
 CHARACTER(LEN=50) :: InitName
-INTEGER(KIND=IK)  :: NeutralizationBalanceTmp(1:1) ! This is a dummy array of size 1 !
+REAL              :: NeutralizationBalanceDummyArray(1:1) ! This is a dummy array of size 1 !
 !===================================================================================================================================
 ! Loop over all species and inits
 DO iSpec=1,nSpecies
@@ -293,40 +348,38 @@ DO iSpec=1,nSpecies
      CASE(9) ! '2D_landmark_neutralization'
        ! Re-load the value because the emission communicator can change during load balance restarts: MPIRoot is always part of this
        ! specific communicator
-
        ! Only the root reads the data and replaces his value, which will be communicated via the all-reduce (he also does the
        ! initial output)
        IF(MPIRoot)THEN
-
-         IF(.NOT.FILEEXISTS(RestartFile)) &
-             CALL abort(__STAMP__,'Error in ReadEmissionVariablesFromHDF5() because RestartFile does not exist: '//TRIM(RestartFile))
-
+         ! Check if the restart file exists, before trying to access it
+         IF(.NOT.FILEEXISTS(RestartFile)) CALL abort(__STAMP__,'Error in ReadEmissionVariablesFromHDF5() because RestartFile does not exist: '//TRIM(RestartFile))
+         ! Open the .h5 restart file
          CALL OpenDataFile(RestartFile,create=.FALSE.,single=.TRUE.,readOnly=.TRUE.)
+         ! Set string name from species and init
          WRITE(InitName,'(A,I0,A,I0)') 'Spec',iSpec,'Init',iInit
+         ! Check if the dataset exists in the .h5 file
          CALL DatasetExists(File_ID,TRIM(InitName),DataExists)
+         ! Read data only if dataset exists
          IF(DataExists)THEN
-           CALL ReadArray(TRIM(InitName),1,(/1_IK/),0_IK,1,IntegerArray=NeutralizationBalanceTmp)
+           ! Read the dataset into the dummy array of size 1:1
+           CALL ReadArray(TRIM(InitName),1,(/1_IK/),0_IK,1,RealArray=NeutralizationBalanceDummyArray)
          ELSE
-           !CALL abort(__STAMP__,"Read array ["//TRIM(InitName)//"] from restart file ["//TRIM(RestartFile)//"] failed.")
+           ! If the dataset does not exist, set the value to zero
            WRITE (*,*) "Read array ["//TRIM(InitName)//"] from restart file ["//TRIM(RestartFile)//"] failed. "//&
-             "Setting NeutralizationBalanceGlobal =0"
-           NeutralizationBalanceTmp = 0
+             "Setting NeutralizationBalanceGlobal = 0"
+           ! Initialize with zero
+           NeutralizationBalanceDummyArray = 0
          END IF ! DataExists
+         ! Close the .h5 file
          CALL CloseDataFile()
-
-         NeutralizationBalanceGlobal = INT(NeutralizationBalanceTmp(1),4)
-         !NeutralizationBalance       = NeutralizationBalanceGlobal
-       END IF
-
-! Only broadcast the information when MPI is used
-!#if USE_MPI
-!       ! Communicate number of particles with all procs in the same init group to the global root for output
-!       InitGroup=Species(iSpec)%Init(iInit)%InitCOMM
-!       ! Only processors which are part of group take part in the communication
-!        CALL MPI_BCAST(Box_X, 3, MPI_DOUBLE_PRECISION, 0, MPI_COMM_PICLAS, iError)
-!#endif /*USE_MPI*/
-
-     END SELECT
+         ! Set the global value
+         NeutralizationBalanceGlobal = NeutralizationBalanceDummyArray(1)
+         ! Set local value (only MPIRoot)
+         NeutralizationBalance       = NeutralizationBalanceGlobal
+       END IF ! MPIRoot
+     CASE DEFAULT
+       ! Do nothing
+     END SELECT ! Species(iSpec)%Init(iInit)%ParticleEmissionType
   END DO  ! iInit
 END DO  ! iSpec=1,nSpecies
 

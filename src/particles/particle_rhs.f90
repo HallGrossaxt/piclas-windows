@@ -28,10 +28,6 @@ INTERFACE CalcPartRHSSingleParticle
   MODULE PROCEDURE CalcPartRHSSingleParticle
 END INTERFACE
 
-INTERFACE PartRHS
-  PROCEDURE PartRHS
-END INTERFACE
-
 !----------------------------------------------------------------------------------------------------------------------------------
 PUBLIC :: CalcPartRHS
 PUBLIC :: PartVeloToGammaVelo, GammaVeloToPartVelo
@@ -863,7 +859,7 @@ SUBROUTINE CalcFlowGranularInteraction(iPart,Pt,dtVar)
 USE MOD_Globals
 USE MOD_Particle_Vars           ,ONLY: PartState, PEM, Species, PartSpecies, SkipGranularUpdate,ForceAverage, BGGValueForGranularSpec
 USE MOD_Globals_Vars            ,ONLY: BoltzmannConst, PI
-USE MOD_DSMC_Vars               ,ONLY: SpecDSMC, PartStateIntEn, BGGas
+USE MOD_DSMC_Vars               ,ONLY: SpecDSMC, PartIntEn, BGGas
 USE MOD_Particle_Mesh_Vars      ,ONLY: ElemVolume_Shared
 USE MOD_Mesh_Vars               ,ONLY: offSetElem
 USE MOD_Mesh_Tools              ,ONLY: GetCNElemID
@@ -891,7 +887,7 @@ SpecIDSolid = PartSpecies(iPart)
 CNElemID = GetCNElemID(ElemID+offSetElem)
 ElemVolume = ElemVolume_Shared(CNElemID)
 RadiusSolid = SpecDSMC(SpecIDSolid)%dref / 2.0
-TempSolid   = PartStateIntEn( 1,iPart)
+TempSolid   = PartIntEn(iPart)%TSolid(1)
 
 IF(BGGas%NumberOfSpecies.GT.0) THEN
   ! Loop over a fixed number of particles
@@ -916,7 +912,11 @@ ELSE
       WeightGas     = Species(SpecID)%MacroParticleFactor
       VeloRel(1:3)  = PartState(4:6,locPart) - PartState(4:6,iPart)
       VeloRelAbs    = VECNORM3D(VeloRel)
-      ERotGas       = PartStateIntEn( 2,locPart)
+      IF((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
+        ERotGas       = PartIntEn(locPart)%ERot(1)
+      ELSE
+        ERotGas = 0.
+      END IF
       ! Force contribution
       Force(1:3) = Force(1:3) + CalcForceToSolidParticle(SpecID,WeightGas,RadiusSolid,VeloRelAbs,TempSolid,ElemVolume,VeloRel)
       ! Energy contribution
@@ -927,8 +927,9 @@ ELSE
 END IF ! BGG Distribution
 
 Pt(1:3) = Pt(1:3) + Force(1:3) / Species(SpecIDSolid)%MassIC
+
 IF(.NOT.SkipGranularUpdate) THEN
-  PartStateIntEn( 1,iPart) = PartStateIntEn( 1,iPart) + Energy * dtVar &
+  PartIntEn(iPart)%TSolid = PartIntEn(iPart)%TSolid + Energy * dtVar &
                             / ( SpecDSMC(SpecIDSolid)%SpecificHeatSolid * Species(SpecIDSolid)%MassIC )
 END IF
 

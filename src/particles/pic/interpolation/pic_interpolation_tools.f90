@@ -607,7 +607,7 @@ END FUNCTION InterpolateVariableExternalField1D
 
 PPURE FUNCTION InterpolateVariableExternalField2D(Pos)
 !===================================================================================================================================
-!> Interpolates the variable external field to the r- and z-position via bilinear interpolation
+!> Interpolates the variable external field from the r- and z-coordinates to a 2D/3D position via bilinear interpolation
 !>
 !>   1.2 --------- 2.2
 !>    |             |
@@ -615,12 +615,16 @@ PPURE FUNCTION InterpolateVariableExternalField2D(Pos)
 !>    |             |
 !>   1.1 --------- 2.1
 !>           z
+!> 2D axisymmetric: x-axis is the rotational axis and y is the radius per definition
+!> 3D: the particle position is mapped to r-z for the interpolation and the field values are transformed back afterwards
 !===================================================================================================================================
 ! MODULES
 USE MOD_Globals
+USE MOD_Globals_Vars          ,ONLY: EpsMach
 USE MOD_PICInterpolation_Vars ,ONLY: DeltaExternalField,VariableExternalField
 USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalFieldN
 USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalFieldMin,VariableExternalFieldMax
+USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalFieldAxisDir
 USE MOD_Symmetry_Vars         ,ONLY: Symmetry
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
@@ -633,21 +637,28 @@ REAL                     :: InterpolateVariableExternalField2D(1:3)  !< Bz (magn
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER                  :: iPos,jPos                                !< index in array (equidistant subdivision assumed)
-REAL                     :: r,delta,f(1:2),mat(2,2),dx(1:2),dy(1:2),vec(1:2),x,y,z
+REAL                     :: r,delta,f(1:2),mat(2,2),dx(1:2),dy(1:2),vec(1:2),z
 INTEGER                  :: idx1,idx2,idx3,idx4,i
 !===================================================================================================================================
 
 IF(Symmetry%Axisymmetric) THEN
   ! 2D axisymmetry requires x as the rotational axis and a positive y
   ! Particle position has been rotated onto the symmetry plane -> z = 0 and y-coordinate is equal to the radius
-  y = Pos(2)
   r = Pos(2)
   z = Pos(1)
 ELSE
-  x = Pos(1)
-  y = Pos(2)
-  z = Pos(3)
-  r = SQRT(x*x + y*y)
+  ! 3D: mapping the particle position according to the provided rotational axis
+  SELECT CASE(VariableExternalFieldAxisDir)
+  CASE(1)
+    r = SQRT(Pos(3)*Pos(3) + Pos(2)*Pos(2))
+    z = Pos(1)
+  CASE(2)
+    r = SQRT(Pos(1)*Pos(1) + Pos(3)*Pos(3))
+    z = Pos(2)
+  CASE(3)
+    r = SQRT(Pos(1)*Pos(1) + Pos(2)*Pos(2))
+    z = Pos(3)
+  END SELECT
 END IF
 
 IF(r.GT.VariableExternalFieldMax(1))THEN
@@ -669,8 +680,7 @@ ELSE
   iPos = MIN(iPos, VariableExternalFieldN(2) - 1 )
   jPos = MIN(jPos, VariableExternalFieldN(1) - 1 )
 
-
-  ! Shift all points by Nz = EmissionDistributionNum(1)
+  ! Shift all points by Nz
   ASSOCIATE( Nz => VariableExternalFieldN(1) )
     ! 1.1
     idx1 = (iPos-1)*Nz + jPos
@@ -707,12 +717,23 @@ ELSE
   r=1./r
   IF(Symmetry%Axisymmetric) THEN
     InterpolateVariableExternalField2D(1) = f(2)
-    InterpolateVariableExternalField2D(2) = f(1)*y*r
+    InterpolateVariableExternalField2D(2) = f(1)*Pos(2)*r
     InterpolateVariableExternalField2D(3) = 0.
   ELSE
-    InterpolateVariableExternalField2D(1) = f(1)*x*r
-    InterpolateVariableExternalField2D(2) = f(1)*y*r
-    InterpolateVariableExternalField2D(3) = f(2)
+    SELECT CASE(VariableExternalFieldAxisDir)
+    CASE(1)
+      InterpolateVariableExternalField2D(1) = f(2)
+      InterpolateVariableExternalField2D(2) = f(1)*Pos(2)*r
+      InterpolateVariableExternalField2D(3) = f(1)*Pos(3)*r
+    CASE(2)
+      InterpolateVariableExternalField2D(1) = f(1)*Pos(1)*r
+      InterpolateVariableExternalField2D(2) = f(2)
+      InterpolateVariableExternalField2D(3) = f(1)*Pos(3)*r
+    CASE(3)
+      InterpolateVariableExternalField2D(1) = f(1)*Pos(1)*r
+      InterpolateVariableExternalField2D(2) = f(1)*Pos(2)*r
+      InterpolateVariableExternalField2D(3) = f(2)
+    END SELECT
   END IF
 END IF ! r.GT.VariableExternalFieldMax(1)
 

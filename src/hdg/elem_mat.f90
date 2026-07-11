@@ -22,6 +22,7 @@
 !===================================================================================================================================
 MODULE MOD_Elem_Mat
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -64,11 +65,15 @@ USE MOD_Basis              ,ONLY: getSPDInverse
 USE MOD_HDG_Vars           ,ONLY: UseBRElectronFluid
 #endif /*defined(PARTICLES)*/
 USE MOD_Mesh_Vars          ,ONLY: ElemToSide
+USE MOD_Mesh_Vars          ,ONLY: BoundaryType,BC
+#if defined(PARTICLES)
+USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
+#endif /*defined(PARTICLES)*/
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
-INTEGER(KIND=8),INTENT(IN)  :: td_iter
+INTEGER(KIND=i8),INTENT(IN)  :: td_iter
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -82,8 +87,8 @@ REAL                 :: TauS(2,3),Fdiag_i
 REAL                 :: Dhat(nGP_vol(Nmax),nGP_vol(Nmax))
 REAL                 :: Ktilde(3,3)
 REAL                 :: Stmp1(nGP_vol(Nmax),nGP_face(Nmax)), Stmp2(nGP_face(Nmax),nGP_face(Nmax))
-INTEGER              :: idx(3),jdx(3),gdx(3)
-REAL                 :: time0, time
+INTEGER              :: idx(3),jdx(3),gdx(3),BCType
+REAL                 :: time0, time, fac
 REAL                 :: SurfElemLoc(0:Nmax,0:Nmax,6), Ja_tmp(3,0:NMax,0:NMax), Ja_vol(3,0:NMax,0:NMax,0:NMax)
 !===================================================================================================================================
 
@@ -283,6 +288,17 @@ DO iElem=1,PP_nElems
 #endif /*VDM_ANALYTICAL*/
   ! Compute for each side pair  Ehat Dhat^{-1} Ehat^T
   DO jLocSide=1,6
+    fac = Tau(ielem)
+    ! DCBC
+#if defined(PARTICLES)
+    iSide = SideID(jLocSide)
+    IF (BC(iSide).GT.0)THEN
+      BCType = BoundaryType(BC(iSide),BC_TYPE)
+      IF (BCType.EQ.30) THEN ! Distributed Capacitance
+        fac = fac + PartBound%DCPermittivity(PartBound%MapToPartBC(BC(iSide))) / PartBound%DCThickness(PartBound%MapToPartBC(BC(iSide)))
+      END IF
+    END IF
+#endif /*defined(PARTICLES)*/
     !Stmp1 = TRANSPOSE( MATMUL( Ehat(:,:,jLocSide,iElem) , InvDhat(:,:,iElem) ) )
     CALL DSYMM('L','U',nGP_vol(Nloc),nGP_face(Nloc),1., &
                 HDG_Vol_N(iElem)%InvDhat(:,:),nGP_vol(Nloc), &
@@ -299,7 +315,7 @@ DO iElem=1,PP_nElems
     ! then combined with to Smat  = Smat - F
     DO q=0,Nloc; DO p=0,Nloc
       i=q*(Nloc+1)+p+1
-      Fdiag_i = - Tau(ielem)*N_Inter(Nloc)%wGP(p)*N_Inter(Nloc)%wGP(q)*SurfElemLoc(p,q,jLocSide)
+      Fdiag_i = - fac*N_Inter(Nloc)%wGP(p)*N_Inter(Nloc)%wGP(q)*SurfElemLoc(p,q,jLocSide)
       HDG_Vol_N(iElem)%Smat(i,i,jLocSide,jLocSide) = HDG_Vol_N(iElem)%Smat(i,i,jLocSide,jLocSide) -Fdiag_i
     END DO; END DO !p,q
 

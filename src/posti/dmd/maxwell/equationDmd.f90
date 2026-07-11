@@ -8,7 +8,7 @@ MODULE MOD_EquationDMD
 IMPLICIT NONE
 PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
-! GLOBAL VARIABLES 
+! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 INTERFACE InitEquationDMD
   MODULE PROCEDURE InitEquationDMD
@@ -84,7 +84,7 @@ END SUBROUTINE InitEquationDMD
 
 
 !===================================================================================================================================
-!> This routine computes the state on the visualization grid 
+!> This routine computes the state on the visualization grid
 !===================================================================================================================================
 SUBROUTINE CalcEquationDMD(DMDData,DMDData_out)
 ! MODULES
@@ -177,7 +177,7 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 !===================================================================================================================================
-DEALLOCATE(TransMap,is2D) 
+DEALLOCATE(TransMap,is2D)
 WRITE(UNIT_stdOut,'(A)') '  EquationDMD FINALIZED'
 END SUBROUTINE FinalizeEquationDMD
 

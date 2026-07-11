@@ -44,31 +44,38 @@ The third parameter defines which species index within the DSMC file is to be us
 ## Regions
 
 Another possibility to define a non-constant background gas is available through the definition of regions. Multiple regions defined
-by simple geometrical volumes (e.g. cylinder) can be mapped to different species. First, one or more regions are defined:
+by simple geometrical volumes (available options: cylinder or prism) can be mapped to different species. First, one or more regions are defined:
 
-    Particles-BGGas-nRegions                  = 1
+    Particles-BGGas-nRegions                  = 2
+
+A `cylinder` is defined by two base vectors (from which a normal is determined for the direction of the cylinder height),
+basepoint, radius and cylinder height:
+
     Particles-BGGas-Region1-Type              = cylinder
     Particles-BGGas-Region1-RadiusIC          = 5E-6
-    Particles-BGGas-Region1-CylinderHeightIC  = 5E-6
+    Particles-BGGas-Region1-HeightIC          = 5E-6
     Particles-BGGas-Region1-BasePointIC       = (/0.,0.,0./)
     Particles-BGGas-Region1-BaseVector1IC     = (/1.,0.,0./)
     Particles-BGGas-Region1-BaseVector2IC     = (/0.,1.,0./)
 
-Here, a cylinder is defined by two base vectors (from which a normal is determined for the direction of the cylinder height),
-basepoint, radius and cylinder height. Whether an element is within a region is determined through the midpoint of the element and
-thus it does not have to be fully enveloped. The definition of the species is the same as described above, with the addition of an
-additional parameter, defining in which region, these properties should be applied to:
+A `triangular_prism` can be defined by a triangle with the corner nodes (`BasePointIC`,`BaseVector1IC`,`BaseVector2IC`) as the base, which is extruded along the user-defined `NormalVector` with `HeightIC`:
+
+    Particles-BGGas-Region2-Type              = triangular_prism
+    Particles-BGGas-Region2-HeightIC          = 5E-6
+    Particles-BGGas-Region2-NormalVector      = (/0.,0.,0./)
+    Particles-BGGas-Region2-BasePointIC       = (/0.,0.,0./)
+    Particles-BGGas-Region2-BaseVector1IC     = (/1.,0.,0./)
+    Particles-BGGas-Region2-BaseVector2IC     = (/0.,1.,0./)
+
+Whether an element is within a region is determined through the midpoint of the element and thus it does not have to be fully enveloped. The definition of the species is the same as described above, with the addition of an additional parameter, defining in which region, these properties should be applied to:
 
     Part-Species1-Init1-BGG-Region            = 1
 
-A species can be part of different regions through multiple inits and multiple species can be part of a single region. Overlapping
-regions are allowed, where the latter region overwrites the former. In that case, a warning is displayed during the initialization:
+A species can be part of different regions through multiple inits and multiple species can be part of a single region. Overlapping regions are allowed, where the latter region overwrites the former (even for species which are not using this region). In that case, a warning is displayed during the initialization:
 
     Warning: Region 3 has been (partially) overwritten by region 4!
 
-It should be noted that the warning might not display every overlap, as the information is determined per processor and reduced by
-the root by determining the maximum region index. You can visualize the regions through the regular DSMC sampling output, where the
-utilized background gas values are written out.
+It should be noted that the warning might not display every overlap, as the information is determined per processor and reduced by the root by determining the maximum region index. You can visualize the regions through the regular DSMC sampling output, where the utilized background gas values are written out.
 
 ## Trace species
 

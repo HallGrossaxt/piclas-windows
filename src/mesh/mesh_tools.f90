@@ -33,9 +33,7 @@ PUBLIC :: LambdaSideToMaster
 #if USE_MPI
 PUBLIC :: GetMasteriLocSides
 #endif /*USE_MPI*/
-#if USE_LOADBALANCE
 PUBLIC :: BuildSideToNonUniqueGlobalSide
-#endif /*USE_LOADBALANCE*/
 #endif /*USE_HDG*/
 PUBLIC :: InitElemNodeIDs
 PUBLIC :: GetCornerNodes
@@ -538,19 +536,18 @@ END IF ! MortarType(1,iSide).EQ.0
 END SUBROUTINE LambdaSideToMaster
 
 
-#if USE_LOADBALANCE
 !===================================================================================================================================
 !> Build mapping: Side index -> Non-unique global side index
 !> Requires: Elem
 !===================================================================================================================================
 SUBROUTINE BuildSideToNonUniqueGlobalSide()
 ! MODULES
-#if USE_DEBUG
+#if USE_MPI && USE_DEBUG
 USE MOD_Globals   ,ONLY: myrank,UNIT_StdOut,MPI_COMM_PICLAS
-#endif /*USE_DEBUG*/
-USE MOD_Globals   ,ONLY: iError
-USE MOD_Mesh_Vars ,ONLY: MortarType,ElemInfo,SideToNonUniqueGlobalSide,nSides,nElems,ElemToSide,offsetElem,MortarInfo
 USE MOD_Mesh_Vars ,ONLY: GlobalUniqueSideID
+USE MOD_Globals   ,ONLY: iError
+#endif /*USE_MPI && USE_DEBUG*/
+USE MOD_Mesh_Vars ,ONLY: MortarType,ElemInfo,SideToNonUniqueGlobalSide,nSides,nElems,ElemToSide,offsetElem,MortarInfo
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! INPUT / OUTPUT VARIABLES
@@ -560,13 +557,13 @@ INTEGER :: iElem
 INTEGER :: NonUniqueGlobalSide,LocSideID,SideID,MortarSideID
 INTEGER :: iMortar,nMortars
 INTEGER :: locMortarSide
-#if USE_DEBUG
+#if USE_MPI && USE_DEBUG
 INTEGER :: checkRank ! Only for debugging
-#endif /*USE_DEBUG*/
+#endif /*USE_MPI && USE_DEBUG*/
 !===================================================================================================================================
-#if USE_DEBUG
+#if USE_MPI && USE_DEBUG
 checkRank = -1
-#endif /*USE_DEBUG*/
+#endif /*USE_MPI && USE_DEBUG*/
 ! Mapping from side ID to on-unique global side ID
 ALLOCATE(SideToNonUniqueGlobalSide(2,nSides))
 SideToNonUniqueGlobalSide = -1
@@ -586,13 +583,13 @@ DO iElem=1,nElems
     ELSE
       SideToNonUniqueGlobalSide(2,SideID) = NonUniqueGlobalSide
     END IF ! SideToNonUniqueGlobalSide(SideID).EQ.-1
-#if USE_DEBUG
+#if USE_MPI && USE_DEBUG
         IF(myrank.eq.checkRank)THEN
         IPWRITE(UNIT_StdOut,*) &
             "LocSideID,SideID,GlobalUniqueSideID(SideID),NonUniqueGlobalSide,MortarType(1,SideID),nMortars                   ="&
            , LocSideID,SideID,GlobalUniqueSideID(SideID),NonUniqueGlobalSide,MortarType(1,SideID),nMortars
         END IF ! myrank.eq.0
-#endif /*USE_DEBUG*/
+#endif /*USE_MPI && USE_DEBUG*/
     ! For Mortar sides, find the side IDs
     ! Exclude MortarType(1,SideID)==0, which corresponds to small mortar slave sides (on the same proc as the large))
     ! Note that MortarType(1,MortarSideID) is also 0 because these are the small mortar master sides
@@ -604,13 +601,13 @@ DO iElem=1,nElems
         MortarSideID = MortarInfo(MI_SIDEID,iMortar,locMortarSide)
         ! get non-unique global side ID
         NonUniqueGlobalSide = ElemInfo(3,iElem+offsetElem) + LocSideID + iMortar + nMortars
-#if USE_DEBUG
+#if USE_MPI && USE_DEBUG
         IF(myrank.eq.checkRank)THEN
           IPWRITE(UNIT_StdOut,*) &
               "LocSideID,MortarSideID,GlobalUniqueSideID(SideID),NonUniqueGlobalSide,MortarType(1,MortarSideID),iMortar,SideID =",&
           "           ?",MortarSideID,GlobalUniqueSideID(SideID),NonUniqueGlobalSide,MortarType(1,MortarSideID),iMortar,SideID
         END IF ! myrank.eq.0
-#endif /*USE_DEBUG*/
+#endif /*USE_MPI && USE_DEBUG*/
         ! Only fill empty non-unique global sides
         IF(SideToNonUniqueGlobalSide(1,MortarSideID).EQ.-1)THEN
           SideToNonUniqueGlobalSide(1,MortarSideID) = NonUniqueGlobalSide
@@ -623,11 +620,10 @@ DO iElem=1,nElems
     END IF ! MortarType(1,SideID).eq.1
   END DO
 END DO ! iElem
-#if USE_DEBUG
+#if USE_MPI && USE_DEBUG
 IF(myrank.eq.0.AND.checkRank.GT.-1) read*; CALL MPI_BARRIER(MPI_COMM_PICLAS,iError)
-#endif /*USE_DEBUG*/
+#endif /*USE_MPI && USE_DEBUG*/
 END SUBROUTINE BuildSideToNonUniqueGlobalSide
-#endif /*USE_LOADBALANCE*/
 #endif /*USE_HDG*/
 
 

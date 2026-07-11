@@ -21,6 +21,7 @@
 !===================================================================================================================================
 MODULE MOD_HDG_NonLinear
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 IMPLICIT NONE
 PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -70,7 +71,7 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
 REAL,INTENT(IN)     :: time !time
-INTEGER(KIND=8),INTENT(IN)  :: td_iter
+INTEGER(KIND=i8),INTENT(IN)  :: td_iter
 #if defined(PARTICLES)
 LOGICAL,INTENT(IN),OPTIONAL :: ForceCGSolverIteration_opt ! set converged=F in first step (only BR electron fluid)
 #endif /*defined(PARTICLES)*/
@@ -475,7 +476,6 @@ END SUBROUTINE HDGNewton
 !SUBROUTINE CheckNonLinRes(RHS,lambda,converged,Norm_R2)
 SUBROUTINE CheckNonLinRes(converged,Norm_R2)
 ! MODULES
-USE MOD_Globals   ,ONLY: iError
 USE MOD_Preproc
 USE MOD_HDG_Vars  ,ONLY: nGP_face
 USE MOD_HDG_Vars  ,ONLY: EpsNonLinear
@@ -486,6 +486,7 @@ USE MOD_Mesh_Vars ,ONLY: nMPISides_YOUR
 #endif /*USE_MPI*/
 #if defined(MEASURE_MPI_WAIT)
 USE MOD_MPI_Vars  ,ONLY: MPIW8TimeField,MPIW8CountField
+USE MOD_Globals_Vars, ONLY: dp
 #endif /*defined(MEASURE_MPI_WAIT)*/
 USE MOD_HDG_Tools ,ONLY: evalresidual,VectorDotProductRR
 IMPLICIT NONE
@@ -502,8 +503,8 @@ REAL, INTENT(OUT)      :: Norm_r2
 !REAL,DIMENSION(nGP_face(PP_N)*nSides) :: R
 INTEGER                         :: VecSize
 #if defined(MEASURE_MPI_WAIT)
-INTEGER(KIND=8)   :: CounterStart,CounterEnd
-REAL(KIND=8)      :: Rate
+INTEGER(KIND=i8)  :: CounterStart,CounterEnd
+REAL(KIND=dp)     :: Rate
 #endif /*defined(MEASURE_MPI_WAIT)*/
 !===================================================================================================================================
 #if USE_MPI
@@ -532,7 +533,7 @@ converged=(Norm_R2.LT.EpsNonLinear**2)
 #if defined(MEASURE_MPI_WAIT)
 CALL SYSTEM_CLOCK(count=CounterEnd, count_rate=Rate)
 MPIW8TimeField(3)  = MPIW8TimeField(3) + REAL(CounterEnd-CounterStart,8)/Rate
-MPIW8CountField(3) = MPIW8CountField(3) + 1_8
+MPIW8CountField(3) = MPIW8CountField(3) + 1_i8
 #endif /*defined(MEASURE_MPI_WAIT)*/
 END SUBROUTINE CheckNonLinRes
 #endif /*defined(PARTICLES)*/

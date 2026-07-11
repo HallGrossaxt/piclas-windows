@@ -123,9 +123,10 @@ SUBROUTINE BuildGradSideMatrix(dmaster,dslave)
   ! MODULES
 USE MOD_Globals
 USE MOD_PreProc
-USE MOD_Mesh_Vars              ,ONLY: nElems, nSides, ElemToSide, lastBCSide
+USE MOD_Mesh_Vars              ,ONLY: nElems, nSides, ElemToSide
 USE MOD_Gradient_Vars          ,ONLY: Grad_SysSol_slave, Grad_SysSol_master
 #ifdef discrete_velocity
+USE MOD_Mesh_Vars              ,ONLY: lastBCSide
 USE MOD_Gradient_Vars          ,ONLY: Grad_SysSol_BC
 #endif /*discrete_velocity*/
 IMPLICIT NONE

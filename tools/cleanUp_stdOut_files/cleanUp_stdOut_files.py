@@ -163,6 +163,75 @@ def CleanSingleLines(stdfile, args):
             elif '_____________________________________________________________________________' in line_stripped:
                 # Remove '_____________________________________________________________________________'
                 changedLines+=1
+            elif '[CRAYBLAS_WARNING] Application linked against multiple cray-libsci libraries' in line_stripped:
+                # Remove '[CRAYBLAS_WARNING] Application linked against multiple cray-libsci libraries'
+                changedLines+=1
+            elif 'Photon =' in line_stripped and 'TotalPhotons =' in line_stripped and 'eta =' in line_stripped:
+                # Remove 'Photon = 0.1687E+06  TotalPhotons = 0.2083E+07  eta =      0:02:53:30     |☄ ☄ ☄ ☄ ☄            | [   8.10% ]'
+                changedLines+=1
+            elif any(substring in line_stripped for substring in ('PartStateBoundaryVecLength', ' PartPos(', ' PartTrajectory(', ' PartState(')) or \
+                  (hasNumbers(line_stripped) and '=============================================================' in line_stripped) or \
+                  (hasNumbers(line_stripped) and 'PartStateBoundaryVecLength' in line_stripped) or \
+                  (hasNumbers(line_stripped) and 'VECNORM3D(PartState' in line_stripped) or \
+                  (hasNumbers(line_stripped) and 'LastPartPos(' in line_stripped) or \
+                  (hasNumbers(line_stripped) and 'ElemID:' in line_stripped) or \
+                  (hasNumbers(line_stripped) and 'Particle Velocity:' in line_stripped) or \
+                  (hasNumbers(line_stripped) and 'SpecID' in line_stripped and 'iPart' in line_stripped and 'iPartBound' in line_stripped):
+                # Remove particle debugging output
+                # 25 =============================================================
+                # 25 PartStateBoundaryVecLength     1131751
+                # 25 SpecID           3 iPart        1451 iPartBound           2
+                # 25 PartPos(1:3)   4.7828871141942809E-004   3.7455020306870044E-004   2.0000000000000001E-004
+                # 25 PartTrajectory(1:3) -0.78396678412788079      -0.31642839851663607      -0.53410593518176319
+                # 25 PartState(4:6,iPart)  -171082.27316511702       -69053.040011692472       -116556.03190322373
+                # 41 VECNORM3D(PartState(1:3,i)-LastPartPos(1:3,i)):    9.5330757927719159E-005
+                # 41  LastPartPos(1:3,i):    1.0870911022955960E-004   4.8928321598948983E-004   4.0112256823024461E-004
+                # 41            ElemID: 3132
+                # 41          CNElemID: -1
+                # 41 Particle Velocity:    38132303.171087652
+                changedLines+=1
+            elif any(substring in line for substring in ('Entering DMUMPS', ' without OMP', 'SOLVE & CHECK STEP ', 'GLOBAL STATISTICS PRIOR SOLVE PHASE', 'Number of right-hand-sides', 'Blocking factor for multiple rhs',\
+                  'ICNTL', ' original distributed matrix is not allocated', 'Rank of processor needing largest memory in solve', 'Space in MBYTES used by this processor for solve', 'Avg. Space in MBYTES per working proc during solve',\
+                  'Leaving solve with', 'Time to build/scatter', 'Time in solution step', 'Time in forward', 'Time in ScaLAPACK', 'Time in backward', 'Time to gather solution(cent.sol)', 'Time to copy/scale dist. solution',\
+                  'Elapsed time in solve driver', 'Estimated compression rate of', 'FACTORIZATION STEP', 'GLOBAL STATISTICS PRIOR NUMERICAL FACTORIZATION', 'Number of working processes', 'INFOG', 'Maximum frontal size (estimated)',\
+                  'Number of nodes in the tree', 'Sum over all procs', 'Memory provided by user, sum of LWK_USER', 'Effective threshold for pivoting', 'Number of entries in factors', 'Real space for factors', 'Integer space for factors',\
+                  'Maximum frontal size', 'Type of analysis effectively use', 'Ordering option effectively used', 'Number of level 2 nodes', 'Number of split nodes ', 'MEMORY ESTIMATIONS ...', 'Estimations with standard Full-Rank (FR) factorization',\
+                  'Max. estimated space for factors per compute node', 'Max. estim. space per compute node, in MBytes', 'MUMPS compiled with', 'Estimations with BLR compression', 'Processing a graph of size', 'Ordering based on METIS',\
+                  'ELAPSED TIME SPENT IN METIS', 'SYMBOLIC based on column counts', 'ELAPSED TIME IN symbolic factorization', 'A root of estimated size', 'ELAPSED TIME SPENT IN BLR CLUSTERING', 'after scaling the entries for ONE-NORM',\
+                  'Number of 2x2 pivots in type', 'BLR statistics', ' ANALYSIS STEP ', 'BLR fronts', 'Elapsed time in ', 'Statistics after BLR factorization', 'Solver for general symmetric matrices', 'Type of parallelism: Working host',\
+                  'Leaving analysis phase with', 'Average Effective size of', 'Redistrib: total data local', 'Elapsed time to reformat', 'Max. effective space per compute node', 'Elapsed time to process root node', 'Elapsed time for factorization',\
+                  'Dropping parameter controlling accuracy', 'Statistics on the number of entries in factors', 'Statistics on operation counts (OPC)', 'Leaving factorization with ')):
+                # remove PETSc debugging output
+                # Entering DMUMPS 5.6.2 from C interface with JOB, N =   3    17245819
+                #       executing #MPI =    256, without OMP
+                #  ****** SOLVE & CHECK STEP ********
+                #  GLOBAL STATISTICS PRIOR SOLVE PHASE ...........
+                #  Number of right-hand-sides                    =           1
+                #  Blocking factor for multiple rhs              =           1
+                #  ICNTL (9)                                     =           1
+                #  WARNING: original distributed matrix is not allocated
+                #  ** Rank of processor needing largest memory in solve     :       102
+                #  ** Space in MBYTES used by this processor for solve      :      2356
+                #  ** Avg. Space in MBYTES per working proc during solve    :      1455
+                #  Leaving solve with ...
+                #  Time to build/scatter RHS        =       0.053074
+                #  Time in solution step (fwd/bwd)  =       0.329099
+                #   .. Time in forward (fwd) step   =          0.148231
+                #   .. Time in ScaLAPACK root       =          0.007278
+                #   .. Time in backward (bwd) step  =          0.173556
+                #  Time to gather solution(cent.sol)=       0.000000
+                #  Time to copy/scale dist. solution=       0.003011
+                #  Elapsed time in solve driver=       2.3016
+                changedLines+=1
+            elif hasNumbers(line_stripped) and '--- (' in line_stripped and '=' in line_stripped and ')' in line_stripped:
+                # remove PETSc debugging output
+                #   --- (10)                                     =           0
+                #   --- (11)                                     =           0
+                #   --- (20)                                     =          10
+                #   --- (21)                                     =           1
+                #   --- (30)                                     =           0
+                #   --- (35)                                     =           2
+                changedLines+=1
             elif not line_stripped:
                 # Remove empty lines
                 changedLines+=1
@@ -195,11 +264,15 @@ def CleanDoPrintStatusLine(stdfile, args):
 
     # Time = 0.8601E-07    dt = 0.1000E-10   eta =      0:44:32     |=========================================>        | [ 82.51%]
     arr = ['Time', 'dt', 'eta', '%', '|']
+    arr_ray = ['Photon =', 'TotalPhotons =', 'eta', '%', '|']
     n=0
     with open(stdfile_new, "w") as output_new:
         for line in lines:
             n+=1
             if all(c in line.strip("\n") for c in arr):
+                # Ignore this line and increase the counter by 1
+                changedLines+=1
+            elif all(c in line.strip("\n") for c in arr_ray):
                 # Ignore this line and increase the counter by 1
                 changedLines+=1
             else:
@@ -522,7 +595,10 @@ args = parser.parse_args()
 print('='*132)
 print("Running with the following command line options")
 for arg in list(args.__dict__) :
-    print(arg.ljust(15)+" = [ "+str(getattr(args, arg))+" ]")
+    if arg == 'files':
+        print(arg.ljust(15)+" = [ "+str(len(getattr(args, arg)))+" files ]")
+    else:
+        print(arg.ljust(15)+" = [ "+str(getattr(args, arg))+" ]")
 print('='*132)
 
 # Get maximum number of characters in h5 file names
@@ -533,12 +609,26 @@ for stdfile in args.files :
 InitialDataRead = True
 NbrOfFiles = len(args.files)
 
+print(f'     Lines  Size [MB]   Path')
+for stdfile in args.files :
+    with open(stdfile, "rb") as f:
+        num_lines = sum(1 for _ in f)
+    size = os.path.getsize(stdfile)/(1024.0*1024.0)
+    if size >= 1.0:
+       size_str = red(f'{size:9.2f}')
+    else:
+       size_str = f'{size:9.2f}'
+    print(f'{num_lines:10d}  {size_str}   {stdfile}')
+print('='*132)
+
+# exit(0)
 # Ignore:  - cleaned (".new")
 #          - lost particles text files (".lost")
 #          - state files (".h5")
 #          - backup files (".bak")
 ext = ['.new', '.lost', '.h5', '.bak']
 
+print('Processing ...')
 for stdfile in args.files :
     # Check if file exists
     if not os.path.exists(stdfile):

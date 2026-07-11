@@ -143,6 +143,7 @@ The Variable Hard Sphere (VHS) is utilized by default with collision-averaged pa
     Part-Species1-Tref = 273
     Part-Species1-dref = 4.63E-10
 
+Note that $\omega$ is defined between 0 and 0.5, thus corresponding to $\omega_{\mathrm{PICLas}} = \omega_{\mathrm{Bird}} - 0.5$.
 To enable the Variable Soft Sphere (VSS) model, the additional $\alpha$ parameter is required
 
     Part-Species1-alphaVSS = 1.2
@@ -152,15 +153,15 @@ In order to enable the collision-specific definition of the VHS/VSS parameters, 
     ! Input in parameter.ini
     Particles-DSMC-averagedCollisionParameters = F
     ! Input in species.ini
-    Part-Collision1 - partnerSpecies = (/1,1/)              ! Collision1: Parameters for the collision between equal species
-    Part-Collision1 - Tref           = 273
-    Part-Collision1 - dref           = 4.037e-10
-    Part-Collision1 - omega          = .216
-    Part-Collision1 - alphaVSS       = 1.448
-    Part-Collision2 - partnerSpecies = (/2,1/)              ! Collision2: Parameters for the collision between species 2 and 1
+    Part-Collision1-partnerSpecies = (/1,1/)              ! Collision1: Parameters for the collision between equal species
+    Part-Collision1-Tref           = 273
+    Part-Collision1-dref           = 4.037e-10
+    Part-Collision1-omega          = 0.216
+    Part-Collision1-alphaVSS       = 1.448
+    Part-Collision2-partnerSpecies = (/2,1/)              ! Collision2: Parameters for the collision between species 2 and 1
 
 The numbers in the `partnerSpecies` definition correspond to the species numbers and their order is irrelevant. Collision-specific
-parameters can be obtained from e.g. {cite}`Swaminathan-Gopalan2016`.
+parameters can be obtained from e.g. {cite}`Swaminathan-Gopalan2016` and {cite}`pfeiffer_optimized_2022`. If only specific collision pairs are defined, the collision-averaged values will be automatically utilized for the remaining collision pairs, using the read-in format given above (`Part-Species1-omega`, etc.).
 
 ### Cross-section based collision probabilities
 
@@ -366,7 +367,9 @@ where the reaction model can be defined as follows
 
 The reactants (left-hand side) and products (right-hand side) are defined by their respective species index. The photo-ionization
 reaction is a special case to model the ionization process within a defined volume by photon impact (see Section
-{ref}`sec:particle-photo-ionization`). It should be noted that for the dissociation reaction, the first given species is the
+{ref}`sec:particle-photo-ionization` or Section {ref}`sec:raytracing-photoionzation`).
+
+It should be noted that for the dissociation reaction, the first given species is the
 molecule to be dissociated. The second given species is the non-reacting partner, which can either be defined specifically or set
 to zero to define multiple possible collision partners. In the latter case, the number of non-reactive partners and their species
 have to be given by

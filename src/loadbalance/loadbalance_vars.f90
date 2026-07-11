@@ -18,6 +18,7 @@ MODULE MOD_LoadBalance_Vars
 #if USE_MPI
 USE mpi_f08
 #endif /*USE_MPI*/
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -125,11 +126,11 @@ REAL                                :: ElemTimeField    ! Time spent for field r
 INTEGER,ALLOCATABLE                 :: ElemHDGSides(:)  ! number of master sides for the HDG solver for each element
 INTEGER                             :: TotalHDGSides    ! total number of master sides for the HDG solver over all local elements
 REAL,ALLOCATABLE                    :: ElemGlobalTime(:)
-INTEGER(KIND=8),ALLOCATABLE         :: nPartsPerElem(:)
-INTEGER(KIND=8),ALLOCATABLE         :: nDeposPerElem(:)
-INTEGER(KIND=8),ALLOCATABLE         :: nTracksPerElem(:)
-INTEGER(KIND=8),ALLOCATABLE         :: nSurfacefluxPerElem(:)
-INTEGER(KIND=8),ALLOCATABLE         :: nPartsPerBCElem(:)
-INTEGER(KIND=8),ALLOCATABLE         :: nSurfacePartsPerElem(:)
+INTEGER(KIND=i8),ALLOCATABLE         :: nPartsPerElem(:)
+INTEGER(KIND=i8),ALLOCATABLE         :: nDeposPerElem(:)
+INTEGER(KIND=i8),ALLOCATABLE         :: nTracksPerElem(:)
+INTEGER(KIND=i8),ALLOCATABLE         :: nSurfacefluxPerElem(:)
+INTEGER(KIND=i8),ALLOCATABLE         :: nPartsPerBCElem(:)
+INTEGER(KIND=i8),ALLOCATABLE         :: nSurfacePartsPerElem(:)
 
 END MODULE MOD_LoadBalance_Vars

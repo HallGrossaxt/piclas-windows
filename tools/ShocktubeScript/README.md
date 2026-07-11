@@ -28,7 +28,7 @@ To use the script, one must know how to conduct simulations with PICLas and whic
 | Shock-UseMPI                     | bool      | False   | If piclas should run with mpi                                                                                 |
 | Shock-nMPICores                  | int       | 1       | Only if "Shock-UseMPI": number of used cores                                                                  |
 | Shock-PiclasPath                 | str       |         | path to the piclas executeable or cl command                                                                  |
-| Shock-HoprPath                   | str       |         | path to the hopr executeable or cl command                                                                    |
+| Shock-HoprPath                   | str       |         | path to the PyHOPE executeable or cl command                                                                  |
 | Shock-DSMCSpecies                | str       |         | Name of the DSMCSpecies file. has not to be set if DSMCSpecies file is not needed                             |
 | Shock-AdditionalCopyFiles        | str       |         | Only if "KeepAllSimulationData": additional neccessary files like electronic data base                        |
 | Shock-Simulation-ElemsPerWrite   | float     | 1       | Average travel distance of the shock in Elems between piclas macrowrites                                      |
@@ -71,7 +71,7 @@ Shock-KeepAllSimulationData=true                                        ! The da
 Shock-UseMPI=true                                                       ! MPI is enabled
 Shock-nMPICores=10                                                      ! 10 Cores are used for the simulation
 Shock-PiclasPath=~/master.dev/build/bin/piclas                          ! Path to piclas executable
-Shock-HoprPath=hopr                                                     ! Path to hopr executable
+Shock-HoprPath=pyhope                                                   ! Path to PyHOPE executable
 Shock-DSMCSpecies=DSMCSpecies_Earth_11Spec.ini                          ! DSMC.ini file
 Shock-AdditionalCopyFiles=DSMCSpecies_electronic_state_full_Data.h5     ! The electronic level database is needed to calculate the backward reaction rates and electrical exictations
 Shock-Autoadjust-Mesh=false                                             ! The mesh will not be adjusted due to instabillities

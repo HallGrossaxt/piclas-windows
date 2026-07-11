@@ -264,9 +264,12 @@ END DO
 IF (myComputeNodeRank.EQ.0) THEN
   ALLOCATE(isDielectricElem_Global(nGlobalElems))
   isDielectricElem_Global = .FALSE.
+  ! Get the information from all compute-node processes on to the respective compute-node root
+  CALL MPI_GATHERV(isDielectricElem,nElems,MPI_LOGICAL,isDielectricElem_Global,ElemPerProc,offsetElemPerProc,MPI_LOGICAL,0,MPI_COMM_SHARED,iError)
+ELSE
+  CALL MPI_GATHERV(isDielectricElem,nElems,MPI_LOGICAL,[0],[0],[0],MPI_LOGICAL,0,MPI_COMM_SHARED,iError)
 END IF
-! Get the information from all compute-node process on to the respective compute-node root
-CALL MPI_GATHERV(isDielectricElem,nElems,MPI_LOGICAL,isDielectricElem_Global,ElemPerProc,offsetElemPerProc,MPI_LOGICAL,0,MPI_COMM_SHARED,iError)
+
 ! Compute-node roots exchange their information
 IF (myComputeNodeRank.EQ.0) CALL MPI_ALLREDUCE(MPI_IN_PLACE,isDielectricElem_Global,nGlobalElems,MPI_LOGICAL,MPI_LOR,MPI_COMM_LEADERS_SHARED,iError)
 ! Population of the isDielectricElem_Shared(1:nComputeNodeTotalElems) array is done at the end of InitParticleMesh, after BuildBGMAndIdentifyHaloRegion

@@ -17,6 +17,7 @@ MODULE MOD_Mesh_Vars
 !> Contains global variables provided by the mesh routines
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -50,7 +51,13 @@ LOGICAL                         :: GetMeshMinMaxBoundariesIsDone !< don't call t
 REAL,ALLOCATABLE,DIMENSION(:,:) :: ElemBaryNGeo                  !< element local basis: origin
 
 
+TYPE tFileVersion
+  INTEGER                      :: PyHOPEVersionMajor !< Major version of PyHOPE, e.g., 0
+  INTEGER                      :: PyHOPEVersionMinor !< Minor version of PyHOPE, e.g., 9
+  INTEGER                      :: PyHOPEVersionPatch !< Patch version of PyHOPE, e.g., 0
+END TYPE tFileVersion
 
+TYPE(tFileVersion) :: MeshVersion
 
 
 TYPE, PUBLIC :: Mesh
@@ -145,6 +152,13 @@ INTEGER,ALLOCATABLE :: EdgeConnectInfo(:,:)    !< array containing the nbElemID 
                                                !< mesh file
 INTEGER,ALLOCATABLE :: VertexInfo(:,:)         !< array containing the FEMID and connectivity of the vertices as stored in the
                                                !< mesh file
+#if USE_MPI
+INTEGER,ALLOCATABLE :: VertexInfoGlobal(:,:)         !< array containing the global FEMID and connectivity of the FEM vertices
+INTEGER,ALLOCATABLE :: VertexConnectInfoGlobal(:,:)  !< array containing the global nbElemID and locNodeID of the FEM vertices
+#endif /*USE_MPI*/
+INTEGER,ALLOCATABLE :: NonUniqueGlobalNodeIDToFEMVertexID(:) !< Mapping from nonunique vertex ID to unique FEM vertex ID
+INTEGER,ALLOCATABLE :: NonUniqueGlobalSideIDToNonUniqueGlobalNodeID(:,:) !< Mapping from nonunique Side ID to non-unique corner node IDs
+                                                                         !< 1-4: NodeIDs
 INTEGER,ALLOCATABLE :: VertexConnectInfo(:,:)  !< array containing the nbElemID and locNodeID of the vertices as stored in the
                                                !< mesh file
 INTEGER,ALLOCATABLE :: SideToNonUniqueGlobalSide(:,:)     !< maps the local SideIDs to global SideIDs (for parallel HDG load balance currently)
@@ -165,7 +179,7 @@ INTEGER,PARAMETER :: TangDirs(6)   = (/ 1 , 3 , 2 , 3 , 2 , 1 /) !< first tangen
 REAL   ,PARAMETER :: NormalSigns(6)= (/-1.,-1., 1., 1.,-1., 1./) !< normal vector sign for element local side
 !-----------------------------------------------------------------------------------------------------------------------------------
 INTEGER          :: nGlobalElems=0          !< number of elements in mesh
-INTEGER(KIND=8)  :: nGlobalDOFs=0           !< number of DOF in mesh (depends on the polynomial degree in each element)
+INTEGER(KIND=i8) :: nGlobalDOFs=0           !< number of DOF in mesh (depends on the polynomial degree in each element)
 INTEGER          :: NMaxGlobal,NMinGlobal   !< global min/max polynomial degree that is actually present (not the theoretical limits)
 INTEGER          :: nElems=0                !< number of local elements
 INTEGER          :: offsetElem=0            !< for MPI, until now=0 Elems pointer array range: [offsetElem+1:offsetElem+nElems]
@@ -191,7 +205,7 @@ INTEGER          :: nFEMVertices
 INTEGER          :: nFEMEdgeConnections
 INTEGER          :: nFEMVertexConnections
 INTEGER          :: nNonUniqueGlobalEdges
-INTEGER          :: nNonUniqueGlobalVertices
+INTEGER          :: nNonUniqueGlobalVertices !< This is 'nVertices' from mesh.h5
 !----------------------------------------------------------------------------------------------------------------------------------
 ! Define index ranges for all sides in consecutive order for easier access
 INTEGER             :: firstBCSide             !< First SideID of BCs (in general 1)
@@ -219,10 +233,10 @@ INTEGER,ALLOCATABLE :: MortarType(:,:)         !< Side Info about mortars, [1:2,
 INTEGER,ALLOCATABLE :: MortarInfo(:,:,:)       !< 1:2,1:4,1:nMortarSides: [1] nbSideID / flip, [2] max 4 mortar sides, [3] sides
 INTEGER,ALLOCATABLE :: MortarSlave2MasterInfo(:) !< 1:nSides: map of slave mortar sides to belonging master mortar sides
 !----------------------------------------------------------------------------------------------------------------------------------
-INTEGER(KIND=8),ALLOCATABLE     :: ElemGlobalID(:)                   !< global element id of each element
-INTEGER(KIND=8),ALLOCATABLE     :: myInvisibleRank(:)                !< global proc ID which the current proc cannot see (particle
+INTEGER(KIND=i8),ALLOCATABLE     :: ElemGlobalID(:)                   !< global element id of each element
+INTEGER(KIND=i8),ALLOCATABLE     :: myInvisibleRank(:)                !< global proc ID which the current proc cannot see (particle
                                                                      !< communication)
-INTEGER(KIND=8),ALLOCATABLE     :: LostRotPeriodicSides(:)           !< Number of lost sides during rotational periodic search
+INTEGER(KIND=i8),ALLOCATABLE     :: LostRotPeriodicSides(:)           !< Number of lost sides during rotational periodic search
 !LOGICAL                         :: RotPeriodicReBuild                !< Force re-building of mapping (might already exist)
 !-----------------------------------------------------------------------------------------------------------------------------------
 CHARACTER(LEN=255),ALLOCATABLE   :: BoundaryName(:)

@@ -177,7 +177,7 @@ REAL,INTENT(IN)                :: OutputTime
 CHARACTER(LEN=255)             :: FileName
 CHARACTER(LEN=255),ALLOCATABLE :: StrVarNames(:)
 INTEGER                        :: nVal
-INTEGER,PARAMETER              :: UexDataSize=1
+INTEGER,PARAMETER              :: UexDataSize=2
 REAL                           :: StartT,EndT
 !===================================================================================================================================
 #if USE_LOADBALANCE
@@ -189,8 +189,7 @@ GETTIME(StartT)
 ! Create dataset attribute "VarNames"
 ALLOCATE(StrVarNames(1:UexDataSize))
 StrVarNames(1)='Phi'
-!StrVarNames(2)='BG-MagneticFieldY'
-!StrVarNames(3)='BG-MagneticFieldZ'
+StrVarNames(2)='Phi_L2_squared'
 
 ! Generate skeleton for the file with all relevant data on a single proc (MPIRoot)
 !FileName=TRIM(ProjectName)//'_ErrorNorms.h5'

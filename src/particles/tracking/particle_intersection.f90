@@ -17,33 +17,11 @@ MODULE MOD_Particle_InterSection
 ! Provides routines to calculate the intersection of the particle trajectory with a side depending on the side type
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i2
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
 !----------------------------------------------------------------------------------------------------------------------------------
-
-INTERFACE ComputePlanarCurvedIntersection
-  MODULE PROCEDURE ComputePlanarCurvedIntersection
-END INTERFACE
-
-INTERFACE ComputePlanarRectInterSection
-  MODULE PROCEDURE ComputePlanarRectInterSection
-END INTERFACE
-
-INTERFACE ComputeBilinearIntersection
-  MODULE PROCEDURE ComputeBilinearIntersection
-END INTERFACE
-
-INTERFACE ComputeCurvedIntersection
-  MODULE PROCEDURE ComputeCurvedIntersection
-END INTERFACE
-
-#ifdef CODE_ANALYZE
-INTERFACE OutputTrajectory
-  MODULE PROCEDURE OutputTrajectory
-END INTERFACE
-#endif /*CODE_ANALYZE*/
-
 ! Define an interface for the function pointer
 ABSTRACT INTERFACE
   SUBROUTINE ParticleThroughSideCheck1D2DInterface(PartID,iLocSide,Element,ThroughSide)
@@ -384,11 +362,11 @@ END SUBROUTINE ParticleThroughSideCheck2D
 
 SUBROUTINE ParticleThroughSideCheck1D(PartID,iLocSide,Element,ThroughSide)
 !===================================================================================================================================
-!> Routine to check whether a particle crossed the given 1D  side. It simply checks whether lastpartpos - xnode and partpos-xnode
-!> have different signs. Then the side was crossed.
+!> Routine to check whether a particle crossed the given 1D side assuming that the particle is starting in the given Element.
+!> If the new position is not on the correct side of the node, then the particle went thorugh the side.
 !===================================================================================================================================
 ! MODULES
-USE MOD_Particle_Vars             ,ONLY: lastPartPos,PartState
+USE MOD_Particle_Vars             ,ONLY: LastPartPos, PartState
 USE MOD_Particle_Mesh_Vars        ,ONLY: NodeCoords_Shared, ElemSideNodeID1D_Shared
 USE MOD_Mesh_Tools                ,ONLY: GetCNElemID
 USE MOD_Particle_Tracking_Vars    ,ONLY: TrackInfo
@@ -404,8 +382,8 @@ INTEGER,INTENT(IN)               :: Element
 LOGICAL,INTENT(OUT)              :: ThroughSide
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER                          :: CNElemID, DiffSign(2)
-REAL                             :: xNode
+INTEGER                          :: CNElemID
+REAL                             :: xNode,xOtherNode
 !===================================================================================================================================
 
 CNElemID = GetCNElemID(Element)
@@ -413,12 +391,11 @@ CNElemID = GetCNElemID(Element)
 ThroughSide = .FALSE.
 ! Get the coordinates of the first node
 xNode = NodeCoords_Shared(1,ElemSideNodeID1D_Shared(iLocSide, CNElemID))
+xOtherNode = NodeCoords_Shared(1,ElemSideNodeID1D_Shared(MERGE(XI_MINUS,XI_PLUS,iLocSide==XI_PLUS), CNElemID))
 
-DiffSign(1) = NINT(SIGN(1.,LastPartPos(1,PartID) - xNode))
-DiffSign(2) = NINT(SIGN(1.,PartState(1,PartID) - xNode))
-
-! Check if intersection point is within line segments
-IF (DiffSign(1).NE.DiffSign(2)) THEN
+! Check if the new position is on the "wrong" side of the node
+IF(((xOtherNode.LT.xNode).AND.(PartState(1,PartID).GT.xNode)).OR. &
+   ((xOtherNode.GT.xNode).AND.(PartState(1,PartID).LT.xNode))) THEN
   ! Calculate intersection point
   TrackInfo%alpha = ABS(xNode - LastPartPos(1,PartID))
   ThroughSide = .TRUE.
@@ -739,7 +716,7 @@ REAL                                     :: XiNewton(2)
 REAL                                     :: coeffA,locSideDistance
 ! fallback algorithm
 LOGICAL                                  :: failed
-INTEGER(KIND=2)                          :: ClipMode
+INTEGER(KIND=i2)                         :: ClipMode
 REAL                                     :: LineNormVec(1:2,1:2)
 INTEGER                                  :: iClipIter,nXiClip,nEtaClip
 REAL                                     :: PartFaceAngle
@@ -1293,7 +1270,7 @@ REAL                                     :: BezierControlPoints2D(2,0:NGeo,0:NGe
 REAL                                     :: BezierControlPoints2D_tmp(2,0:NGeo,0:NGeo)
 #endif /*CODE_ANALYZE*/
 INTEGER,ALLOCATABLE,DIMENSION(:)         :: locID,realInterID
-INTEGER(KIND=2)                          :: ClipMode
+INTEGER(KIND=i2)                         :: ClipMode
 REAL                                     :: LineNormVec(1:2,1:2)
 INTEGER                                  :: realnInter,isInter
 REAL                                     :: XiNewton(2)
@@ -1666,7 +1643,7 @@ REAL,INTENT(IN),DIMENSION(1:3)       :: PartTrajectory
 !--------------------------------------------------------------------------------------------------------------------------------
 ! OUTPUT VARIABLES
 INTEGER,INTENT(INOUT)                  :: iClipIter,nXiClip,nEtaClip,nInterSections
-INTEGER(KIND=2),INTENT(INOUT)          :: ClipMode
+INTEGER(KIND=i2),INTENT(INOUT)         :: ClipMode
 REAL,DIMENSION(2,2),INTENT(INOUT)      :: LineNormVec
 !--------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
@@ -2493,7 +2470,7 @@ REAL,INTENT(IN),DIMENSION(1:3)       :: PartTrajectory
 ! OUTPUT VARIABLES
 INTEGER,INTENT(INOUT)                  :: iClipIter
 INTEGER,INTENT(INOUT)                  :: nXiClip,nEtaClip,nInterSections
-INTEGER(KIND=2),INTENT(INOUT)          :: ClipMode
+INTEGER(KIND=i2),INTENT(INOUT)         :: ClipMode
 REAL,DIMENSION(2,2),INTENT(INOUT)      :: LineNormVec
 !--------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
@@ -2508,7 +2485,7 @@ INTEGER                              :: tmpnClip,tmpnXi,tmpnEta
 REAL                                 :: xiup(0:NGeo),xidown(0:NGeo)
 REAL                                 :: XiBuf(0:NGeo,0:NGeo)
 REAL                                 :: dmin,dmax
-INTEGER(KIND=2)                      :: tmpClipMode
+INTEGER(KIND=i2)                     :: tmpClipMode
 REAL,DIMENSION(2,2)                  :: tmpLineNormVec
 !================================================================================================================================
 
@@ -2887,7 +2864,7 @@ REAL,INTENT(IN),DIMENSION(1:3)       :: PartTrajectory
 ! OUTPUT VARIABLES
 INTEGER,INTENT(INOUT)                  :: iClipIter
 INTEGER,INTENT(INOUT)                  :: nXiClip,nEtaClip,nInterSections
-INTEGER(KIND=2),INTENT(INOUT)          :: ClipMode
+INTEGER(KIND=i2),INTENT(INOUT)         :: ClipMode
 REAL,DIMENSION(2,2),INTENT(INOUT)      :: LineNormVec
 !--------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
@@ -2902,7 +2879,7 @@ INTEGER                              :: tmpnClip,tmpnXi,tmpnEta
 REAL                                 :: etaup(0:NGeo),etadown(0:NGeo)
 REAL                                 :: EtaBuf(0:NGeo,0:NGeo)
 REAL                                 :: dmin,dmax
-INTEGER(KIND=2)                      :: tmpClipMode
+INTEGER(KIND=i2)                      :: tmpClipMode
 REAL,DIMENSION(2,2)                  :: tmpLineNormVec
 !================================================================================================================================
 

@@ -241,6 +241,7 @@ SUBROUTINE PrintStatusLineRadiation(t,tStart,tEnd,Phot,outputrank)
 ! MODULES                                                                                                                          !
 USE MOD_Globals
 USE MOD_PreProc
+USE MOD_Output_Vars   ,ONLY: doPrintStatusLine
 USE MOD_TimeDisc_Vars ,ONLY: tWallRemaining
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! insert modules here
@@ -257,6 +258,8 @@ INTEGER, INTENT(IN),OPTIONAL :: outputrank
 REAL    :: percent,time_remaining,mins,secs,hours,days
 INTEGER :: visRank
 !==================================================================================================================================
+IF(.NOT.doPrintStatusLine) RETURN
+
 IF (PRESENT(outputrank)) THEN
   visRank = outputrank
 ELSE

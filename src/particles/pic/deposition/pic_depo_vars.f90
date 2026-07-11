@@ -131,18 +131,56 @@ REAL,ALLOCPOINT                 :: NodeVolume(:)
 #if USE_MPI
 TYPE(MPI_Win)                   :: NodeVolume_Shared_Win
 REAL,ALLOCPOINT                 :: NodeVolume_Shared(:)
-#endif
+#endif /*USE_MPI*/
 
 REAL,ALLOCPOINT                 :: SFElemr2_Shared(:,:) ! index 1: radius, index 2: radius squared
 
+! 2D surface deposition
+TYPE VdmType
+  REAL,ALLOCATABLE :: Vdm(:,:)                !< Vandermonde mapping from equidistant (visu) to NodeType node set
+  REAL,ALLOCATABLE :: xIP_VISU(:),wIP_VISU(:) !< nodes and weights
+END TYPE VdmType
+
+TYPE(VdmType), DIMENSION(:), ALLOCATABLE :: Vdm_EQ_N        !< Vandermonde for mapping from N=1 (equidistant) to N=Nloc (Gauss/Gauss-Lobatto)
+TYPE(VdmType), DIMENSION(:), ALLOCATABLE :: Vdm_N_EQ        !< Map G/GL (current node type) to equidistant distribution with N=1
+
+LOGICAL,ALLOCATABLE             :: IsDepoSurfSide(:) !< Flag to idenfity surface deposition sides (1:nNonUniqueGlobalSides)
+LOGICAL                         :: InitDepoSurfNodesIsDone !< Flag to check whether InitDepoSurfNodes() has already been called
+REAL,ALLOCATABLE                :: SurfNodeSource(:) ! It contains the global, synchronized surface charge contribution that is
+!                                                    ! read and written to .h5
+REAL,ALLOCATABLE                :: SurfNodeArea(:) ! Area associated with each FEM vertex
+INTEGER,ALLOCATABLE             :: pq2iNode(:,:,:) ! Surface mapping from p,q-system to iNode (node coord system)
+INTEGER,ALLOCATABLE             :: DepoSurfNodetoGlobalNode(:)
+INTEGER,ALLOCATABLE             :: DepoSurfNodeID2FEMVertexID(:)
+INTEGER,ALLOCATABLE             :: FEMVertexID2DepoSurfNodeID(:)
+INTEGER                         :: nDepoSurfNodes
+INTEGER                         :: nDepoSurfSides
+INTEGER                         :: nDepoSurfNodesTotal
+LOGICAL,ALLOCATABLE             :: IsDepoSurfNode(:)
+INTEGER,ALLOCATABLE             :: SurfNodeSymmetryFactor(:) !< Scaling factor applied at symmetry BCs (1: no scaling, 2: one symmetry side, 4: two symmetry sides)
+INTEGER,ALLOCATABLE             :: SurfNodeSymmetryFactorFEM(:) !< Scaling factor applied at symmetry BCs (1: no scaling, 2: one symmetry side, 4: two symmetry sides)
+#if USE_MPI
+REAL,ALLOCATABLE                :: SurfNodeSourceMPI(:) ! It contains the local non-synchronized surface charge contribution (does
+!                                                       ! not consider the charge contribution from restart files). This
+!                                                       ! contribution accumulates over time, but remains local to each processor
+!                                                       ! as it is communicated via the container NodeSourceExt.
+INTEGER,ALLOCATABLE             :: SurfNodeSendDepoRankToGlobalRank(:)
+INTEGER,ALLOCATABLE             :: SurfNodeRecvDepoRankToGlobalRank(:)
+INTEGER                         :: nSurfNodeSendExchangeProcs
+INTEGER                         :: nSurfNodeRecvExchangeProcs
+#endif /*USE_MPI*/
+
+! 3D CVWM deposition
 REAL,ALLOCATABLE                :: NodeSource(:,:)
-INTEGER,ALLOCATABLE             :: NodeSendDepoRankToGlobalRank(:)
-INTEGER,ALLOCATABLE             :: NodeRecvDepoRankToGlobalRank(:)
 INTEGER,ALLOCATABLE             :: DepoNodetoGlobalNode(:)
 INTEGER                         :: nDepoNodes
 INTEGER                         :: nDepoNodesTotal
+#if USE_MPI
+INTEGER,ALLOCATABLE             :: NodeSendDepoRankToGlobalRank(:)
+INTEGER,ALLOCATABLE             :: NodeRecvDepoRankToGlobalRank(:)
 INTEGER                         :: nNodeSendExchangeProcs
 INTEGER                         :: nNodeRecvExchangeProcs
+#endif /*USE_MPI*/
 ! Additional source for cell_volweight_mean (external or surface charge) that accumulates over time in elements adjacent to
 ! dielectric interfaces.
 REAL,ALLOCATABLE                :: NodeSourceExt(:) ! It contains the global, synchronized surface charge contribution that is
@@ -161,7 +199,7 @@ INTEGER,ALLOCPOINT :: Periodic_Nodes_Shared(:)
 TYPE(MPI_Win)      :: Periodic_offsetNode_Shared_Win
 INTEGER,ALLOCPOINT :: Periodic_offsetNode_Shared(:)
 
-REAL,ALLOCATABLE                :: NodeSourceExtTmp(:) ! It contains the local non-synchronized surface charge contribution (does
+REAL,ALLOCATABLE                :: NodeSourceExtMPI(:) ! It contains the local non-synchronized surface charge contribution (does
 !                                                      ! not consider the charge contribution from restart files). This
 !                                                      ! contribution accumulates over time, but remains local to each processor
 !                                                      ! as it is communicated via the container NodeSourceExt.
@@ -187,6 +225,24 @@ TYPE tNodeMappingRecv
   INTEGER                       :: nRecvUniqueNodes
 END TYPE
 TYPE (tNodeMappingRecv),ALLOCATABLE      :: NodeMappingRecv(:)
+
+! Send direction of surface nodes (can be different from number of receive nodes for each processor)
+TYPE tSurfNodeMappingSend
+  INTEGER,ALLOCATABLE           :: SendSurfNodeFEMVertexID(:)
+  REAL,ALLOCATABLE              :: SendSurfNodeSource(:)
+  REAL,ALLOCATABLE              :: SendSurfNodeArea(:)
+  INTEGER                       :: nSendUniqueSurfNodes
+END TYPE
+TYPE (tSurfNodeMappingSend),ALLOCATABLE      :: SurfNodeMappingSend(:)
+
+! Receive direction of surface nodes (can be different from number of send nodes for each processor)
+TYPE tSurfNodeMappingRecv
+  INTEGER,ALLOCATABLE           :: RecvSurfNodeFEMVertexID(:)
+  REAL,ALLOCATABLE              :: RecvSurfNodeSource(:)
+  REAL,ALLOCATABLE              :: RecvSurfNodeArea(:)
+  INTEGER                       :: nRecvUniqueSurfNodes
+END TYPE
+TYPE (tSurfNodeMappingRecv),ALLOCATABLE      :: SurfNodeMappingRecv(:)
 
 TYPE tShapeMapping
   INTEGER,ALLOCATABLE           :: RecvShapeElemID(:)
@@ -222,6 +278,7 @@ INTEGER                         :: nShapeExchangeProcs
 
 !INTEGER             :: SendRequest
 TYPE(MPI_Request),ALLOCATABLE :: RecvRequest(:), SendRequest(:)
+TYPE(MPI_Request),ALLOCATABLE :: SurfRecvRequest(:), SurfSendRequest(:)
 INTEGER,ALLOCATABLE ::CNRankToSendRank(:)
 #endif
 

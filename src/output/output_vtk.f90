@@ -18,6 +18,7 @@
 !> WARNING: WriteDataToVTK works only for POSTPROCESSING or for debug output during runtime
 !===================================================================================================================================
 MODULE MOD_VTK
+USE MOD_Globals_Vars, ONLY: i4,i8
 USE ISO_C_BINDING
 ! MODULES
 IMPLICIT NONE
@@ -165,7 +166,7 @@ INTEGER                     :: nTotalElems
 INTEGER                     :: nBytes,Offset
 INTEGER                     :: INTdummy
 INTEGER,PARAMETER           :: SizeINTdummy=STORAGE_SIZE(INTdummy)/8
-REAL(KIND=4)                :: FLOATdummy
+REAL(KIND=i4)               :: FLOATdummy
 CHARACTER(LEN=35)           :: StrOffset,TempStr1,TempStr2
 CHARACTER(LEN=200)          :: Buffer
 CHARACTER(LEN=1)            :: lf
@@ -254,8 +255,8 @@ IF(MPIROOT)THEN
   Buffer='        <DataArray type="Float32" Name="Coordinates" NumberOfComponents="3" format="appended" '// &
                    'offset="'//TRIM(ADJUSTL(StrOffset))//'"/>'//lf;WRITE(ivtk) TRIM(Buffer)
   ! INTEGER KIND=4 check
-  CHECKSAFEINT(INT(Offset,8)+INT(SizeINTdummy,8)+3_8*INT(nVTKPoints,8)*INT(SIZEOF_F(FLOATdummy),8),4)
-  Offset=          Offset   +    SizeINTdummy   +3  *    nVTKPoints   *    SIZEOF_F(FLOATdummy)
+  CHECKSAFEINT(INT(Offset,8)+INT(SizeINTdummy,8)+3_i8*INT(nVTKPoints,8)*INT(SIZEOF_F(FLOATdummy),8),4)
+  Offset=          Offset   +    SizeINTdummy   +3   *    nVTKPoints   *    SIZEOF_F(FLOATdummy)
   WRITE(StrOffset,'(I16)')Offset
   Buffer='      </Points>'//lf;WRITE(ivtk) TRIM(Buffer)
   ! Specify necessary cell data

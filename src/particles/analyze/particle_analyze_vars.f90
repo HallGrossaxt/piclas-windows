@@ -15,6 +15,7 @@ MODULE MOD_Particle_Analyze_Vars
 !> Contains global variables used by the Analyze modules.
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -47,7 +48,7 @@ REAL                          :: PCouplAverageOld                    !< Power th
 TYPE tPCoupl
   REAL,ALLOCATABLE            :: DensityAvgElem(:)                   !< Power per volume that is coupled into plasma (moving average
                                                                      !< for each element) in [W/m^3]
-END TYPE
+END TYPE tPCoupl
 TYPE(tPCoupl),ALLOCATABLE     :: PCouplSpec(:)                       !< DensityAvgElem array for each species
 
 
@@ -62,7 +63,7 @@ INTEGER                       :: nSpecAnalyze                        !< Number o
 LOGICAL                       :: IsRestart                           !< Check if restart, add data to Database
 LOGICAL                       :: ChargeCalcDone                      !< Check flag
 LOGICAL                       :: DoPartAnalyze                       !< perform analyze
-INTEGER(KIND=8)               :: PartAnalyzeStep                     !< Analyze is performed each Nth time step
+INTEGER(KIND=i8)              :: PartAnalyzeStep                     !< Analyze is performed each Nth time step
 INTEGER,ALLOCATABLE           :: nPartIn(:)                          !< Number of entry and leaving particles
 INTEGER,ALLOCATABLE           :: nPartOut(:)                         !< Number of entry and leaving particles
 REAL,ALLOCATABLE              :: PartEkinIn(:)                       !< Energy and temperature of input particle
@@ -118,6 +119,7 @@ REAL,ALLOCATABLE              :: MaxPartDisplacementCell(:)          !< Maximum 
 REAL,ALLOCATABLE              :: MaxPartDisplacementCellX(:)         !< Maximum particle displacement in X (cell mean value)
 REAL,ALLOCATABLE              :: MaxPartDisplacementCellY(:)         !< Maximum particle displacement in Y (cell mean value)
 REAL,ALLOCATABLE              :: MaxPartDisplacementCellZ(:)         !< Maximum particle displacement in Z (cell mean value)
+INTEGER                       :: MaxPartDisplacementSmallerOne(4)    !> Number of elements with max. particle displacement > 1.0
 REAL,ALLOCATABLE              :: PPSCell(:)                          !< Points per shape function sphere (cell mean value):
                                                                      !<   calculate cell local number excluding neighbor DOFs
 REAL,ALLOCATABLE              :: PPSCellCartesian(:)                 !< Points per shape function sphere (cell mean value):

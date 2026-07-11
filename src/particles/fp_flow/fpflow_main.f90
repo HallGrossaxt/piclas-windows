@@ -111,7 +111,11 @@ DO iElem = 1, nElems
     END DO
 
     IF(DSMC%CalcQualityFactors) THEN
-      FP_MeanRelaxFactorCounter=0; FP_MeanRelaxFactor=0.; FP_MaxRelaxFactor=0.; FP_MaxRotRelaxFactor=0.; FP_PrandtlNumber=0.
+      FP_MeanRelaxFactorCounter=0
+      FP_MeanRelaxFactor=0.
+      FP_MaxRelaxFactor=0.
+      FP_MaxRotRelaxFactor=0.
+      FP_PrandtlNumber=0.
     END IF
 
     CALL FP_CollisionOperator(iPartIndx_Node, nPart, ElemVolume_Shared(CNElemID))
@@ -223,7 +227,11 @@ ELSE
     END IF
 
     IF(DSMC%CalcQualityFactors) THEN
-      FP_MeanRelaxFactorCounter=0; FP_MeanRelaxFactor=0.; FP_MaxRelaxFactor=0.; FP_MaxRotRelaxFactor=0.; FP_PrandtlNumber=0.
+      FP_MeanRelaxFactorCounter=0
+      FP_MeanRelaxFactor=0.
+      FP_MaxRelaxFactor=0.
+      FP_MaxRotRelaxFactor=0.
+      FP_PrandtlNumber=0.
     END IF
 
     CALL FP_CollisionOperator(iPartIndx_Node, nPartMerged, elemVolume)

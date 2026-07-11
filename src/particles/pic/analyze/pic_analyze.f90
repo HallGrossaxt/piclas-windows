@@ -21,15 +21,7 @@ PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
-INTERFACE CalcDepositedCharge
-  MODULE PROCEDURE CalcDepositedCharge
-END INTERFACE
-
 #if USE_HDG
-INTERFACE CalculateBRElectronsPerCell
-  MODULE PROCEDURE CalculateBRElectronsPerCell
-END INTERFACE
-
 PUBLIC:: CalculateBRElectronsPerCell
 #endif /*USE_HDG*/
 

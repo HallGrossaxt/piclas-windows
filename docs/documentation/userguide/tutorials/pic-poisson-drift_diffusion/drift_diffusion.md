@@ -22,7 +22,7 @@ before continuing with the mesh building section. Then, the species database nee
 
     ln -s $PICLAS_PATH/SpeciesDatabase.h5
 
-### Mesh Generation with HOPR (pre-processing)-1
+### Mesh Generation with PyHOPE (pre-processing)-1
 
 Before the actual simulation is conducted, a mesh file in the correct HDF5 format has to be supplied.
 The mesh files used by piclas are created by supplying an input file hopr.ini with the required
@@ -32,10 +32,12 @@ Here, a block-structured grid is created directly from the information in the ho
 
 To create the .h5 mesh file, simply run
 
-    hopr hopr.ini
+    pyhope hopr.ini
 
 This creates the mesh file *streamer_mesh.h5* in HDF5 format.
-Alternatively, if you do not want to run **hopr** yourself, you can also use the provided mesh. The only difference from the mesh created in previous tutorial, is the size of the simulation domain in this tutorial which is set to [$4\pi\times1\times1$] m$^{3}$ and is defined by the single block information
+Alternatively, if you do not want to run **PyHOPE** yourself, you can also use the provided mesh.
+The only difference from the mesh created in previous tutorial, is the size of the simulation domain
+in this tutorial which is set to [$4\pi\times1\times1$] m$^{3}$ and is defined by the single block information
 
 in the line, where each node of the hexahedral element is defined. Here, l1 and l2 define the dimensions of the hexahedral elements. While l1 represents the length in the x-direction, l2 indicates the length in the y-direction.
 
@@ -438,7 +440,7 @@ In addition, an electronic database is needed. This can be linked or copied from
     cp $PICLAS_PATH/regressioncheck/NIG_Reservoir/MCC_BGG_MultiSpec_XSec_TCE_QK_Chem/DSMCSpecies_electronic_state_full_Data.h5 .
 
 
-### Mesh Generation with HOPR (pre-processing)-2
+### Mesh Generation with PyHOPE (pre-processing)-2
 
 The mesh generation process is identical to that described in the fluid model section. Please refer to that section for detailed instructions or you just copy the mesh from the previous part of the tutorial
 

@@ -102,7 +102,7 @@ SUBROUTINE QK_TestReaction(iPair,iReac,PerformReaction)
 ! MODULES
 USE MOD_Globals
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars             ,ONLY: Coll_pData, CollInf, SpecDSMC, PartStateIntEn, ChemReac, DSMC, AHO
+USE MOD_DSMC_Vars             ,ONLY: Coll_pData, CollInf, SpecDSMC, PartIntEn, ChemReac, DSMC, AHO
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, Species, UseVarTimeStep, usevMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 ! IMPLICIT VARIABLE HANDLING
@@ -148,7 +148,7 @@ Ec = 0.5 * ReducedMass*Coll_pData(iPair)%CRela2
 
 SELECT CASE(TRIM(ChemReac%ReactType(iReac)))
 CASE('I')
-  IF(DSMC%ElectronicModel.GT.0) Ec = Ec + PartStateIntEn(3,React1Inx)*Weight1
+  IF(DSMC%ElectronicModel.GT.0) Ec = Ec + PartIntEn(React1Inx)%EElec(1)*Weight1
   ! ionization level is last known energy level of species
   MaxQua=SpecDSMC(PartSpecies(React1Inx))%MaxElecQuant - 1
   IonizationEnergy=SpecDSMC(PartSpecies(React1Inx))%ElectronicState(2,MaxQua)*BoltzmannConst*(Weight1 + Weight2)/2.
@@ -158,7 +158,7 @@ CASE('I')
     PerformReaction = .TRUE.
   END IF
 CASE('D')
-  Ec = Ec + PartStateIntEn(1,React1Inx)*Weight1
+  Ec = Ec + PartIntEn(React1Inx)%EVib(1)*Weight1
   ! Correction for second collision partner
   IF ((Species(PartSpecies(React2Inx))%InterID.EQ.2).OR.(Species(PartSpecies(React2Inx))%InterID.EQ.20)) THEN
     Ec = Ec - SpecDSMC(PartSpecies(React2Inx))%EZeroPoint*Weight2

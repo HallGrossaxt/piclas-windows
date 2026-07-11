@@ -740,18 +740,18 @@ ELSE
     Flux_Slave(:,:,:) = Flux_loc(:,:,:)
   ELSEIF(N_slave.GT.N_max)THEN ! N increases: Simply interpolate the lower polynomial degree solution
     CALL abort(__STAMP__,'This cannot happen')
-    CALL ChangeBasis2D(PP_nVar+PMLnVar, N_max, N_slave, PREF_VDM(N_max, N_slave)%Vdm, &
-              Flux_loc(PP_nVar+PMLnVar, 0:N_max  , 0:N_max ),                         &
-            Flux_Slave(PP_nVar+PMLnVar, 0:N_slave, 0:N_slave))
+    CALL ChangeBasis2D(  PP_nVar+PMLnVar, N_max, N_slave, PREF_VDM(N_max, N_slave)%Vdm, &
+              Flux_loc(1:PP_nVar+PMLnVar, 0:N_max  , 0:N_max ),                         &
+            Flux_Slave(1:PP_nVar+PMLnVar, 0:N_slave, 0:N_slave))
   ELSE ! N reduces: This requires an intermediate modal basis
     ! Switch to Legendre basis (stay on N_max)
-    CALL ChangeBasis2D(PP_nVar+PMLnVar, N_max, N_max, N_Inter(N_max)%sVdm_Leg, &
-              Flux_loc(PP_nVar+PMLnVar, 0:N_max, 0:N_max ),                    &
-              Flux_loc(PP_nVar+PMLnVar, 0:N_max, 0:N_max ))
+    CALL ChangeBasis2D(  PP_nVar+PMLnVar, N_max, N_max, N_Inter(N_max)%sVdm_Leg, &
+              Flux_loc(1:PP_nVar+PMLnVar, 0:N_max, 0:N_max ),                    &
+              Flux_loc(1:PP_nVar+PMLnVar, 0:N_max, 0:N_max ))
     ! Switch back to nodal basis but cut-off the higher-order DOFs (go from N_slave to N_slave)
-    CALL ChangeBasis2D(PP_nVar+PMLnVar, N_slave, N_slave, N_Inter(N_slave)%Vdm_Leg, &
-              Flux_loc(PP_nVar+PMLnVar, 0:N_slave, 0:N_slave ),                     &
-            Flux_Slave(PP_nVar+PMLnVar, 0:N_slave, 0:N_slave))
+    CALL ChangeBasis2D(  PP_nVar+PMLnVar, N_slave, N_slave, N_Inter(N_slave)%Vdm_Leg, &
+              Flux_loc(1:PP_nVar+PMLnVar, 0:N_slave, 0:N_slave ),                     &
+            Flux_Slave(1:PP_nVar+PMLnVar, 0:N_slave, 0:N_slave))
   END IF ! N_slave.EQ.N_max
 END IF
 

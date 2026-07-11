@@ -9,7 +9,7 @@ Within the parameter file it is possible to define different particle boundary c
     Part-Boundary2-SourceName   = BC_WALL
     Part-Boundary2-Condition    = reflective
 
-The `Part-Boundary1-SourceName=` corresponds to the name given during the preprocessing step with HOPR. The available conditions
+The `Part-Boundary1-SourceName=` corresponds to the name given during the preprocessing step with PyHOPE. The available conditions
 (`Part-Boundary1-Condition=`) are described in the table below.
 
 |         Condition          | Description                                                                                                                                                                    |
@@ -132,6 +132,10 @@ Cartesian coordinate axis (x, y, z) with its origin at (0, 0, 0).
 
 ### Intermediate Plane Definition
 If several segments with different rotation angles are defined, exactly two corresponding boundary conditions must be defined for each segment.
+In pyHope, multiple internal boundaries must be allowed by setting
+
+    CheckInternalBoundaries = F
+
 Since the plane between these segments with different rotational symmetry angles represents a non-conforming connection, additional
 two boundary conditions must be defined as `rot_periodic_inter_plane` at this intermediate plane. Both boundary conditions must refer to each other in the
 definition in order to ensure the connection.
@@ -315,9 +319,16 @@ where electrons of species `C` are emitted from boundary `B` on the impact of sp
 For the `Chung-Everhart-cosine` distribution, in the case of 2 or more secondaries, we are currently sampling each energy independently, which can result in an energy
 addition and thus energy conservation violation. An output to monitor the percentage of violations and energy addition as a percentage of the impact energy per SEE event can be enabled through `CalcEnergyViolationSEE = T`.
 
-For a simulation using variable particle weights (`Part-vMPF = T`) as described in Section {ref}`sec:split-merge`, the models 3, 4 and 12 support the emission of only a single secondary, weighted according to the calculated yield. This feature can be enabled per boundary:
+For a simulation using variable particle weights (`Part-vMPF = T`) as described in Section {ref}`sec:split-merge`, the models 3, 4, 12, and 13 support the emission of only a single secondary, weighted according to the calculated yield. This feature can be enabled per boundary:
 
     Part-Boundary1-SurfMod-vMPF = T
+
+Additional parameters, which can be utilized per boundary for models 3, 4, 12, and 13 are
+
+    Part-Boundary1-SurfMod-SubtractWorkFunction = .FALSE.       ! Default: .TRUE.
+    Part-Boundary1-SurfMod-ReflectElectron      = .TRUE.        ! Default: .FALSE.
+
+The first parameter allows to disable the subtraction of the work function from the incident electron energy (example in `piclas/regressioncheck/NIG_PIC_poisson_Leapfrog/BC_SEE_EnergyDistribution_Constant`). The second parameter can be used to utilize the yield function as a probability for a reflection if the incident energy is lower than the work function (example in `piclas/regressioncheck/NIG_PIC_poisson_Leapfrog/BC_SEE_SquareFit_ReflectBelowThreshold`).
 
 #### Model 3/4
 
@@ -336,7 +347,7 @@ Additionally, the energy distribution can be selected with
 
     Part-BoundaryB-SurfModEnergyDistribution = Chung-Everhart-cosine
 
-It should be noted that the impact energy is reduced by the work function before the energy distribution. An example of the model usage is given in the regression test: `piclas/regressioncheck/NIG_DSMC/BC_SEE_PowerFit/`. Fit coefficients can be found for example in {cite}`Goebel2008`.
+It should be noted that per default the impact energy is reduced by the work function before the energy distribution. An example of the model usage is given in the regression test: `piclas/regressioncheck/NIG_PIC_poisson_Leapfrog/BC_SEE_PowerFit/`. Fit coefficients can be found for example in {cite}`Goebel2008`.
 
 #### Model 5
 
@@ -408,7 +419,7 @@ Additionally, the energy distribution can be selected with
 
     Part-BoundaryB-SurfModEnergyDistribution = Chung-Everhart-cosine
 
-It should be noted that the impact energy is reduced by the work function before the energy distribution. An example of the model usage is given in the regression test: `piclas/regressioncheck/NIG_DSMC/BC_SEE_Model_12/`.
+It should be noted that per default the impact energy is reduced by the work function before the energy distribution. An example of the model usage is given in the regression test: `piclas/regressioncheck/NIG_DSMC/BC_SEE_Model_12/`.
 
 #### Model 13
 
@@ -427,7 +438,7 @@ Additionally, the energy distribution can be selected with
 
 Using the cosine energy distribution, the angle distribution is according to $\cos$ in the normal direction and equally distributed in the tangential direction. Using the SEE model 13 (and the cosine energy distribution), the energy of all secondary emitted electrons is set to 2 eV.
 
-If a work function greater than zero is set, the impact energy is reduced by the work function before the energy distribution. An example of the model usage is given in the regression test: `piclas/regressioncheck/NIG_DSMC/BC_SEE_Model_13/`.
+If a work function greater than zero is set, the impact energy is reduced by the work function before the energy distribution per default. An example of the model usage is given in the regression test: `piclas/regressioncheck/NIG_DSMC/BC_SEE_Model_13/`.
 
 (sec:catalytic-surface)=
 ## Catalytic Surfaces
@@ -519,19 +530,18 @@ With `Surface-Diffusion = true` an instantaneous diffusion over all catalytic bo
 
 All information about a catalytic reaction can be retrieved from the species database. Here the catalytic reaction parameters are stored in containers and accessed via the reaction name, e.g. `Adsorption_CO_Pt`.
 
-## Deposition of Charges on Dielectric Surfaces
-
+## Deposition of Charges on resolved Dielectric Surfaces
+This deposition of charges is designed for thick layers of dielectric materials, which are resolved by mesh
+elements can directly be modelled as described in Section {ref}`sec:dielectric-materials`.
 Charged particles can be absorbed (or reflected and leave their charge behind) at dielectric surfaces
 when using the deposition method `cell_volweight_mean`. The boundary can be used by specifying
 
-    ```
     Part-Boundary1-Condition         = reflective
     Part-Boundary1-Dielectric        = T
     Part-Boundary1-NbrOfSpeciesSwaps = 3
     Part-Boundary1-SpeciesSwaps1     = (/1,0/) ! e-
     Part-Boundary1-SpeciesSwaps2     = (/2,2/) ! Ar
     Part-Boundary1-SpeciesSwaps3     = (/3,2/) ! Ar+
-    ```
 
 which sets the boundary dielectric and the given species swap parameters effectively remove
 electrons ($e^{-}$) on impact, reflect $Ar$ atoms and neutralize $Ar^{+}$ ions by swapping these to $Ar$ atoms.
@@ -545,3 +555,16 @@ The boundary must also be specified as an *inner* boundary via
 
 or directly in the *hopr.ini* file that is used for creating the mesh.
 
+(sec:distributed-capacitance-boundary-condition-for-particles)=
+## Deposition of charges on distributed capacitance boundary condition (DCBC) surfaces
+Charged particles impacting on distributed capacitance boundary condition (DCBC) surfaces are deposited on the surface element face
+via linear weighting, which calculates the surface charge density $\sigma$ in the equation given in
+{ref}`sec:distributed-capacitance-boundary-condition` and requires the following parameter settings
+
+    Part-Boundary1-Condition        = reflective ! Surface charging requires the boundary condition "reflective"
+    Part-Boundary1-UseSurfaceCharge = T          ! Activate surface charging
+    Part-Boundary1-DC-BiasVoltage   = 1000.0     ! Electric potential "Phi_0" of the dielectric layer
+    Part-Boundary1-DC-Permittivity  = 10.0       ! Relative permittivity "eps_r" of the dielectric layer
+    Part-Boundary1-DC-Thickness     = 2.0e-3     ! Thickness "d" of the dielectric layer
+
+and the last three parameters listed here are described in Section {ref}`sec:distributed-capacitance-boundary-condition`.

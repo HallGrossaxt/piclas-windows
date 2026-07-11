@@ -86,6 +86,9 @@ SUBROUTINE BuildBGMAndIdentifyHaloRegion()
 #if USE_MPI
 USE mpi_f08
 USE MOD_Mesh_Vars              ,ONLY: ELEM_HALOFLAG,ELEM_RANK,readFEMconnectivity
+#if (PP_TimeDiscMethod==501) || (PP_TimeDiscMethod==502) || (PP_TimeDiscMethod==506)
+USE MOD_TimeDisc_Vars          ,ONLY: iStage,nRKStages,RK_c
+#endif
 #endif /*USE_MPI*/
 USE MOD_Globals
 USE MOD_Preproc
@@ -103,9 +106,6 @@ USE MOD_Restart_Vars           ,ONLY: DoRestart
 USE MOD_Particle_Vars          ,ONLY: Species,nSpecies
 USE MOD_PICDepo_Vars           ,ONLY: DepositionType
 USE MOD_Mesh_Vars              ,ONLY: nGlobalElems
-#if (PP_TimeDiscMethod==501) || (PP_TimeDiscMethod==502) || (PP_TimeDiscMethod==506)
-USE MOD_TimeDisc_Vars          ,ONLY: iStage,nRKStages,RK_c
-#endif
 #if ! (USE_HDG)
 USE MOD_CalcTimeStep           ,ONLY: CalcTimeStep
 #endif /*USE_HDG*/
@@ -164,7 +164,7 @@ INTEGER                        :: BGMiminglob,BGMimaxglob,BGMjminglob,BGMjmaxglo
 #if USE_MPI
 INTEGER                        :: iSide,iHaloElem
 INTEGER                        :: ElemID,ElemDone
-REAL                           :: deltaT
+REAL                           :: deltaT,b
 REAL                           :: globalDiag,maxCellRadius
 REAL                           :: BGMredBuf(3)   ! scratch buffer — avoids MPI_IN_PLACE (MS-MPI corruption)
 REAL                           :: BGMscalarBuf   ! scalar scratch buffer for same purpose
@@ -203,16 +203,16 @@ REAL                           :: BoundingBoxVolume
 CHARACTER(LEN=255)             :: hilf
 ! Mortar
 INTEGER                        :: iMortar,NbElemID,NbSideID,nMortarElems!,nFoundSides,nlocSides,i
-INTEGER                        :: ElemInfoSizeLoc
+INTEGER                        :: ElemInfoSizeLoc,ProcID
 #ifdef CODE_ANALYZE
 INTEGER,ALLOCATABLE            :: NumberOfElements(:)
 #endif /*CODE_ANALYZE*/
 #else
 REAL                           :: halo_eps
 #endif /*USE_MPI*/
-REAL                           :: StartT,EndT,b
+REAL                           :: StartT,EndT
 REAL                           :: FIBGMdeltas1(3),ElemWeights(3),FIBGMdeltas2(3),a
-INTEGER                        :: iSpec, iInit, ProcID
+INTEGER                        :: iSpec, iInit
 INTEGER                        :: nFIBGMElems, nFIBGMElems_target, iDim, PseudoSymmetryOrder
 !===================================================================================================================================
 

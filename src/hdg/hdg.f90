@@ -21,6 +21,7 @@
 !===================================================================================================================================
 MODULE MOD_HDG
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 IMPLICIT NONE
 PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -67,7 +68,7 @@ CALL prms%CreateIntOption(    'HDGSkip'                ,'Number of time step ite
 CALL prms%CreateIntOption(    'HDGSkipInit'            ,'Number of time step iterations until the HDG solver is called (i.e. all intermediate calls are skipped) while time < HDGSkip_t0 (if HDGSkip > 0)', '0')
 CALL prms%CreateRealOption(   'HDGSkip_t0'             ,'Time during which HDGSkipInit is used instead of HDGSkip (if HDGSkip > 0)', '0.')
 CALL prms%CreateLogicalOption('HDGDisplayConvergence'  ,'Display divergence criteria: Iterations, RunTime and Residual', '.FALSE.')
-CALL prms%CreateRealArrayOption( 'EPC-Resistance'      , 'Vector (length corresponds to the number of EPC boundaries) with the resistance for each EPC in Ohm', no=0)
+CALL prms%CreateRealArrayOption( 'EPC-Resistance'      ,'Vector (length corresponds to the number of EPC boundaries) with the resistance for each EPC in Ohm', no=0)
 CALL prms%CreateLogicalOption('HDGNSideMin'            ,'Use the minimum polynomial degree at the sides for the HDG solver', '.FALSE.')
 #if defined(PARTICLES)
 CALL prms%CreateLogicalOption(  'UseBiasVoltage'              , 'Activate usage of bias voltage adjustment (for specific boundaries only)', '.FALSE.')
@@ -76,6 +77,9 @@ CALL prms%CreateIntArrayOption( 'Biasvoltage-PartBoundaries'  , 'Particle bounda
 CALL prms%CreateRealOption(     'BiasVoltage-Frequency'       , 'Frequency of the sinusoidal field boundary where the bias voltage is applied (a value of 0.0 corresponds to a DC potential BC). The total particle electric current over one cycle is required to converge to zero.')
 CALL prms%CreateRealOption(     'BiasVoltage-Delta'           , 'Bias voltage difference used for adjusting the DC voltage of the corresponding BC')
 #endif /*defined(PARTICLES)*/
+#if USE_PETSC && USE_DEBUG
+CALL prms%CreateLogicalOption('PETScDisplayDiagnostics'  ,'Display errors, warnings and main statistics for PETSc', '.TRUE.')
+#endif /*USE_PETSC && USE_DEBUG*/
 
 ! --- BR electron fluid
 #if defined(PARTICLES)
@@ -204,6 +208,9 @@ END IF
 
 ! Read in CG parameters (also used for PETSc)
 #if USE_PETSC
+#if USE_DEBUG
+PETScDisplayDiagnostics = GETLOGICAL('PETScDisplayDiagnostics') ! Increase MUMPS diagnostics level: Errors, warnings, main statistics
+#endif /*USE_DEBUG*/
 PetscCallA(PetscGetVersionNumber(major,minor,subminor,release,ierr))
 #ifdef PETSC_HAVE_HYPRE
 hilf = '(built with Hypre and'
@@ -377,19 +384,22 @@ END IF !mortarMesh
 
 ! 6. BCs, the first
 !boundary conditions
-nDirichletBCsides=0
+nDirichletBCSides=0
 nNeumannBCsides  =0
 nConductorBCsides=0
+nDistriCapBCsides=0
 DO SideID=1,nBCSides
   BCType =BoundaryType(BC(SideID),BC_TYPE)
   BCState=BoundaryType(BC(SideID),BC_STATE)
   SELECT CASE(BCType)
   CASE(HDGDIRICHLETBCSIDEIDS) ! Dirichlet
-    nDirichletBCsides=nDirichletBCsides+1
+    nDirichletBCSides=nDirichletBCSides+1
   CASE(3,10,11,12) ! 3=symmetry/Euler-wall (zero normal flux = Neumann); 10-12=Neumann
     nNeumannBCsides=nNeumannBCsides+1
   CASE(20) ! Conductor: Floating Boundary Condition (FPC)
     nConductorBCsides=nConductorBCsides+1
+  CASE(30) ! Distributed Capacitance
+    nDistriCapBCsides=nDistriCapBCsides+1
   CASE DEFAULT ! unknown BCType
     CALL CollectiveStop(__STAMP__,' unknown BC Type in hdg.f90!',IntInfo=BCType)
   END SELECT ! BCType
@@ -413,32 +423,34 @@ CALL InitBV()
 ! 8. BCs the second...
 ! Get the global number of Dirichlet boundaries. If there are none, the potential of a single DOF must be set.
 #if USE_MPI
-  CALL MPI_ALLREDUCE(nDirichletBCsides , nDirichletBCsidesGlobal , 1 , MPI_INTEGER , MPI_MAX , MPI_COMM_PICLAS , IERROR)
+  CALL MPI_ALLREDUCE(nDirichletBCSides , nDirichletBCsidesGlobal , 1 , MPI_INTEGER , MPI_MAX , MPI_COMM_PICLAS , IERROR)
 #else
-  nDirichletBCsidesGlobal = nDirichletBCsides
+  nDirichletBCsidesGlobal = nDirichletBCSides
 #endif /*USE_MPI*/
 
 ZeroPotentialSide = -1
 IF(mpiRoot.AND.nDirichletBCsidesGlobal==0) ZeroPotentialSide = ElemToSide(E2S_SIDE_ID,1,1)
 
-IF(nDirichletBCsides.GT.0)ALLOCATE(DirichletBC(nDirichletBCsides))
+IF(nDirichletBCSides.GT.0)ALLOCATE(DirichletBC(nDirichletBCSides))
 IF(nNeumannBCsides  .GT.0)THEN
   ALLOCATE(NeumannBC(nNeumannBCsides))
 END IF
 IF(nConductorBCsides.GT.0)ALLOCATE(ConductorBC(nConductorBCsides))
+IF(nDistriCapBCsides.GT.0)ALLOCATE(DistriCapBC(nDistriCapBCsides))
 #if (PP_nVar!=1)
-  IF(nDirichletBCsides.GT.0)ALLOCATE(qn_face_MagStat(PP_nVar, nGP_face(PP_N),nDirichletBCsides))
+  IF(nDirichletBCSides.GT.0)ALLOCATE(qn_face_MagStat(PP_nVar, nGP_face(PP_N),nDirichletBCSides))
 #endif
-nDirichletBCsides=0
+nDirichletBCSides=0
 nNeumannBCsides  =0
 nConductorBCsides=0
+nDistriCapBCsides=0
 DO SideID=1,nBCSides
   BCType =BoundaryType(BC(SideID),BC_TYPE)
   BCState=BoundaryType(BC(SideID),BC_STATE)
   SELECT CASE(BCType)
   CASE(HDGDIRICHLETBCSIDEIDS) ! Dirichlet
-    nDirichletBCsides=nDirichletBCsides+1
-    DirichletBC(nDirichletBCsides)=SideID
+    nDirichletBCSides=nDirichletBCSides+1
+    DirichletBC(nDirichletBCSides)=SideID
     MaskedSide(SideID)=1
   CASE(3,10,11,12) ! 3=symmetry/Euler-wall (zero normal flux = Neumann); 10-12=Neumann
     nNeumannBCsides=nNeumannBCsides+1
@@ -447,6 +459,9 @@ DO SideID=1,nBCSides
     nConductorBCsides=nConductorBCsides+1
     ConductorBC(nConductorBCsides)=SideID
     MaskedSide(SideID)=2
+  CASE(30) ! Distributed Capacitance
+    nDistriCapBCsides=nDistriCapBCsides+1
+    DistriCapBC(nDistriCapBCsides)=SideID
   CASE DEFAULT ! unknown BCType
     CALL CollectiveStop(__STAMP__,' unknown BC Type in hdg.f90!',IntInfo=BCType)
   END SELECT ! BCType
@@ -529,7 +544,7 @@ DO iElem=1,PP_nElems
   END IF
 END DO !iElem
 
-CALL Elem_Mat(0_8) ! takes iter=0 (kind=8)
+CALL Elem_Mat(0_i8) ! takes iter=0 (kind=8)
 
 ! 10. Allocate and zero missing HDG_VOL_N and HDG_Surf_N stuff
 DO iElem = 1, PP_nElems
@@ -605,6 +620,7 @@ DO iProc=1, myrank
 END DO
 #endif
 ALLOCATE(OffsetGlobalPETScDOF(nSides))
+OffsetGlobalPETScDOF = 0
 DO SideID=1,nSides-nMPISides_YOUR
   IF(MaskedSide(SideID).NE.0) CYCLE ! Skip Dirichlet + Small mortar sides
   OffsetGlobalPETScDOF(SideID) = OffsetCounter
@@ -655,6 +671,7 @@ END DO
 ! 3.1.5) Create localToGlobalPETScDOF(iLocalPETScDOF) mapping
 ! The mapping is used to create the PETSc Scatter context to extract the local solution from the global solution vector
 ALLOCATE(localToGlobalPETScDOF(nLocalPETScDOFs+FPC%nUniqueFPCBounds))
+localToGlobalPETScDOF = 0
 iLocalPETScDOF = 0
 DO SideID=1,nSides
   IF(MaskedSide(SideID).GT.0) CYCLE
@@ -765,7 +782,7 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
 REAL,INTENT(IN)             :: t !time
-INTEGER(KIND=8),INTENT(IN)  :: iter
+INTEGER(KIND=i8),INTENT(IN)  :: iter
 #if defined(PARTICLES)
 LOGICAL,INTENT(IN),OPTIONAL :: ForceCGSolverIteration_opt ! set converged=F in first step (only required for BR electron fluid)
 #endif /*defined(PARTICLES)*/
@@ -901,7 +918,7 @@ USE MOD_Particle_Boundary_Vars ,ONLY: DoVirtualDielectricLayer
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! INPUT / OUTPUT VARIABLES
-INTEGER(KIND=8),INTENT(IN)  :: iter
+INTEGER(KIND=i8),INTENT(IN)  :: iter
 INTEGER,INTENT(IN) :: mode !< 1: store E^n at the beginning of the time step
                            !< 2: store E^n+1 at the end of the time step and subtract E^n to calculate the difference
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -977,7 +994,7 @@ LOGICAL          :: UpdatePhiF
 !     interpolate the vector field E = (/Ex, Ey, Ez/) to the boundary face
 DO SideID=1,nBCSides
   ! Get the local element index
-    ElemID    = SideToElem(S2E_ELEM_ID,SideID)
+  ElemID    = SideToElem(S2E_ELEM_ID,SideID)
   ! Get local polynomial degree of the element
   Nloc   = N_DG_Mapping(2,ElemID+offSetElem)
   ! Get particle boundary index
@@ -1200,6 +1217,7 @@ SDEALLOCATE(FPC%Group)
 SDEALLOCATE(FPC%BCState)
 SDEALLOCATE(FPC%VoltageProc)
 SDEALLOCATE(FPC%ChargeProc)
+SDEALLOCATE(DistriCapBC)
 #if USE_MPI
 DO iBC = 1, FPC%nUniqueFPCBounds
   IF(FPC%COMM(iBC)%UNICATOR.NE.MPI_COMM_NULL) CALL MPI_COMM_FREE(FPC%COMM(iBC)%UNICATOR,iERROR)
@@ -1243,19 +1261,18 @@ IF(PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance))THEN
   ASSOCIATE( firstSide => ElemInfo_Shared(ELEM_FIRSTSIDEIND,offsetElem+1) + 1       ,&
              lastSide  => ElemInfo_Shared(ELEM_LASTSIDEIND ,offsetElem    + nElems) )
     ALLOCATE(lambdaLB(PP_nVar,nGP_face(NMax)+1,firstSide:lastSide)) ! +1 comes from the NSideMin info that is sent additionally
-    ! TODO NSideMin - What?
     lambdaLB=0.
   END ASSOCIATE
-  IF(nProcessors.GT.1) CALL GetMasteriLocSides()
+  IF(nProcessors.GT.1) CALL GetMasteriLocSides() ! Builds iLocSides, which is required in LambdaSideToMaster()
   DO iSide = 1, nSides
     NonUniqueGlobalSideID = SideToNonUniqueGlobalSide(1,iSide)
 
-    CALL LambdaSideToMaster(1,iSide,lambdaLB(:,:,NonUniqueGlobalSideID),N_SurfMesh(iSide)%NSide)
+    CALL LambdaSideToMaster(1,iSide,lambdaLB(:,:,NonUniqueGlobalSideID),N_SurfMesh(iSide)%NSide) ! Requires iLocSides array
     ! Check if the same global unique side is encountered twice and store both global non-unique side IDs in the array
     ! SideToNonUniqueGlobalSide(1:2,iSide)
     IF(SideToNonUniqueGlobalSide(2,iSide).NE.-1)THEN
       NonUniqueGlobalSideID = SideToNonUniqueGlobalSide(2,iSide)
-      CALL LambdaSideToMaster(1,iSide,lambdaLB(:,:,NonUniqueGlobalSideID),N_SurfMesh(iSide)%NSide)
+      CALL LambdaSideToMaster(1,iSide,lambdaLB(:,:,NonUniqueGlobalSideID),N_SurfMesh(iSide)%NSide) ! Requires iLocSides array
     END IF ! SideToNonUniqueGlobalSide(1,iSide).NE.-1
 
   END DO ! iSide = 1, nSides

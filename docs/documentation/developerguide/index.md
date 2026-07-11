@@ -46,6 +46,6 @@ the simulation code's features from a developer's point of view.
 * Chapter {ref}`developerguide/tools:Developer Tools` gives an overview over the tools and scripts for developers.
 * Chapter {ref}`developerguide/performance:Performance Analysis` describes different tools that can be utilized for measuring the
   computational performance
-* Chapter {ref}`developerguide/appimage:Building the AppImage Executable` described how an AppImage executable of HOPR is created.
+* Chapter {ref}`developerguide/appimage:Building the AppImage Executable` described how an AppImage executable of piclas is created.
 * Chapter {ref}`developerguide/examples:Markdown Examples` gives a short overview of how to include code, equations, figures, tables
   etc. in the user and developer guides in Markdown.

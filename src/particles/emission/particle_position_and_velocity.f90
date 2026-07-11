@@ -253,7 +253,7 @@ SUBROUTINE SetParticlePosition(FractNbr,iInit,NbrOfParticle)
 !===================================================================================================================================
 ! modules
 USE MOD_Globals
-USE MOD_Particle_Vars          ,ONLY: Species,PDM,PartState,FractNbrOld,chunkSizeOld,NeutralizationBalance, PartPosRef, PEM
+USE MOD_Particle_Vars          ,ONLY: Species,PDM,PartState,FractNbrOld,chunkSizeOld,NeutralizationBalance, PartPosRef, PEM,usevMPF
 USE MOD_Particle_Localization  ,ONLY: SinglePointToElement
 USE MOD_part_emission_tools    ,ONLY: IntegerDivide,SetParticlePositionPoint
 USE MOD_part_emission_tools    ,ONLY: SetParticlePositionEquidistLine, SetParticlePositionLine, SetParticlePositionDisk
@@ -265,6 +265,7 @@ USE MOD_part_emission_tools    ,ONLY: SetParticlePositionPhotonHoneycomb, SetPar
 USE MOD_part_emission_tools    ,ONLY: SetParticlePositionLandmark,SetParticlePositionLandmarkNeutralization
 USE MOD_part_emission_tools    ,ONLY: SetParticlePositionLiu2010Neutralization,SetParticlePositionLiu2010Neutralization3D
 USE MOD_part_emission_tools    ,ONLY: SetParticlePositionLiu2010SzaboNeutralization
+USE MOD_part_emission_tools    ,ONLY: SetParticlePositionTaccogna2022Neutralization
 USE MOD_Eval_xyz               ,ONLY: GetPositionInRefElem
 USE MOD_Particle_Tracking_Vars ,ONLY: TrackingMethod
 USE MOD_Part_Tools             ,ONLY: IncreaseMaxParticleNumber, GetNextFreePosition
@@ -292,6 +293,7 @@ INTEGER, ALLOCATABLE                     :: AcceptedParts(:)
 #if USE_MPI
 INTEGER                                  :: InitGroup
 #endif
+REAL                                     :: MPF
 !===================================================================================================================================
 Species(FractNbr)%Init(iInit)%sumOfRequestedParticles = NbrOfParticle
 IF((NbrOfParticle.LE.0).AND.(ABS(Species(FractNbr)%Init(iInit)%PartDensity).LE.0.)) RETURN
@@ -330,8 +332,14 @@ END IF
 ! Set special chunkSize (also for MPI=OFF)
 SELECT CASE(TRIM(Species(FractNbr)%Init(iInit)%SpaceIC))
 CASE('2D_Liu2010_neutralization_Szabo','3D_Liu2010_neutralization_Szabo')
+  ! Get MPF of emission species
+  IF(usevMPF)THEN
+    MPF = Species(FractNbr)%Init(iInit)%MacroParticleFactor ! Use emission-specific MPF
+  ELSE
+    MPF = Species(FractNbr)%MacroParticleFactor ! Use species MPF
+  END IF ! usevMPF
   ! Override the chunkSize with the processor-local sum of the required number of emitted particles
-  chunkSize = NeutralizationBalance ! Sum over all elements of each processor (not global over all procs)
+  chunkSize = NINT(NeutralizationBalance/MPF) ! Sum over all elements of each processor (not global over all procs)
   nChunks   = 2 ! dummy value that is greater than 1
 CASE DEFAULT
 END SELECT
@@ -350,8 +358,6 @@ IF (PartMPIInitGroup(InitGroup)%MPIROOT.OR.nChunks.GT.1) THEN
     particle_positions_size = chunkSize*DimSend
   END IF
   ALLOCATE( particle_positions(1:particle_positions_size), STAT=allocStat )
-  IF (allocStat .NE. 0) &
-    CALL abort(__STAMP__,'ERROR in SetParticlePosition: cannot allocate particle_positions!')
   ! Sanity check
   IF (allocStat .NE. 0) CALL abort(__STAMP__,'ERROR in SetParticlePosition: cannot allocate particle_positions!')
 
@@ -412,7 +418,12 @@ IF (PartMPIInitGroup(InitGroup)%MPIROOT.OR.nChunks.GT.1) THEN
   CASE('2D_Liu2010_neutralization_Szabo','3D_Liu2010_neutralization_Szabo')
     ! Neutralization at right BC (max. x-position) H. Liu "Particle-in-cell simulation of a Hall thruster" (2010) - 2D and 3D case
     ! Some procs might have nothing to emit (cells are quasi neutral or negatively charged)
-    IF(chunkSize.GT.0) CALL SetParticlePositionLiu2010SzaboNeutralization(chunkSize)
+    IF(chunkSize.GT.0) CALL SetParticlePositionLiu2010SzaboNeutralization(chunkSize,MPF)
+  CASE('2D_Taccogna2022_neutralization')
+    ! Neutralization in right part of domain. F. Taccogna "Coupling plasma physics and chemistry in the PIC model of electric
+    ! propulsion: Application to an air-breathing, low-power Hall thruster" - 2D case
+    ! Some procs might have nothing to emit
+    IF(chunkSize.GT.0) CALL SetParticlePositionTaccogna2022Neutralization(FractNbr,chunkSize)
   END SELECT
   !------------------SpaceIC-cases: end-------------------------------------------------------------------------------------------
 #if USE_MPI
@@ -493,7 +504,7 @@ USE MOD_part_emission_tools     ,ONLY: CalcVelocity_maxwell_lpn, CalcVelocity_ta
 USE MOD_part_emission_tools     ,ONLY: CalcVelocity_gyrotroncircle
 USE MOD_Particle_Boundary_Vars  ,ONLY: DoBoundaryParticleOutputHDF5
 USE MOD_Particle_Boundary_Tools ,ONLY: StoreBoundaryParticleProperties
-USE MOD_part_tools              ,ONLY: BuildTransGaussNums, InRotRefFrameCheck, GetNextFreePosition, BuildTransGaussNums2
+USE MOD_part_tools              ,ONLY: BuildTransGaussNums, InRotRefFrameCheck, GetNextFreePosition, BuildQuietGaussNums
 USE MOD_Particle_Vars           ,ONLY: CalcBulkElectronTemp,BulkElectronTemp
 USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
 #if USE_HDG
@@ -545,7 +556,7 @@ CASE('gyrotron_circle')
       PartState(4:6,PositionNbr) = Vec3D(1:3)
     END IF
   END DO
-CASE('maxwell_lpn','2D_landmark','2D_landmark_copy','2D_landmark_neutralization')
+CASE('maxwell_lpn','2D_landmark','2D_landmark_copy','2D_landmark_neutralization','2D_Taccogna2022_neutralization')
   ! maxwell_lpn: Maxwell low particle number
   ! 2D_landmark: Ionization profile from T. Charoy, 2D axial-azimuthal particle-in-cell benchmark for low-temperature partially
   !              magnetized plasmas (2019)
@@ -557,8 +568,7 @@ CASE('maxwell_lpn','2D_landmark','2D_landmark_copy','2D_landmark_neutralization'
     END IF
   END DO
 CASE('2D_Liu2010_neutralization','3D_Liu2010_neutralization','2D_Liu2010_neutralization_Szabo','3D_Liu2010_neutralization_Szabo')
-  IF(.NOT.CalcBulkElectronTemp) CALL abort(__STAMP__,&
-      'Velocity distribution 2D_Liu2010_neutralization requires CalcBulkElectronTemp=T')
+  IF(.NOT.CalcBulkElectronTemp) CALL CollectiveStop(__STAMP__,'Velocity distribution 2D_Liu2010_neutralization needs CalcBulkElectronTemp=T')
   ! Use the global electron temperature if available
   DO iPart = 1,NbrOfParticle
     PositionNbr = GetNextFreePosition(iPart)
@@ -587,9 +597,20 @@ CASE('maxwell')
        PartState(4:6,PositionNbr) = VeloIC *VeloVecIC(1:3) + iRanPart(1:3,iPart)*maxwellfac
     END IF
   END DO
-CASE('maxwell_distribution_1D')
+CASE('maxwell_1D')
   ALLOCATE(iRanPart(3, NbrOfParticle))
-  CALL BuildTransGaussNums2(NbrOfParticle, iRanPart(1,:))
+  CALL BuildTransGaussNums(NbrOfParticle, iRanPart)
+  maxwellfac = SQRT(BoltzmannConst*Species(FractNbr)%Init(iInit)%MWTemperatureIC/Species(FractNbr)%MassIC)
+  DO iPart = 1,NbrOfParticle
+    PositionNbr = PDM%nextFreePosition(iPart+PDM%CurrentNextFreePosition)
+    IF (PositionNbr.GT.0) THEN
+       PartState(4:6,PositionNbr) = VeloIC *VeloVecIC(1:3)
+       PartState(4,PositionNbr) = PartState(4,PositionNbr) + iRanPart(1,iPart)*maxwellfac
+    END IF
+  END DO
+CASE('maxwell_1D_quiet')
+  ALLOCATE(iRanPart(3, NbrOfParticle))
+  CALL BuildQuietGaussNums(NbrOfParticle, iRanPart(1,:))
   maxwellfac = SQRT(BoltzmannConst*Species(FractNbr)%Init(iInit)%MWTemperatureIC/Species(FractNbr)%MassIC)
   DO iPart = 1,NbrOfParticle
     PositionNbr = PDM%nextFreePosition(iPart+PDM%CurrentNextFreePosition)
@@ -953,6 +974,5 @@ DO iElem = 1, nElems
 
 END DO ! iElem = 1, nElems
 END SUBROUTINE ParticleEmissionFromDistribution
-
 
 END  MODULE MOD_part_pos_and_velo

@@ -29,6 +29,7 @@ PRIVATE
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
 PUBLIC :: WriteNodeSourceExtToHDF5
+PUBLIC :: WriteSurfNodeSourceToHDF5
 PUBLIC :: WriteElectroMagneticPICFieldToHDF5
 !===================================================================================================================================
 
@@ -54,7 +55,7 @@ USE MOD_Interpolation_Vars ,ONLY: NodeType,NodeTypeVISU,Nmin,Nmax
 USE MOD_Interpolation      ,ONLY: GetVandermonde
 USE MOD_DG_vars            ,ONLY: N_DG_Mapping,nDofsMapping
 #if USE_MPI
-USE MOD_PICDepo            ,ONLY: ExchangeNodeSourceExtTmp
+USE MOD_PICDepo_MPI        ,ONLY: ExchangeNodeSourceExtMPI
 #endif /*USE_MPI*/
 USE MOD_HDF5_Output_ElemData,ONLY: WriteAdditionalElemData
 ! IMPLICIT VARIABLE HANDLING
@@ -116,9 +117,9 @@ ALLOCATE(U_N_2D_local(1:nVarOut,1:nDOFOutput))
 IF(iter.NE.0)THEN
 
 #if USE_MPI
-! Communicate the NodeSourceExtTmp values of the last boundary interaction before the state is written to .h5
+! Communicate the NodeSourceExtMPI values of the last boundary interaction before the state is written to .h5
 ! Only call when deposition is active (otherwise this routine only writes the old array from the restart file to keep the data)
-IF(DoDeposition) CALL ExchangeNodeSourceExtTmp()
+IF(DoDeposition) CALL ExchangeNodeSourceExtMPI()
 #endif /*USE_MPI*/
 
 end if ! iter.NE.0
@@ -209,6 +210,92 @@ END DO ! i = 1, 2
 SDEALLOCATE(NodeSourceExtGlobal)
 SDEALLOCATE(StrVarNames)
 END SUBROUTINE WriteNodeSourceExtToHDF5
+
+
+SUBROUTINE WriteSurfNodeSourceToHDF5(OutputTime)
+!===================================================================================================================================
+! Write SurfNodeSource(external charge density) field to HDF5 file
+!===================================================================================================================================
+! MODULES
+USE MOD_io_HDF5
+USE MOD_Globals
+USE MOD_PreProc
+USE MOD_Mesh_Tools         ,ONLY: GetCNElemID
+USE MOD_Globals_Vars       ,ONLY: ProjectName
+USE MOD_ChangeBasis        ,ONLY: ChangeBasis3D
+USE MOD_TimeDisc_Vars      ,ONLY: iter
+USE MOD_Interpolation      ,ONLY: GetVandermonde
+#if USE_MPI
+USE MOD_PICDepo_MPI        ,ONLY: ExchangeSurfNodeSourceMPI
+USE MOD_PICDepo_Vars       ,ONLY: DoDeposition
+#endif /*USE_MPI*/
+USE MOD_HDF5_Output_ElemData,ONLY: WriteAdditionalElemData
+USE MOD_PICDepo_Vars        ,ONLY: SurfNodeSource,nDepoSurfNodesTotal,nDepoSurfSides,SurfNodeArea
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+REAL,INTENT(IN)     :: OutputTime
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER,PARAMETER              :: nVarOut=2
+CHARACTER(LEN=255),ALLOCATABLE :: StrVarNames(:)
+CHARACTER(LEN=255)             :: FileName
+CHARACTER(LEN=255),PARAMETER   :: DataSetName='SurfNodeSource'
+INTEGER                        :: firstNode,lastNode
+!===================================================================================================================================
+! Skip MPI communication in the first step as nothing has been deposited yet
+IF(iter.NE.0)THEN
+#if USE_MPI
+  ! Communicate the NodeSourceExtMPI values of the last boundary interaction before the state is written to .h5
+  ! Only call when deposition is active (otherwise this routine only writes the old array from the restart file to keep the data)
+  IF(DoDeposition) CALL ExchangeSurfNodeSourceMPI()
+#endif /*USE_MPI*/
+END IF ! iter.NE.0
+
+! Write field to _State_.h5 file (or restart)
+FileName=TRIM(TIMESTAMP(TRIM(ProjectName)//'_State',OutputTime))//'.h5'
+
+IF(MPIRoot)THEN
+  ALLOCATE(StrVarNames(1:nVarOut))
+  StrVarNames(1)='SurfaceChargeDensity'
+  StrVarNames(2)='SurfaceArea'
+  CALL OpenDataFile(FileName,create=.FALSE.,single=.TRUE.,readOnly=.FALSE.,communicatorOpt=MPI_COMM_PICLAS)
+  CALL WriteAttributeToHDF5(File_ID,'VarNamesSurfNodeSource',nVarOut,StrArray      = StrVarNames)
+  CALL WriteAttributeToHDF5(File_ID,'nDepoSurfSides'        ,1      ,IntegerScalar = nDepoSurfSides)
+  ! #if USE_MPI
+  ! firstNode = INT(REAL( myrank   )*REAL(nDepoSurfNodesTotal)/REAL(nProcessors))+1
+  ! lastNode  = INT(REAL((myrank+1))*REAL(nDepoSurfNodesTotal)/REAL(nProcessors))
+  ! #else
+  firstNode = 1
+  lastNode  = nDepoSurfNodesTotal
+  ! #endif /*USE_MPI*/
+
+  ! Associate construct for integer KIND=8 possibility
+  ASSOCIATE(nVarOut         => INT(nVarOut,IK)            ,&
+            nDofsMapping    => INT(nDepoSurfNodesTotal,IK),&
+            nDOFOutput      => INT(nDepoSurfNodesTotal,IK),&
+            offsetDOF       => INT(0,IK)         )
+    ! CALL GatheredWriteArray(FileName,create=.FALSE.,&
+    !                       DataSetName = TRIM(DataSetName) , rank = 1 , &
+    !                       nValGlobal  = (/nDofsMapping/)  , &
+    !                       nVal        = (/nDOFOutput/)    , &
+    !                       offset      = (/offsetDOF/)     , &
+    !                       collective  = .TRUE. , RealArray = SurfNodeSource)
+    CALL WriteArrayToHDF5(DataSetName = TRIM(DataSetName)      , &
+                          rank        = 2                      , &
+                          nValGlobal  = (/nVarOut, nDofsMapping/) , &
+                          nVal        = (/nVarOut, nDOFOutput  /) , &
+                          offset      = (/0_IK   , offsetDOF   /) , &
+                          collective  = .FALSE.  , RealArray = &
+                          TRANSPOSE(RESHAPE((/SurfNodeSource,SurfNodeArea/),(/nDofsMapping,nVarOut/))))
+    CALL CloseDataFile()
+  END ASSOCIATE
+END IF ! MPIRoot
+
+END SUBROUTINE WriteSurfNodeSourceToHDF5
 
 
 !===================================================================================================================================

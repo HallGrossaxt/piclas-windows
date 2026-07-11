@@ -781,7 +781,7 @@ DO iSurfSide = 1,nComputeNodeSurfSides
             idx = idx + 1
             MacroSurfaceSpecVal(idx,p,q,OutputCounter,iSpec) = nImpacts
 
-            ! Add number of impacts per second
+            ! Add number of impacts per second per square meter
             idx = idx + 1
             IF(VarTimeStep%UseSpeciesSpecific) THEN
               TimeSampleTemp = TimeSample * Species(iSpec)%TimeStepFactor
@@ -921,7 +921,7 @@ IF (mySurfRank.EQ.0) THEN
       CALL AddVarName(Str2DVarNames,nVar2D_Total,nVarCount,'Spec'//TRIM(SpecID)//'_ImpactAngle')
       ! Add number of impacts
       CALL AddVarName(Str2DVarNames,nVar2D_Total,nVarCount,'Spec'//TRIM(SpecID)//'_ImpactNumber')
-      ! Add number of impacts per second
+      ! Add number of impacts per second per square meter
       CALL AddVarName(Str2DVarNames,nVar2D_Total,nVarCount,'Spec'//TRIM(SpecID)//'_ImpactFlux')
     END IF ! CalcSurfaceImpact
     IF (DoChemSurface) THEN

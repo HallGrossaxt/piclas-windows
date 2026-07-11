@@ -174,10 +174,9 @@ To define the cuboid the following parameters are required:
 (sec:particle-photo-ionization)=
 ### Photo-ionization
 
-A special case is the ionization of a background gas through photon impact, modelling a light pulse. The volume affected by the
-light pulse is approximated by a cylinder (or honeycomb/rectangle), which is defined as described in
-Section {ref}`sec:particle-cylinder-init`.
-Additionally, the SpaceIC has to be adapted and additional parameters are required:
+A special case is the ionization of a background gas through photon impact, modelling a light pulse. Note that only a single-species
+background gas is supported at the moment. The volume affected by the light pulse is approximated by a cylinder (or honeycomb/rectangle),
+which is defined as described in Section {ref}`sec:particle-cylinder-init`. Additionally, the SpaceIC has to be adapted and additional parameters are required:
 
     Part-Species1-Init1-SpaceIC       = photon_cylinder ! or photon_honeycomb, or photon_rectangle
     Part-Species1-Init1-PulseDuration = 1               ! [s]
@@ -202,7 +201,7 @@ The intensity can be scaled with an additional factor to account for example for
     Part-Species1-Init1-EffectiveIntensityFactor    = 1         ! [-]
 
 It should be noted that this initialization should be done with a particle species (i.e. not the background gas species) that is
-also a product of the ionization reaction. The ionization reactions are defined as described in Section {ref}`sec:DSMC-chemistry` by
+also a product of the ionization reaction (e.g. the electron species). The ionization reactions are defined as described in Section {ref}`sec:DSMC-chemistry` by
 
     DSMC-NumOfReactions = 1
     DSMC-Reaction1-ReactionType = phIon
@@ -304,19 +303,27 @@ Note that the temperature (translational, vibrational and electronic) of ions an
 This will be changed in a future release. At the moment, only the electron temperature will be considered.
 
 
-### Neutralization Boundaries (neutral outflow condition)
-There are different methods implemented to neutralize a charged particle flow, e.g., as encountered when simulation electric
-propulsion systems. Currently all methods require a specific geometry to function properly. For more details, see the regression
-tests under *regressioncheck/NIG_PIC_poisson_Boris-Leapfrog*. The following table lists the *SpaceIC* emission types
+### PIC Neutralization Boundaries (neutral outflow condition)
+Different methods found in the literature are implemented to neutralize a charged particle flow as encountered when simulation electric propulsion systems.
+Currently all methods require a specific geometry to function properly.
+For more details, see the regression tests under *regressioncheck/NIG_PIC_poisson_Boris-Leapfrog*. The following table lists the *SpaceIC* emission types
 
-| Distribution                    | Description                                                                                                                              |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 2D_landmark_neutralization      | Charoy 2019 2D PIC benchmark, electrons are injected with 10 eV at the cathode if the anode current is negative                          |
-| 2D_Liu2010_neutralization       | Liu 2010 2D PIC benchmark, electrons are injected at the cathode if the cathode current is negative                                      |
-| 2D_Liu2010_neutralization_Szabo | Liu 2010 2D PIC benchmark, electrons are injected in the first cell layer at the cathode if the net charge in these elements is positive |
-| 3D_Liu2010_neutralization       | Liu 2010 3D PIC benchmark, electrons are injected at the cathode if the cathode current is negative                                      |
-| 3D_Liu2010_neutralization_Szabo | Liu 2010 3D PIC benchmark, electrons are injected in the first cell layer at the cathode if the net charge in these elements is positive |
+| Distribution                    | Reference | Description                                                                                                                              |
+| ------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 2D_landmark_neutralization      | Charoy 2019 {cite}`Charoy2019`| 2D PIC benchmark, electrons are injected with 10 eV at the cathode if the anode current is negative                          |
+| 2D_Liu2010_neutralization       | Liu 2010 {cite}`Liu2010`| 2D PIC benchmark, electrons are injected at the cathode if the cathode current is negative                                      |
+| 2D_Liu2010_neutralization_Szabo | Liu 2010 {cite}`Liu2010`| 2D PIC benchmark, electrons are injected in the first cell layer at the cathode if the net charge in these elements is positive |
+| 3D_Liu2010_neutralization       | Liu 2010 {cite}`Liu2010`| 3D PIC benchmark, electrons are injected at the cathode if the cathode current is negative                                      |
+| 3D_Liu2010_neutralization_Szabo | Liu 2010 {cite}`Liu2010`| 3D PIC benchmark, electrons are injected in the first cell layer at the cathode if the net charge in these elements is positive |
+| 3D_Liu2010_neutralization_Szabo | Liu 2010 {cite}`Liu2010`| 3D PIC benchmark, electrons are injected in the first cell layer at the cathode if the net charge in these elements is positive |
+| 2D_Taccogna2022_neutralization | Taccogna 2022 {cite}`Taccogna2022`| 2D PIC benchmark, electrons are injected in the region outside of the ionization channel if a macroscopic ion current is detected at the cathode and if the anode current is negative |
 
+
+#### Landmark 2D (Charoy 2019)
+The benchmark is described in {cite}`Charoy2019` and used in the reggie `2D_Landmark` in the `regressioncheck` directory.
+
+#### Hall Thruster 2D/3D (Liu 2010)
+The benchmark is described in {cite}`Liu2010` and used in the reggie `2D_HET_Liu2010` and `3D_HET_Liu2010` in the `regressioncheck` directory.
 For the *XD_Liu2010_neutralization* emission, a constant emitted electron temperature is defined via
 
     Part-SpeciesX-InitX-MWTemperatureIC = 5.80E+04 ! 5.0 eV
@@ -330,6 +337,9 @@ for the 2D setup and
     Part-SpeciesX-InitX-velocityDistribution = 3D_Liu2010_neutralization
 
 for the 3D setup. The bulk electron temperature is determined automatically and output to *PartAnalyze.csv* as *XXX-BulkElectronTemp-[K]* to track this value over time.
+
+#### Hall Thruster 2D (Taccogna 2022)
+The benchmark is described in {cite}`Taccogna2022` and used in the reggie `2D_HET_Taccogna2022` in the `regressioncheck` directory.
 
 ### Polychromatic Photo-ionization
 The volumetric photo-ionization can consider multiple wavelengths (polychromatic spectrum) and/or energy-dependent cross-section data.
@@ -443,9 +453,9 @@ The magnitude of the electric field strength $|\mathbf{E}|$ is calculated with t
 
 The provided temperature for the surface flux of the species determines the energy of emitted particles. While the thermionic emission can be enabled for PIC as well as DSMC simulations, the addition of the Schottky effect requires a field solver. An overview of the limitations of this modelling regarding the applied field strength, wall temperature and/or material is given by Ref. {cite}`Coulombe1997` and Ref. {cite}`Wu2022`. An example can be found in the regression test `regressioncheck/CHE_poisson/SurfFlux_ThermionicEmission_Schottky`.
 
-### Circular Inflow
+### Circular/Racetrack Inflow
 
-The emission of particles from a surface flux can be limited to the area within a circle, ring or circle cut-out. The respective boundary has to
+The emission of particles from a surface flux can be limited to the area within a circle, ring, circle cut-out or racetrack / stadium. The respective boundary has to
 coincide or be parallel to the xy-, xz, or yz-planes. This allows to define inflow boundaries without specifically meshing the
 geometrical feature, e.g. small orifices. The feature can be enabled per species and surface flux
 
@@ -470,7 +480,13 @@ The absolute coordinates are defined as follows for the respective normal direct
 |      y (=2)      |    (z,x)    |
 |      z (=3)      |    (x,y)    |
 
-Multiple circular inflows can be defined on a single boundary through multiple surface fluxes, e.g. to enable the simulation of multiple inlets on a chamber wall. Circular inflows are also supported with axisymmetric simulations, under the assumptions that the chosen surface is in the yz-plane (and thus has a normal direction in x) and the minimal and maximum radii are in the positive y-direction. Examples are given as part of the regression tests in `regressioncheck/CHE_DSMC/SurfFlux_Tria_CircularInflow_Circle`, `SurfFlux_Tria_CircularInflow_CircleCutout` and `SurfFlux_Tria_CircularInflow_Ring`.
+To define a racetrack / stadium shaped inflow additionally the total length $L = 2*R + l$ has to be given, where $l$ is the distance
+between the circle segments, and the orientation of the racetrack, where the line segment is parallel to given direction:
+
+    Part-Species1-Surfaceflux1-RacetrackLength=0.001
+    Part-Species1-Surfaceflux1-RacetrackDir=(/1.0,1.0/)
+
+Multiple circular / racetrack inflows can be defined on a single boundary through multiple surface fluxes, e.g. to enable the simulation of multiple inlets / sputtering targets on a chamber wall. Circular inflows are also supported with axisymmetric simulations, under the assumptions that the chosen surface is in the yz-plane (and thus has a normal direction in x) and the minimal and maximum radii are in the positive y-direction. Examples are given as part of the regression tests in `regressioncheck/CHE_DSMC/SurfFlux_Tria_CircularInflow_Circle`, `SurfFlux_Tria_CircularInflow_CircleCutout`, `SurfFlux_Tria_CircularInflow_Ring`, and `SurfFlux_RacetrackInflow`.
 
 (sec:particle-emission-adaptive)=
 ### Adaptive/Subsonic Boundaries
@@ -515,7 +531,7 @@ the first approach with the relaxation factor.
     AdaptiveBC-SamplingIteration      = 100
     AdaptiveBC-TruncateRunningAverage = T       ! DEFAULT: F
 
-The adaptive particle emission can be combined with the circular inflow feature. In this context when the area of the actual
+The adaptive particle emission can be combined with the circular inflow feature (but not the racetrack yet). In this context when the area of the actual
 emission circle/ring is very small, it is preferable to utilize the `Type=4` constant mass flow condition. `Type=3` assumes an
 open boundary and accounts for particles leaving the domain through that boundary already when determining the number of particles
 to be inserted. As a result, this method tends to over predict the given mass flow, when the emission area is very small and large

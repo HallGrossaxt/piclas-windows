@@ -38,9 +38,9 @@ CALL prms%SetSection("Ray Tracing")
 CALL prms%CreateIntOption(       'RayTracing-NumRays'         , 'Number of emitted rays from particle boundary with index [RayTracing-PartBound]')
 CALL prms%CreateRealArrayOption( 'RayTracing-RayDirection'    , 'Direction vector for ray emission. Will be normalized after read-in.' , no=3)
 CALL prms%CreateIntOption(       'RayTracing-PartBound'       , 'Particle boundary ID where rays are emitted from' , '0')
+CALL prms%CreateStringOption(    'RayTracing-PulseType'       , 'Pulse type for photoionization: square, Gaussian', 'Gaussian')
 CALL prms%CreateRealOption(      'RayTracing-PulseDuration'   , 'Pulse duration tau for a Gaussian-type pulse with I~exp(-(t/tau)^2) [s]'                  )
 CALL prms%CreateIntOption(       'RayTracing-NbrOfPulses'     , 'Number of pulses [-]'                                                                     , '1')
-CALL prms%CreateRealOption(      'RayTracing-WaistRadius'     , 'Beam waist radius (in focal spot) w_b for Gaussian-type pulse with I~exp(-(r/w_b)^2) [m]' , '0.0')
 CALL prms%CreateRealOption(      'RayTracing-WaveLength'      , 'Beam wavelength [m]'                                                                      )
 CALL prms%CreateRealOption(      'RayTracing-RepetitionRate'  , 'Pulse repetition rate (pulses per second) [Hz]'                                           )
 CALL prms%CreateRealOption(      'RayTracing-PowerDensity'    , 'Average pulse power density (power per area) [W/m2]')
@@ -91,9 +91,10 @@ USE MOD_Particle_Surfaces_Vars ,ONLY: BezierSampleN, BezierSampleXi
 ! LOCAL VARIABLES
 INTEGER             :: iSurfSide, iBC, NonUniqueGlobalSideID,iSample
 INTEGER,ALLOCATABLE :: RaySide2GlobalSide_temp(:)
-REAL                :: factor,SurfaceNormal(3),alpha
+REAL                :: SurfaceNormal(3),alpha
 CHARACTER(LEN=3)    :: hilf ! auxiliary variable for INTEGER -> CHARACTER conversion
 LOGICAL             :: FoundComputeNodeSurfSide
+REAL                :: RayEnergy,PulsePowerCycle
 !===================================================================================================================================
 IF(.NOT.UseRayTracing) RETURN
 LBWRITE(UNIT_StdOut,'(132("-"))')
@@ -108,10 +109,9 @@ RayPartBound = GETINT('RayTracing-PartBound')
 IF(RayPartBound.LE.0) CALL CollectiveStop(__STAMP__,'RayTracing-PartBound must be > 0 to activate ray tracing on this boundary!')
 
 ! Get ray parameters
+Ray%PulseType       = TRIM(GETSTR('RayTracing-PulseType'))
 Ray%PulseDuration  = GETREAL('RayTracing-PulseDuration')
 Ray%NbrOfPulses    = GETINT('RayTracing-NbrOfPulses')
-Ray%tShift         = SQRT(8.0) * Ray%PulseDuration
-Ray%WaistRadius    = GETREAL('RayTracing-WaistRadius')
 Ray%WaveLength     = GETREAL('RayTracing-WaveLength')
 Ray%RepetitionRate = GETREAL('RayTracing-RepetitionRate')
 Ray%Period         = 1./Ray%RepetitionRate
@@ -145,9 +145,12 @@ IF(PerformRayTracing)THEN
   RayForceAbsorption = GETLOGICAL('RayTracing-ForceAbsorption')
   Ray%VolRefineMode  = GETINT('RayTracing-VolRefineMode')
 #if ! (CORE_SPLIT==0)
-  ! Sanity check: ElemVolume_Shared is only built for nComputeNodeElems and not nComputeNodeTotalElems. Maybe more containers are
-  ! similarly not fully built when running multi-node
-  CALL CollectiveStop(__STAMP__,'Ray tracing implemented for node-level splitting; all global elements must be on the compute-node')
+  ! Check if more than one process is involved
+  IF (nProcessors.GT.1) THEN
+    ! Sanity check: ElemVolume_Shared is only built for nComputeNodeElems and not nComputeNodeTotalElems. Maybe more containers are
+    ! similarly not fully built when running multi-node
+    CALL CollectiveStop(__STAMP__,'Ray tracing implemented for node-level splitting; all global elements must be on the compute-node')
+  END IF ! nProcessors.GT.1
 #endif /*! (CORE_SPLIT==0)*/
 END IF ! PerformRayTracing
 
@@ -197,47 +200,39 @@ IF(PerformRayTracing)THEN
   LBWRITE(*,'(A,I0,A)') ' | Found ', nRaySides, ' sides for the ray emission on the specified BC.'
 END IF ! PerformRayTracing
 
-ASSOCIATE( &
-      E0      => Ray%Energy             ,&
-      wb      => Ray%WaistRadius        ,&
-      tau     => Ray%PulseDuration      ,&
-      I0      => Ray%IntensityAmplitude ,&
-      tShift  => Ray%tShift             ,&
-      Period  => Ray%Period             ,&
-      tActive => Ray%tActive            ,&
-      A       => Ray%Area               )
+! ATTENTION: Rectangle only and uses GEO min/max in x- and y-direction!
+! FEATURE: Ray emission area from chosen boundary surface?
+Ray%Area = (GEO%xmaxglob-GEO%xminglob) * (GEO%ymaxglob-GEO%yminglob)
+! Normal vector of the ray emission area
+SurfaceNormal = (/ 0., 0., 1. /)
+! Angle between emitted rays and emission area
+alpha = (90.-ABS(90.-(180./PI)*ACOS(DOT_PRODUCT(Ray%Direction,SurfaceNormal))))
+! Generate two base vectors perpendicular to the ray direction
+CALL OrthoNormVec(Ray%Direction,Ray%BaseVector1IC,Ray%BaseVector2IC)
 
-  ! ATTENTION: Rectangle only and uses GEO min/max in x- and y-direction!
-  ! TODO: Ray emission area from chosen boundary surface?
-  A = (GEO%xmaxglob-GEO%xminglob) * (GEO%ymaxglob-GEO%yminglob)
-  ! Normal vector of the ray emission area
-  SurfaceNormal = (/ 0., 0., 1. /)
-  ! Angle between emitted rays and emission area
-  alpha = (90.-ABS(90.-(180./PI)*ACOS(DOT_PRODUCT(Ray%Direction,SurfaceNormal))))
+! Derived quantities
+RayEnergy = Ray%PowerDensity * Ray%Area / Ray%RepetitionRate
 
-  ! Derived quantities
-  Ray%Power = Ray%PowerDensity * A ! adjust power from [W/m2] to [W]
-  E0 = Ray%Power / Ray%RepetitionRate
+! Set the shift (if required) and calculate the peak intensity
+SELECT CASE(TRIM(Ray%PulseType))
+CASE('square')
+  Ray%tShift         = 0.
+  PulsePowerCycle    = Ray%PulseDuration
+  Ray%IntensityAmplitude = RayEnergy / (Ray%PulseDuration*Ray%Area)
+CASE('Gaussian')
+  Ray%tShift         = SQRT(8.0) * Ray%PulseDuration
+  PulsePowerCycle    = 2.0 * Ray%tShift
+  ! Correction of the finite Gauss pulse with the error function
+  Ray%IntensityAmplitude = RayEnergy / (SQRT(PI)*Ray%PulseDuration*Ray%Area) / ERF(Ray%tShift / Ray%PulseDuration)
+CASE DEFAULT
+  CALL CollectiveStop(__STAMP__,'Unknown pulse type for ray tracing: '//TRIM(Ray%PulseType)//'. Select square or Gaussian!')
+END SELECT
 
-  ! Generate two base vectors perpendicular to the ray direction
-  CALL OrthoNormVec(Ray%Direction,Ray%BaseVector1IC,Ray%BaseVector2IC)
+! Sanity check: overlapping of pulses is not implemented (use multiple emissions for this)
+IF(2.0*Ray%tShift.GT.Ray%Period) CALL abort(__STAMP__,'Pulse length (2*Ray%tShift) is greater than the pulse period. This is not implemented!')
 
-  ! Calculate the peak intensity (uncorrected)
-  I0 = E0 / (SQRT(PI)*tau*A)
-
-  ! Correction factor due to temporal cut-off of the Gaussian pulse
-  ! no need for correction in space because the function is not cut-off in space
-  ! just consider the temporal cut-off for the rectangle
-  factor = ERF(tShift/tau)
-  factor = SQRT(PI)*tau*A
-  I0 = E0 / factor
-
-  ! Sanity check: overlapping of pulses is not implemented (use multiple emissions for this)
-  IF(2.0*tShift.GT.Period) CALL abort(__STAMP__,'Pulse length (2*tShift) is greater than the pulse period. This is not implemented!')
-
-  ! Active pulse time
-  tActive = REAL(Ray%NbrOfPulses - 1)*Period + 2.0*tShift
-END ASSOCIATE
+! Active pulse time
+Ray%tActive = REAL(Ray%NbrOfPulses - 1)*Ray%Period + PulsePowerCycle
 
 CALL PrintOption('Rectangular ray emission area: A [m2]'                             , 'CALCUL.' , RealOpt=Ray%Area)
 CALL PrintOption('Angle between emission area normal and ray direction: alpha [deg]' , 'CALCUL.' , RealOpt=alpha)
@@ -247,12 +242,11 @@ IF(ABS(alpha)+1e-4.LT.90.0)THEN
 ELSE
   CALL PrintOption('Enhancement factor for energy deposited in the volume [-]'       , 'CALCUL.' , RealOpt=1.0)
 END IF ! ABS(alpha).GT.0.0
-CALL PrintOption('Single pulse energy [J]'                                           , 'CALCUL.' , RealOpt=Ray%Energy)
+CALL PrintOption('Single pulse energy [J]'                                           , 'CALCUL.' , RealOpt=RayEnergy)
 CALL PrintOption('Intensity amplitude: I0 [W/m^2]'                                   , 'CALCUL.' , RealOpt=Ray%IntensityAmplitude)
-CALL PrintOption('Corrected Intensity amplitude: I0_corr [W/m^2]'                    , 'CALCUL.' , RealOpt=Ray%IntensityAmplitude)
 CALL PrintOption('Pulse period (Time between maximum of two pulses) [s]'             , 'CALCUL.' , RealOpt=Ray%Period)
-CALL PrintOption('Temporal pulse width (pulse time 2x tShift) [s]'                   , 'CALCUL.' , RealOpt=2.0*Ray%tShift)
-CALL PrintOption('Pulse will end at tActive (pulse final time) [s]'                  , 'CALCUL.' , RealOpt=Ray%tActive)
+CALL PrintOption('Temporal pulse width / power cycle (2x tShift) [s]'                , 'CALCUL.' , RealOpt=PulsePowerCycle)
+CALL PrintOption('Pulse power cycle will end at tActive (final time) [s]'            , 'CALCUL.' , RealOpt=Ray%tActive)
 
 LBWRITE(UNIT_stdOut,'(A)')' INIT RAY TRACING MODEL DONE!'
 LBWRITE(UNIT_StdOut,'(132("-"))')
@@ -483,68 +477,6 @@ CALL BuildNInterAndVandermonde()
 END SUBROUTINE InitHighOrderRaySampling
 
 
-!!==================================================================================================================================
-!!> This routine takes the equidistant node coordinates of the mesh (on NGeo+1 points) and uses them to build the coordinates
-!!> of solution/interpolation points of type NodeType on polynomial degree Nloc (Nloc+1 points per direction).
-!!> Output: Elem_xGP(:,:,:,:) for each element with variably N
-!!==================================================================================================================================
-!SUBROUTINE BuildElem_xGP_RayTrace(NodeCoords)
-!! MODULES
-!USE MOD_Globals
-!USE MOD_PreProc
-!USE MOD_Mesh_Vars          ,ONLY: NGeo,nGlobalElems
-!USE MOD_Interpolation_Vars ,ONLY: NodeTypeCL,NodeTypeVISU,NodeType
-!USE MOD_RayTracing_Vars    ,ONLY: Ray,N_VolMesh_Ray,N_DG_Ray
-!USE MOD_Interpolation      ,ONLY: GetVandermonde,GetNodesAndWeights
-!USE MOD_ChangeBasis        ,ONLY: ChangeBasis3D_XYZ, ChangeBasis3D
-!USE MOD_Basis              ,ONLY: LagrangeInterpolationPolys
-!!----------------------------------------------------------------------------------------------------------------------------------
-!IMPLICIT NONE
-!!----------------------------------------------------------------------------------------------------------------------------------
-!! INPUT/OUTPUT VARIABLES
-!REAL,INTENT(IN)               :: NodeCoords(3,0:NGeo,0:NGeo,0:NGeo,nGlobalElems)         !< Equidistant mesh coordinates
-!!----------------------------------------------------------------------------------------------------------------------------------
-!! LOCAL VARIABLES
-!INTEGER                       :: iGlobalElem,Nloc
-!
-!TYPE VdmType
-!  REAL, ALLOCATABLE           :: Vdm_EQNGeo_CLNloc(:,:)
-!  REAL, ALLOCATABLE           :: Vdm_CLNloc_Nloc  (:,:)
-!END TYPE VdmType
-!
-!TYPE(VdmType), DIMENSION(:), ALLOCATABLE :: Vdm
-!
-!!==================================================================================================================================
-!
-!! Build Vdm for every degree
-!ALLOCATE(Vdm(Ray%Nmin:Ray%Nmax))
-!DO Nloc = Ray%Nmin, Ray%Nmax
-!  ALLOCATE(Vdm(Nloc)%Vdm_EQNGeo_CLNloc(0:Nloc,0:NGeo))
-!  ALLOCATE(Vdm(Nloc)%Vdm_CLNloc_Nloc(0:Nloc,0:Nloc))
-!  CALL GetVandermonde(NGeo, NodeTypeVISU, NLoc, NodeTypeCL, Vdm(Nloc)%Vdm_EQNGeo_CLNloc,  modal=.FALSE.)
-!  CALL GetVandermonde(Nloc, NodeTypeCL  , Nloc, NodeType  , Vdm(Nloc)%Vdm_CLNloc_Nloc,     modal=.FALSE.)
-!
-!  ! NOTE: Transform intermediately to CL points, to be consistent with metrics being built with CL
-!  !       Important for curved meshes if NGeo<N, no effect for N>=NGeo
-!
-!  !1.a) Transform from EQUI_NGeo to solution points on Nloc
-!  Vdm(Nloc)%Vdm_EQNGeo_CLNloc=MATMUL(Vdm(Nloc)%Vdm_CLNloc_Nloc, Vdm(Nloc)%Vdm_EQNGeo_CLNloc)
-!END DO ! Nloc = Ray%Nmin, Ray%Nmax
-!
-!! Set Elem_xGP for each element
-!DO iGlobalElem=1,nGlobalElems
-!  Nloc = N_DG_Ray(iGlobalElem)
-!
-!  ! TODO: Currently each process has all global xGP (maybe put unrolled into a shared array)
-!  ALLOCATE(N_VolMesh_Ray(iGlobalElem)%Elem_xGP(3,0:Nloc,0:Nloc,0:Nloc))
-!  CALL ChangeBasis3D(3,NGeo,Nloc,Vdm(Nloc)%Vdm_EQNGeo_CLNloc,NodeCoords(:,:,:,:,iGlobalElem),&
-!                     N_VolMesh_Ray(iGlobalElem)%Elem_xGP(:,:,:,:))
-!
-!END DO
-!
-!END SUBROUTINE BuildElem_xGP_RayTrace
-
-
 !===================================================================================================================================
 !> Builds the interpolation basis N_Inter_Ray and the Vandermonde matrices PREF_VDM_Ray used for high-order volume sampling for the
 !> ray tracing model
@@ -668,7 +600,7 @@ ELSE
   SDEALLOCATE(N_DG_Ray_loc) ! ray tracing + plasma simulation
   SDEALLOCATE(N_Inter_Ray)  ! ray tracing + plasma simulation
 
-  ! TODO: see above: deallocate these arrays after simulation end because otherwise these fields will be corrupt in the state file
+  ! INFO: see above: deallocate these arrays after simulation end because otherwise these fields will be corrupt in the state file
   ! and that can cause confusion
   SDEALLOCATE(RayElemPassedEnergyLoc1st)
   SDEALLOCATE(RayElemPassedEnergyLoc2nd)

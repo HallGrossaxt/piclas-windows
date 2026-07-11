@@ -36,7 +36,10 @@ REAL , ALLOCATABLE               :: SurfModEmissionEnergy(:)        ! Energy of 
 REAL , ALLOCATABLE               :: SurfModEmissionYield(:)         ! Emission yield factor for surface emission model (only changable for SurfaceModel=7)
 REAL                             :: BackupVeloABS                   ! Backup of velocity during double-ARM for 2nd SEE
 REAL                             :: ImpactWeight                    ! Weighting factor of impacting particle (stored separately as actual value might be overwritten)
-LOGICAL , ALLOCATABLE            :: SurfModSEEvMPF(:)               ! Flag to enable the scaling of the weights for secondaries based on the yield per surface model (only for 3/4/12) (nPartBound)
+LOGICAL , ALLOCATABLE            :: SurfModSEEvMPF(:)               ! Flag to enable the scaling of the weights for secondaries based on the yield per surface model (only for 3/4/12/13) (nPartBound)
+LOGICAL , ALLOCATABLE            :: SurfModSEESubWorkFunc(:)        ! Flag to enable the substraction of the work function from the incident energy (only for 3/4/12/13) (nPartBound)
+LOGICAL , ALLOCATABLE            :: SurfModSEEReflectElectron(:)    ! Flag to enable the reflection of an electron (instead of absorption) when the work function is below the incident energy
+                                                                    ! using the yield as the reflection probability (only for 3/4/12/13) (nPartBound)
 ! === Porous BC ====================================================================================================================
 INTEGER                          :: nPorousBC                       ! Number of porous BCs
 TYPE tPorousBC

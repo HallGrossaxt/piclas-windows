@@ -19,6 +19,7 @@ MODULE MOD_IO_HDF5
 #if USE_MPI
 USE mpi_f08
 #endif /*USE_MPI*/
+USE MOD_Globals_Vars, ONLY: i8
 USE HDF5
 USE MOD_Globals,ONLY: iError
 IMPLICIT NONE
@@ -53,7 +54,7 @@ TYPE tElementOut
   REAL,POINTER                          :: RealArray(:) => NULL()
   REAL,POINTER                          :: RealScalar   => NULL()
   INTEGER,POINTER                       :: IntArray(:)  => NULL()
-  INTEGER(KIND=8),POINTER               :: LongIntArray(:) => NULL()
+  INTEGER(KIND=i8),POINTER               :: LongIntArray(:) => NULL()
   INTEGER,POINTER                       :: IntScalar    => NULL()
   LOGICAL,POINTER                       :: LogArray(:)  => NULL()
   PROCEDURE(EvalElemInt),POINTER,NOPASS :: eval         => NULL()
@@ -373,7 +374,7 @@ REAL,INTENT(IN),TARGET,OPTIONAL            :: RealArray(nElems)    !< Data is an
 REAL,INTENT(IN),TARGET,OPTIONAL            :: RealScalar           !< Data is a real scalar
 INTEGER,INTENT(IN),TARGET,OPTIONAL         :: IntArray(nElems)     !< Data is an array containing integers
 INTEGER,INTENT(IN),TARGET,OPTIONAL         :: IntScalar            !< Data is a integer scalar
-INTEGER(KIND=8),INTENT(IN),TARGET,OPTIONAL :: LongIntArray(nElems) !< Data is a integer scalar
+INTEGER(KIND=i8),INTENT(IN),TARGET,OPTIONAL :: LongIntArray(nElems) !< Data is a integer scalar
 LOGICAL,INTENT(IN),TARGET,OPTIONAL         :: LogArray(nElems)     !< Data is a logical scalar
 PROCEDURE(EvalElemInt),POINTER,OPTIONAL    :: Eval                 !< Data is evaluated using a function pointer
 !----------------------------------------------------------------------------------------------------------------------------------

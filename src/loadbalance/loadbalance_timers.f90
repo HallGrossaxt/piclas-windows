@@ -24,42 +24,12 @@ PRIVATE
 ! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
-INTERFACE LBStartTime
-  MODULE PROCEDURE LBStartTime
-END INTERFACE
-
-INTERFACE LBSplitTime
-  MODULE PROCEDURE LBSplitTime
-END INTERFACE
-
-INTERFACE LBPauseTime
-  MODULE PROCEDURE LBPauseTime
-END INTERFACE
-
 #ifdef PARTICLES
-INTERFACE LBElemSplitTime
-  MODULE PROCEDURE LBElemSplitTime
-END INTERFACE
-
-INTERFACE LBElemPauseTime
-  MODULE PROCEDURE LBElemPauseTime
-END INTERFACE
-
-INTERFACE LBElemPauseTime_avg
-  MODULE PROCEDURE LBElemPauseTime_avg
-END INTERFACE
-
-INTERFACE LBElemSplitTime_avg
-  MODULE PROCEDURE LBElemSplitTime_avg
-END INTERFACE
-
 PUBLIC::LBElemSplitTime
 PUBLIC::LBElemPauseTime
 PUBLIC::LBElemPauseTime_avg
 PUBLIC::LBElemSplitTime_avg
-
 #endif /*PARTICLES*/
-
 PUBLIC::LBStartTime
 PUBLIC::LBSplitTime
 PUBLIC::LBPauseTime

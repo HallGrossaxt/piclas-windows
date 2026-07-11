@@ -22,7 +22,7 @@ IMPLICIT NONE
 PRIVATE
 
 ABSTRACT INTERFACE
-  FUNCTION RotInitPolyRoutine(iSpec,TRot,iPart)
+  REAL FUNCTION RotInitPolyRoutine(iSpec,TRot,iPart)
     INTEGER,INTENT(IN)          :: iSpec, iPart               ! index of collision pair
     REAL,INTENT(IN)             :: TRot
   END FUNCTION
@@ -38,7 +38,7 @@ PROCEDURE(RotInitPolyRoutine),POINTER :: RotInitPolyRoutineFuncPTR !< pointer de
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
 PUBLIC :: UpdateNextFreePosition, DiceUnitVector, VeloFromDistribution, GetParticleWeight, CalcRadWeightMPF, isChargedParticle
-PUBLIC :: isPushParticle, isDepositParticle, isInterpolateParticle, StoreLostParticleProperties, BuildTransGaussNums, BuildTransGaussNums2
+PUBLIC :: isPushParticle, isDepositParticle, isInterpolateParticle, StoreLostParticleProperties, BuildTransGaussNums, BuildQuietGaussNums
 PUBLIC :: CalcXiElec,ParticleOnProc, CalcVelocity_maxwell_particle
 PUBLIC :: CalcERotDataset_particle, CalcERot_particle, CalcERotQuant_particle, CalcEVib_particle, CalcEElec_particle
 PUBLIC :: RotInitPolyRoutineFuncPTR
@@ -1112,7 +1112,7 @@ END DO
 
 END SUBROUTINE BuildTransGaussNums
 
-SUBROUTINE BuildTransGaussNums2(nPart, iRanPart)
+SUBROUTINE BuildQuietGaussNums(nPart, iRanPart)
 !===================================================================================================================================
 !> Builds "not so random" Gauss numbers with a zero mean and a variance of one
 !===================================================================================================================================
@@ -1153,7 +1153,7 @@ DO iLoop = 1, nPart
   tmp = tmp + 2 * tmp2
 END DO
 
-END SUBROUTINE BuildTransGaussNums2
+END SUBROUTINE BuildQuietGaussNums
 
 
 PPURE REAL FUNCTION CalcXiElec(Telec, iSpec)
@@ -1264,7 +1264,7 @@ REAL FUNCTION CalcEVib_particle(iSpec,TempVib,iPart)
 ! MODULES
 USE MOD_Globals
 USE MOD_Globals_Vars      ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars         ,ONLY: SpecDSMC, PolyatomMolDSMC, VibQuantsPar, DSMC, AHO
+USE MOD_DSMC_Vars         ,ONLY: SpecDSMC, PolyatomMolDSMC, PartIntEn, DSMC, AHO
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1289,8 +1289,8 @@ IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
   ! set vibrational energy
   iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
   IF(SetVibQuant) THEN
-    IF(ALLOCATED(VibQuantsPar(iPart)%Quants)) DEALLOCATE(VibQuantsPar(iPart)%Quants)
-    ALLOCATE(VibQuantsPar(iPart)%Quants(PolyatomMolDSMC(iPolyatMole)%VibDOF))
+    IF(ALLOCATED(PartIntEn(iPart)%QVib)) DEALLOCATE(PartIntEn(iPart)%QVib)
+    ALLOCATE(PartIntEn(iPart)%QVib(PolyatomMolDSMC(iPolyatMole)%VibDOF))
   END IF
   CalcEVib_particle = 0.0
   DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
@@ -1302,7 +1302,7 @@ IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
     END DO
     CalcEVib_particle = CalcEVib_particle &
                                 + (iQuant + DSMC%GammaQuant)*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
-    IF(SetVibQuant) VibQuantsPar(iPart)%Quants(iDOF)=iQuant
+    IF(SetVibQuant) PartIntEn(iPart)%QVib(iDOF)=iQuant
   END DO
 
 ELSE ! diatomic
@@ -1729,7 +1729,7 @@ REAL FUNCTION CalcEElec_particle(iSpec,TempElec,iPart)
 ! MODULES
 USE MOD_Globals
 USE MOD_Globals_Vars      ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars         ,ONLY: SpecDSMC, DSMC, ElectronicDistriPart
+USE MOD_DSMC_Vars         ,ONLY: SpecDSMC, DSMC, PartIntEn
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1774,8 +1774,8 @@ CASE(1,4)
   END IF
   CalcEElec_particle = BoltzmannConst * SpecDSMC(iSpec)%ElectronicState(2,iQua)
 CASE(2)
-  IF(ALLOCATED(ElectronicDistriPart(iPart)%DistriFunc)) DEALLOCATE(ElectronicDistriPart(iPart)%DistriFunc)
-  ALLOCATE(ElectronicDistriPart(iPart)%DistriFunc(1:SpecDSMC(iSpec)%MaxElecQuant))
+  IF(ALLOCATED(PartIntEn(iPart)%DistriFunc)) DEALLOCATE(PartIntEn(iPart)%DistriFunc)
+  ALLOCATE(PartIntEn(iPart)%DistriFunc(1:SpecDSMC(iSpec)%MaxElecQuant))
   CalcEElec_particle = 0.0
   DO iQua = 0, SpecDSMC(iSpec)%MaxElecQuant - 1
     tmpExp = SpecDSMC(iSpec)%ElectronicState(2,iQua) / TempElec
@@ -1785,12 +1785,12 @@ CASE(2)
   DO iQua = 0, SpecDSMC(iSpec)%MaxElecQuant - 1
     tmpExp = SpecDSMC(iSpec)%ElectronicState(2,iQua) / TempElec
     IF (CHECKEXP(tmpExp)) THEN
-      ElectronicDistriPart(iPart)%DistriFunc(iQua+1) = SpecDSMC(iSpec)%ElectronicState(1,iQua)*EXP(-tmpExp)/ElectronicPartition
+      PartIntEn(iPart)%DistriFunc(iQua+1) = SpecDSMC(iSpec)%ElectronicState(1,iQua)*EXP(-tmpExp)/ElectronicPartition
     ELSE
-      ElectronicDistriPart(iPart)%DistriFunc(iQua+1) = 0.0
+      PartIntEn(iPart)%DistriFunc(iQua+1) = 0.0
     END IF
     CalcEElec_particle = CalcEElec_particle + &
-        ElectronicDistriPart(iPart)%DistriFunc(iQua+1) * BoltzmannConst * SpecDSMC(iSpec)%ElectronicState(2,iQua)
+        PartIntEn(iPart)%DistriFunc(iQua+1) * BoltzmannConst * SpecDSMC(iSpec)%ElectronicState(2,iQua)
   END DO
 CASE(3)
   ! Initialize in ground state
@@ -1992,7 +1992,7 @@ SUBROUTINE InitializeParticleMaxwell(iPart,iSpec,iElem,Mode,iInit)
 USE MOD_Globals
 USE MOD_Mesh_Vars               ,ONLY: offSetElem
 USE MOD_Particle_Vars           ,ONLY: PDM, PartSpecies, PartState, PEM, UseVarTimeStep, PartTimeStep, PartMPF, Species
-USE MOD_DSMC_Vars               ,ONLY: DSMC, PartStateIntEn, CollisMode, SpecDSMC, AmbipolElecVelo
+USE MOD_DSMC_Vars               ,ONLY: DSMC, PartIntEn, CollisMode, SpecDSMC
 USE MOD_DSMC_Vars               ,ONLY: DoRadialWeighting, DoLinearWeighting, DoCellLocalWeighting
 USE MOD_Restart_Vars            ,ONLY: MacroRestartValues
 USE MOD_Particle_TimeStep       ,ONLY: GetParticleTimeStep
@@ -2059,24 +2059,22 @@ PartState(4:6,iPart) = CalcVelocity_maxwell_particle(iSpec,T(1:3)) + v(1:3)
 
 IF (DSMC%DoAmbipolarDiff) THEN
   IF(Species(iSpec)%ChargeIC.GT.0.0) THEN
-    IF (ALLOCATED(AmbipolElecVelo(iPart)%ElecVelo)) DEALLOCATE(AmbipolElecVelo(iPart)%ElecVelo)
-    ALLOCATE(AmbipolElecVelo(iPart)%ElecVelo(3))
-    AmbipolElecVelo(iPart)%ElecVelo(1:3) = CalcVelocity_maxwell_particle(iSpecAD, TAD(1:3) ) + vAD(1:3)
+    IF (ALLOCATED(PartIntEn(iPart)%ElecVelo)) DEALLOCATE(PartIntEn(iPart)%ElecVelo)
+    ALLOCATE(PartIntEn(iPart)%ElecVelo(3))
+    PartIntEn(iPart)%ElecVelo(1:3) = CalcVelocity_maxwell_particle(iSpecAD, TAD(1:3) ) + vAD(1:3)
   END IF
 END IF
 ! 2) Set internal energies (rotational, vibrational, electronic)
 IF(CollisMode.GT.1) THEN
   IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
-    PartStateIntEn(1,iPart) = CalcEVib_particle(iSpec,Tvib,iPart)
-    PartStateIntEn( 2,iPart) = RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
-  ELSE
-    PartStateIntEn(1:2,iPart) = 0.0
+    ALLOCATE(PartIntEn(iPart)%ERot(1), PartIntEn(iPart)%EVib(1))
+    PartIntEn(iPart)%EVib = CalcEVib_particle(iSpec,Tvib,iPart)
+    PartIntEn(iPart)%ERot =  RotInitPolyRoutineFuncPTR(iSpec,TRot,iPart)
   END IF
   IF(DSMC%ElectronicModel.GT.0) THEN
     IF((Species(iSpec)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
-      PartStateIntEn(3,iPart) = CalcEElec_particle(iSpec,Telec,iPart)
-    ELSE
-      PartStateIntEn(3,iPart) = 0.0
+      ALLOCATE(PartIntEn(iPart)%EElec(1))
+      PartIntEn(iPart)%EElec = CalcEElec_particle(iSpec,Telec,iPart)
     END IF
   END IF
 END IF
@@ -2492,9 +2490,7 @@ INTEGER,INTENT(IN),OPTIONAL :: Amount
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER                                   :: NewSize, i, ii, ALLOCSTAT
-TYPE (tAmbipolElecVelo), ALLOCATABLE      :: AmbipolElecVelo_New(:)
-TYPE (tElectronicDistriPart), ALLOCATABLE :: ElectronicDistriPart_New(:)
-TYPE (tPolyatomMolVibQuant), ALLOCATABLE  :: VibQuantsPar_New(:)
+TYPE (tPartIntEn), ALLOCATABLE            :: PartIntEn_New(:)
 ! REAL                        ::
 !===================================================================================================================================
 IF(PRESENT(Amount)) THEN
@@ -2528,7 +2524,6 @@ IF(ALLOCATED(PartTimeStep)) CALL ChangeSizeArray(PartTimeStep,PDM%maxParticleNum
 IF(ALLOCATED(PartMPF)) CALL ChangeSizeArray(PartMPF,PDM%maxParticleNumber,NewSize,1.)
 IF(ALLOCATED(PartVeloRotRef)) CALL ChangeSizeArray(PartVeloRotRef,PDM%maxParticleNumber,NewSize,0.)
 IF(ALLOCATED(LastPartVeloRotRef)) CALL ChangeSizeArray(LastPartVeloRotRef,PDM%maxParticleNumber,NewSize,0.)
-IF(ALLOCATED(PartStateIntEn)) CALL ChangeSizeArray(PartStateIntEn,PDM%maxParticleNumber,NewSize,0.)
 
 IF(ALLOCATED(Pt_temp)) CALL ChangeSizeArray(Pt_temp,PDM%maxParticleNumber,NewSize,0.)
 IF(ALLOCATED(Pt)) CALL ChangeSizeArray(Pt,PDM%maxParticleNumber,NewSize,0.)
@@ -2555,34 +2550,20 @@ IF(ALLOCATED(PartShiftVector)) CALL ChangeSizeArray(PartShiftVector,PDM%maxParti
 ! \____/ .___/\__,_/\__,_/\__/\___/    /_/     /_/_/   /_____//____/  /_/  |_/_/  /_/   \__,_/\__, /____/
 !     /_/                                                                                    /____/
 
-IF(ALLOCATED(AmbipolElecVelo)) THEN
-  ALLOCATE(AmbipolElecVelo_New(NewSize),STAT=ALLOCSTAT)
+IF(ALLOCATED(PartIntEn)) THEN
+  ALLOCATE(PartIntEn_New(NewSize),STAT=ALLOCSTAT)
   IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in IncreaseMaxParticleNumber')
   DO i=1,PDM%maxParticleNumber
-    CALL MOVE_ALLOC(AmbipolElecVelo(i)%ElecVelo,AmbipolElecVelo_New(i)%ElecVelo)
+    CALL MOVE_ALLOC(PartIntEn(i)%ERot,PartIntEn_New(i)%ERot)
+    CALL MOVE_ALLOC(PartIntEn(i)%EVib,PartIntEn_New(i)%EVib)
+    CALL MOVE_ALLOC(PartIntEn(i)%EElec,PartIntEn_New(i)%EElec)
+    CALL MOVE_ALLOC(PartIntEn(i)%QVib,PartIntEn_New(i)%QVib)
+    CALL MOVE_ALLOC(PartIntEn(i)%TSolid,PartIntEn_New(i)%TSolid)
+    CALL MOVE_ALLOC(PartIntEn(i)%DistriFunc,PartIntEn_New(i)%DistriFunc)
+    CALL MOVE_ALLOC(PartIntEn(i)%ElecVelo,PartIntEn_New(i)%ElecVelo)
   END DO
-  DEALLOCATE(AmbipolElecVelo)
-  CALL MOVE_ALLOC(AmbipolElecVelo_New,AmbipolElecVelo)
-END IF
-
-IF(ALLOCATED(ElectronicDistriPart)) THEN
-  ALLOCATE(ElectronicDistriPart_New(NewSize),STAT=ALLOCSTAT)
-  IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in IncreaseMaxParticleNumber')
-  DO i=1,PDM%maxParticleNumber
-    CALL MOVE_ALLOC(ElectronicDistriPart(i)%DistriFunc,ElectronicDistriPart_New(i)%DistriFunc)
-  END DO
-  DEALLOCATE(ElectronicDistriPart)
-  CALL MOVE_ALLOC(ElectronicDistriPart_New,ElectronicDistriPart)
-END IF
-
-IF(ALLOCATED(VibQuantsPar)) THEN
-  ALLOCATE(VibQuantsPar_New(NewSize),STAT=ALLOCSTAT)
-  IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in IncreaseMaxParticleNumber')
-  DO i=1,PDM%maxParticleNumber
-    CALL MOVE_ALLOC(VibQuantsPar(i)%Quants,VibQuantsPar_New(i)%Quants)
-  END DO
-  DEALLOCATE(VibQuantsPar)
-  CALL MOVE_ALLOC(VibQuantsPar_New,VibQuantsPar)
+  DEALLOCATE(PartIntEn)
+  CALL MOVE_ALLOC(PartIntEn_New,PartIntEn)
 END IF
 
 IF(ALLOCATED(PDM%nextFreePosition)) THEN
@@ -2628,9 +2609,7 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER                                   :: NewSize, i, ii, ALLOCSTAT, nPart
-TYPE (tAmbipolElecVelo), ALLOCATABLE      :: AmbipolElecVelo_New(:)
-TYPE (tElectronicDistriPart), ALLOCATABLE :: ElectronicDistriPart_New(:)
-TYPE (tPolyatomMolVibQuant), ALLOCATABLE  :: VibQuantsPar_New(:)
+TYPE (tPartIntEn), ALLOCATABLE            :: PartIntEn_New(:)
 ! REAL                        ::
 !===================================================================================================================================
 
@@ -2641,7 +2620,7 @@ END DO
 
 IF(DSMC%DoAmbipolarDiff) THEN
   DO i=1,PDM%ParticleVecLength
-    IF(PDM%ParticleInside(i).AND.ALLOCATED(AmbipolElecVelo(i)%ElecVelo)) nPart = nPart + 1
+    IF(PDM%ParticleInside(i).AND.ALLOCATED(PartIntEn(i)%ElecVelo)) nPart = nPart + 1
   END DO
 END IF
 
@@ -2699,7 +2678,6 @@ IF(ALLOCATED(PartTimeStep)) CALL ChangeSizeArray(PartTimeStep,PDM%maxParticleNum
 IF(ALLOCATED(PartMPF)) CALL ChangeSizeArray(PartMPF,PDM%maxParticleNumber,NewSize,1.)
 IF(ALLOCATED(PartVeloRotRef)) CALL ChangeSizeArray(PartVeloRotRef,PDM%maxParticleNumber,NewSize,0.)
 IF(ALLOCATED(LastPartVeloRotRef)) CALL ChangeSizeArray(LastPartVeloRotRef,PDM%maxParticleNumber,NewSize,0.)
-IF(ALLOCATED(PartStateIntEn)) CALL ChangeSizeArray(PartStateIntEn,PDM%maxParticleNumber,NewSize,0.)
 
 IF(ALLOCATED(Pt_temp)) CALL ChangeSizeArray(Pt_temp,PDM%maxParticleNumber,NewSize,0.)
 IF(ALLOCATED(Pt)) CALL ChangeSizeArray(Pt,PDM%maxParticleNumber,NewSize,0.)
@@ -2726,43 +2704,29 @@ IF(ALLOCATED(PartShiftVector)) CALL ChangeSizeArray(PartShiftVector,PDM%maxParti
 ! \____/ .___/\__,_/\__,_/\__/\___/    /_/     /_/_/   /_____//____/  /_/  |_/_/  /_/   \__,_/\__, /____/
 !     /_/                                                                                    /____/
 
-IF(ALLOCATED(AmbipolElecVelo)) THEN
-  ALLOCATE(AmbipolElecVelo_New(NewSize),STAT=ALLOCSTAT)
-  IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in ReduceMaxParticleNumber')
+IF(ALLOCATED(PartIntEn)) THEN
+  ALLOCATE(PartIntEn_New(NewSize),STAT=ALLOCSTAT)
+  IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in IncreaseMaxParticleNumber')
   DO i=1,NewSize
-    CALL MOVE_ALLOC(AmbipolElecVelo(i)%ElecVelo,AmbipolElecVelo_New(i)%ElecVelo)
+    CALL MOVE_ALLOC(PartIntEn(i)%ERot,PartIntEn_New(i)%ERot)
+    CALL MOVE_ALLOC(PartIntEn(i)%EVib,PartIntEn_New(i)%EVib)
+    CALL MOVE_ALLOC(PartIntEn(i)%EElec,PartIntEn_New(i)%EElec)
+    CALL MOVE_ALLOC(PartIntEn(i)%QVib,PartIntEn_New(i)%QVib)
+    CALL MOVE_ALLOC(PartIntEn(i)%TSolid,PartIntEn_New(i)%TSolid)
+    CALL MOVE_ALLOC(PartIntEn(i)%DistriFunc,PartIntEn_New(i)%DistriFunc)
+    CALL MOVE_ALLOC(PartIntEn(i)%ElecVelo,PartIntEn_New(i)%ElecVelo)
   END DO
   DO i=NewSize+1,PDM%maxParticleNumber
-    SDEALLOCATE(AmbipolElecVelo(i)%ElecVelo)
+    SDEALLOCATE(PartIntEn(i)%ERot)
+    SDEALLOCATE(PartIntEn(i)%EVib)
+    SDEALLOCATE(PartIntEn(i)%EElec)
+    SDEALLOCATE(PartIntEn(i)%QVib)
+    SDEALLOCATE(PartIntEn(i)%TSolid)
+    SDEALLOCATE(PartIntEn(i)%DistriFunc)
+    SDEALLOCATE(PartIntEn(i)%ElecVelo)
   END DO
-  DEALLOCATE(AmbipolElecVelo)
-  CALL MOVE_ALLOC(AmbipolElecVelo_New,AmbipolElecVelo)
-END IF
-
-IF(ALLOCATED(ElectronicDistriPart)) THEN
-  ALLOCATE(ElectronicDistriPart_New(NewSize),STAT=ALLOCSTAT)
-  IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in ReduceMaxParticleNumber')
-  DO i=1,NewSize
-    CALL MOVE_ALLOC(ElectronicDistriPart(i)%DistriFunc,ElectronicDistriPart_New(i)%DistriFunc)
-  END DO
-  DO i=NewSize+1,PDM%maxParticleNumber
-    SDEALLOCATE(ElectronicDistriPart(i)%DistriFunc)
-  END DO
-  DEALLOCATE(ElectronicDistriPart)
-  CALL MOVE_ALLOC(ElectronicDistriPart_New,ElectronicDistriPart)
-END IF
-
-IF(ALLOCATED(VibQuantsPar)) THEN
-  ALLOCATE(VibQuantsPar_New(NewSize),STAT=ALLOCSTAT)
-  IF (ALLOCSTAT.NE.0) CALL ABORT(__STAMP__,'Cannot allocate increased Array in ReduceMaxParticleNumber')
-  DO i=1,NewSize
-    CALL MOVE_ALLOC(VibQuantsPar(i)%Quants,VibQuantsPar_New(i)%Quants)
-  END DO
-  DO i=NewSize+1,PDM%maxParticleNumber
-    SDEALLOCATE(VibQuantsPar(i)%Quants)
-  END DO
-  DEALLOCATE(VibQuantsPar)
-  CALL MOVE_ALLOC(VibQuantsPar_New,VibQuantsPar)
+  DEALLOCATE(PartIntEn)
+  CALL MOVE_ALLOC(PartIntEn_New,PartIntEn)
 END IF
 
 IF(ALLOCATED(PDM%nextFreePosition)) THEN
@@ -2864,7 +2828,6 @@ IF(ALLOCATED(LastPartVeloRotRef)) THEN
   LastPartVeloRotRef(:,NewID)=LastPartVeloRotRef(:,OldID)
   LastPartVeloRotRef(:,OldID) = 0.0
 END IF
-IF(ALLOCATED(PartStateIntEn)) PartStateIntEn(:,NewID)=PartStateIntEn(:,OldID)
 
 IF(ALLOCATED(Pt_temp)) THEN
   Pt_temp(:,NewID)=Pt_temp(:,OldID)
@@ -2902,30 +2865,48 @@ IF(ALLOCATED(PartShiftVector)) PartShiftVector(:,NewID)=PartShiftVector(:,OldID)
 ! \____/ .___/\__,_/\__,_/\__/\___/    /_/     /_/_/   /_____//____/  /_/  |_/_/  /_/   \__,_/\__, /____/
 !     /_/                                                                                    /____/
 
-IF(ALLOCATED(AmbipolElecVelo)) THEN
-  IF(ALLOCATED(AmbipolElecVelo(OldID)%ElecVelo)) THEN
-    IF(ALLOCATED(AmbipolElecVelo(NewID)%ElecVelo)) DEALLOCATE(AmbipolElecVelo(NewID)%ElecVelo)
-    CALL MOVE_ALLOC(AmbipolElecVelo(OldID)%ElecVelo,AmbipolElecVelo(NewID)%ElecVelo)
+IF(ALLOCATED(PartIntEn)) THEN
+  IF(ALLOCATED(PartIntEn(OldID)%ERot)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%ERot)) DEALLOCATE(PartIntEn(NewID)%ERot)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%ERot,PartIntEn(NewID)%ERot)
   ELSE
-    IF(ALLOCATED(AmbipolElecVelo(NewID)%ElecVelo)) DEALLOCATE(AmbipolElecVelo(NewID)%ElecVelo)
+    IF(ALLOCATED(PartIntEn(NewID)%ERot)) DEALLOCATE(PartIntEn(NewID)%ERot)
   END IF
-END IF
-
-IF(ALLOCATED(ElectronicDistriPart)) THEN
-  IF(ALLOCATED(ElectronicDistriPart(OldID)%DistriFunc)) THEN
-    IF(ALLOCATED(ElectronicDistriPart(NewID)%DistriFunc)) DEALLOCATE(ElectronicDistriPart(NewID)%DistriFunc)
-    CALL MOVE_ALLOC(ElectronicDistriPart(OldID)%DistriFunc,ElectronicDistriPart(NewID)%DistriFunc)
+  IF(ALLOCATED(PartIntEn(OldID)%EVib)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%EVib)) DEALLOCATE(PartIntEn(NewID)%EVib)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%EVib,PartIntEn(NewID)%EVib)
   ELSE
-    IF(ALLOCATED(ElectronicDistriPart(NewID)%DistriFunc)) DEALLOCATE(ElectronicDistriPart(NewID)%DistriFunc)
+    IF(ALLOCATED(PartIntEn(NewID)%EVib)) DEALLOCATE(PartIntEn(NewID)%EVib)
   END IF
-END IF
-
-IF(ALLOCATED(VibQuantsPar)) THEN
-  IF(ALLOCATED(VibQuantsPar(OldID)%Quants)) THEN
-    IF(ALLOCATED(VibQuantsPar(NewID)%Quants)) DEALLOCATE(VibQuantsPar(NewID)%Quants)
-    CALL MOVE_ALLOC(VibQuantsPar(OldID)%Quants,VibQuantsPar(NewID)%Quants)
+  IF(ALLOCATED(PartIntEn(OldID)%EElec)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%EElec)) DEALLOCATE(PartIntEn(NewID)%EElec)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%EElec,PartIntEn(NewID)%EElec)
   ELSE
-    IF(ALLOCATED(VibQuantsPar(NewID)%Quants)) DEALLOCATE(VibQuantsPar(NewID)%Quants)
+    IF(ALLOCATED(PartIntEn(NewID)%EElec)) DEALLOCATE(PartIntEn(NewID)%EElec)
+  END IF
+  IF(ALLOCATED(PartIntEn(OldID)%QVib)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%QVib)) DEALLOCATE(PartIntEn(NewID)%QVib)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%QVib,PartIntEn(NewID)%QVib)
+  ELSE
+    IF(ALLOCATED(PartIntEn(NewID)%QVib)) DEALLOCATE(PartIntEn(NewID)%QVib)
+  END IF
+  IF(ALLOCATED(PartIntEn(OldID)%TSolid)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%TSolid)) DEALLOCATE(PartIntEn(NewID)%TSolid)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%TSolid,PartIntEn(NewID)%TSolid)
+  ELSE
+    IF(ALLOCATED(PartIntEn(NewID)%TSolid)) DEALLOCATE(PartIntEn(NewID)%TSolid)
+  END IF
+  IF(ALLOCATED(PartIntEn(OldID)%DistriFunc)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%DistriFunc)) DEALLOCATE(PartIntEn(NewID)%DistriFunc)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%DistriFunc,PartIntEn(NewID)%DistriFunc)
+  ELSE
+    IF(ALLOCATED(PartIntEn(NewID)%DistriFunc)) DEALLOCATE(PartIntEn(NewID)%DistriFunc)
+  END IF
+  IF(ALLOCATED(PartIntEn(OldID)%ElecVelo)) THEN
+    IF(ALLOCATED(PartIntEn(NewID)%ElecVelo)) DEALLOCATE(PartIntEn(NewID)%ElecVelo)
+    CALL MOVE_ALLOC(PartIntEn(OldID)%ElecVelo,PartIntEn(NewID)%ElecVelo)
+  ELSE
+    IF(ALLOCATED(PartIntEn(NewID)%ElecVelo)) DEALLOCATE(PartIntEn(NewID)%ElecVelo)
   END IF
 END IF
 

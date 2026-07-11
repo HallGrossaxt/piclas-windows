@@ -33,31 +33,35 @@ if [[ -f "$filepath" ]]; then
   while IFS= read -r line; do name="$(echo "$line" | cut -d "=" -f1)"; value="$(echo "$line" | cut -d "=" -f2)"; keys+=("$name"); values_map["$name"]="$value"; done <<< "$test"
 
   # read in EXCLUDE and nocross patterns
-  exclude_patterns=$(grep -i "^EXCLUDE:" "$filepath" | sed 's/^EXCLUDE://i')
+  exclude_patterns=$(grep -i "^EXCLUDE:" "$filepath" | sed 's/^EXCLUDE://i' | sed 's/[[:space:]]//g')
   # Improvement: also exclude nocrosscombination
   # nocross_patterns=$(grep -i "^nocrosscombination:" "$filepath" | sed 's/^nocrosscombination://i')
 
   should_exclude() {
+    # Prevent an empty exclude_patterns string from triggering accidental exclusions
+    if [[ -z "$exclude_patterns" ]]; then
+      return 1
+    fi
     # read in combination
     local combo="$1"
-    while IFS=',' read -ra conditions; do
+    while IFS= read -r exclude_line; do
+      [[ -z "$exclude_line" ]] && continue
       local all_conditions_met=1
+      IFS=',' read -ra conditions <<< "$exclude_line"
       for condition in "${conditions[@]}"; do
         local var="${condition%%=*}"
         local val="${condition#*=}"
-        # check if current condition (e.g. PICLAS_EQNSYSNAME=poisson) is not in the combination
-        if ! [[ "$combo" == *"-D${var}=${val}"* ]]; then
-          # if its not in the combination, build is allowed and other conditions must not be checked (e.g. PICLAS_EQNSYSNAME=maxwell, but exclude is for poisson and any other option)
+        if ! [[ " $combo " =~ " -D${var}=${val} " ]]; then
           all_conditions_met=0
           break
         fi
       done
-      # all conditions of current exclusion pattern were met, so build is excluded
+
       if [[ $all_conditions_met -eq 1 ]]; then
-        return 0
+        return 0 # Should exclude
       fi
     done <<< "$exclude_patterns"
-    return 1
+    return 1 # Keep it
   }
 
   generate_combinations() {
@@ -103,18 +107,23 @@ if [[ -f "$filepath" ]]; then
   done
 
   echo -e "\nTotal number of combinations: ${#combinations[@]}"
-  echo "Enter the combination:"
-  read -r selection
-  selection=$(echo "$selection" | tr ',' ' ')
-  selected_numbers=($selection)
-  for num in "${selected_numbers[@]}"; do
-    if [[ $num =~ ^[0-9]+$ ]] && ((num > 0)) && ((num <= ${#combinations[@]})); then
-      index=$((num-1))
-      eval "cmake .. ${combinations[$index]} && make -j"
-    else
-      echo "Invalid selection: $num"
-    fi
-  done
+  if [[ ${#combinations[@]} -eq 1 ]]; then
+    echo "Only one combination exists. Automatically selecting it."
+    eval "cmake .. ${combinations[0]} && make -j"
+  else
+    echo "Enter the combination:"
+    read -r selection
+    selection=$(echo "$selection" | tr ',' ' ')
+    selected_numbers=($selection)
+    for num in "${selected_numbers[@]}"; do
+      if [[ $num =~ ^[0-9]+$ ]] && ((num > 0)) && ((num <= ${#combinations[@]})); then
+        index=$((num-1))
+        eval "cmake .. ${combinations[$index]} && make -j"
+      else
+        echo "Invalid selection: $num"
+      fi
+    done
+  fi
 else
   printf 'File [%s] does not exist. Exit.\n' "$1"
 fi

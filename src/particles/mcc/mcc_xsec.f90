@@ -657,7 +657,7 @@ SUBROUTINE XSec_ElectronicRelaxation(iPair,iCase,iPart_p1,iPart_p2,DoElec1,DoEle
 !> 4. Count the number of relaxation process for the relaxation rate (Only with Particles-DSMCReservoirSim = T)
 !===================================================================================================================================
 ! MODULES
-USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, Coll_pData, PartStateIntEn, SamplingActive
+USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, Coll_pData, PartIntEn, SamplingActive
 USE MOD_MCC_Vars              ,ONLY: SpecXSec
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, PEM, WriteMacroVolumeValues
@@ -676,15 +676,27 @@ INTEGER,INTENT(OUT)           :: ElecLevelRelax
 INTEGER                       :: iSpec_p1, iSpec_p2, iLevel, ElecLevel, ElemID
 REAL                          :: ProbSum, ProbElec, iRan
 REAL                          :: WeightedParticle
+LOGICAL                       :: DoExcitation
 !===================================================================================================================================
-
+DoExcitation = .FALSE.
 iSpec_p1 = PartSpecies(iPart_p1)
 iSpec_p2 = PartSpecies(iPart_p2)
 
 ElecLevelRelax = 0
 
+IF((Species(iSpec_p1)%InterID.EQ.4).OR.(SpecDSMC(iSpec_p1)%FullyIonized)) THEN
+  IF((Species(iSpec_p2)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec_p2)%FullyIonized)) THEN
+    IF (PartIntEn(iPart_p2)%EElec(1).EQ.0.0) DoExcitation = .TRUE.
+  END IF
+END IF
+IF((Species(iSpec_p2)%InterID.EQ.4).OR.(SpecDSMC(iSpec_p2)%FullyIonized)) THEN
+  IF((Species(iSpec_p1)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec_p1)%FullyIonized)) THEN
+    IF (PartIntEn(iPart_p1)%EElec(1).EQ.0.0) DoExcitation = .TRUE.
+  END IF
+END IF
+
 ! Excitation only from ground-state
-IF(PartStateIntEn(3,iPart_p1).EQ.0.0.AND.PartStateIntEn(3,iPart_p2).EQ.0.0) THEN
+IF(DoExcitation) THEN
   ! 1. Interpolate the cross-section (MCC) or use the probability (VHS)
   IF(SpecXSec(iCase)%UseCollXSec) THEN
     ! Interpolate the electronic cross-section at the current collision energy
@@ -1270,7 +1282,7 @@ SUBROUTINE XSec_CalcReactionProb(iPair,iCase,iElem,SpecNum1,SpecNum2,MacroPartic
 ! MODULES
 USE MOD_Globals_Vars
 USE MOD_Globals               ,ONLY: abort
-USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, Coll_pData, CollInf, BGGas, ChemReac, DSMC, PartStateIntEn
+USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, Coll_pData, CollInf, BGGas, ChemReac, DSMC, PartIntEn
 USE MOD_MCC_Vars              ,ONLY: SpecXSec
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, Species, UseVarTimeStep, usevMPF, PartTimeStep
 USE MOD_TimeDisc_Vars         ,ONLY: dt
@@ -1348,11 +1360,15 @@ DO iPath = 1, ChemReac%CollCaseInfo(iCase)%NumOfReactionPaths
     ! No relativistic treatment here until the chemistry is done fully considering relativistic effects
     Coll_pData(iPair)%Ec = 0.5 * ReducedMass * Coll_pData(iPair)%cRela2
 
-    Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec + (PartStateIntEn(1,ReactInx(1)) + PartStateIntEn(2,ReactInx(1))) * Weight(1) &
-                                                + (PartStateIntEn(1,ReactInx(2)) + PartStateIntEn(2,ReactInx(2))) * Weight(2)
+    IF((Species(EductReac(1))%InterID.EQ.2).OR.(Species(EductReac(1))%InterID.EQ.20)) &
+      Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec + (PartIntEn(ReactInx(1))%EVib(1) + PartIntEn(ReactInx(1))%ERot(1)) * Weight(1)
+    IF((Species(EductReac(2))%InterID.EQ.2).OR.(Species(EductReac(2))%InterID.EQ.20)) &
+      Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec + (PartIntEn(ReactInx(2))%EVib(1) + PartIntEn(ReactInx(2))%ERot(1)) * Weight(2)
     IF (DSMC%ElectronicModel.GT.0) THEN
-      Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec + PartStateIntEn(3,ReactInx(1))*Weight(1) &
-                                                  + PartStateIntEn(3,ReactInx(2))*Weight(2)
+      IF((Species(EductReac(1))%InterID.NE.4).AND.(.NOT.SpecDSMC(EductReac(1))%FullyIonized)) & 
+        Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec + PartIntEn(ReactInx(1))%EElec(1)*Weight(1) 
+      IF((Species(EductReac(2))%InterID.NE.4).AND.(.NOT.SpecDSMC(EductReac(2))%FullyIonized)) & 
+        Coll_pData(iPair)%Ec = Coll_pData(iPair)%Ec + PartIntEn(ReactInx(2))%EElec(1)*Weight(2)
     END IF
     ! Check first if sufficient energy is available for the products after the reaction
     ASSOCIATE( ReactionProb => ChemReac%CollCaseInfo(iCase)%ReactionProb(iPath) )
@@ -1371,11 +1387,16 @@ DO iPath = 1, ChemReac%CollCaseInfo(iCase)%NumOfReactionPaths
             GammaFac = 1./SQRT(1.-GammaFac)
           END IF
           EcRelativistic = (GammaFac-1.) * ReducedMass * c2
-
-          EcRelativistic = EcRelativistic + (PartStateIntEn(1,ReactInx(1)) + PartStateIntEn(2,ReactInx(1))) * Weight(1) &
-                                                      + (PartStateIntEn(1,ReactInx(2)) + PartStateIntEn(2,ReactInx(2))) * Weight(2)
-          IF (DSMC%ElectronicModel.GT.0) EcRelativistic = EcRelativistic + PartStateIntEn(3,ReactInx(1))*Weight(1) &
-                                                                         + PartStateIntEn(3,ReactInx(2))*Weight(2)
+          IF((Species(EductReac(1))%InterID.EQ.2).OR.(Species(EductReac(1))%InterID.EQ.20)) &
+            EcRelativistic = EcRelativistic + (PartIntEn(ReactInx(1))%EVib(1) + PartIntEn(ReactInx(1))%ERot(1)) * Weight(1)
+          IF((Species(EductReac(2))%InterID.EQ.2).OR.(Species(EductReac(2))%InterID.EQ.20)) &
+            EcRelativistic = EcRelativistic + (PartIntEn(ReactInx(2))%EVib(1) + PartIntEn(ReactInx(2))%ERot(1)) * Weight(2)
+          IF (DSMC%ElectronicModel.GT.0) THEN
+            IF((Species(EductReac(1))%InterID.NE.4).AND.(.NOT.SpecDSMC(EductReac(1))%FullyIonized)) & 
+              EcRelativistic = EcRelativistic + PartIntEn(ReactInx(1))%EElec(1)*Weight(1) 
+            IF((Species(EductReac(2))%InterID.NE.4).AND.(.NOT.SpecDSMC(EductReac(2))%FullyIonized)) & 
+              EcRelativistic = EcRelativistic + PartIntEn(ReactInx(2))%EElec(1)*Weight(2)
+          END IF
 
           CollEnergy = (EcRelativistic-EZeroPoint_Educt) * 2./(Weight(1)+Weight(2))
         END IF

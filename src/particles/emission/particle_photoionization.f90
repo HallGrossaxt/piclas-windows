@@ -1,5 +1,5 @@
 !==================================================================================================================================
-! Copyright (c) 2023 boltzplatz - numerical plasma dynamics GmbH
+! Copyright (c) 2023-2025 boltzplatz - numerical plasma dynamics GmbH
 !
 ! This file is part of PICLas (piclas.boltzplatz.eu/piclas/piclas). PICLas is free software: you can redistribute it and/or modify
 ! it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3
@@ -28,16 +28,101 @@ PUBLIC :: PhotoIonization_RayTracing_SEE, PhotoIonization_RayTracing_Volume
 !===================================================================================================================================
 CONTAINS
 
+!===================================================================================================================================
+!> Calculate the time-dependent scaling factor for the maximum intensity, depending on the pulse type
+!===================================================================================================================================
+SUBROUTINE GetPulseIntensity(TimeScalingFactor)
+! MODULES
+USE MOD_Globals
+USE MOD_Globals_Vars            ,ONLY: PI
+USE MOD_Timedisc_Vars           ,ONLY: dt,time
+USE MOD_RayTracing_Vars         ,ONLY: Ray
+#ifdef LSERK
+USE MOD_Timedisc_Vars           ,ONLY: iStage, RK_c, nRKStages
+#endif
+!-----------------------------------------------------------------------------------------------------------------------------------
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL, INTENT(OUT)     :: TimeScalingFactor        !< Scaling factor of the maximum intensity: I(t) = I_max * factor
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                  :: t_1, t_2
+INTEGER               :: NbrOfRepetitions
+!===================================================================================================================================
+! Initialize
+TimeScalingFactor = 0.
+
+! Determine the time interval
+#ifdef LSERK
+IF (iStage.EQ.1) THEN
+  t_1 = Time
+  t_2 = Time + RK_c(2) * dt
+ELSE
+  IF (iStage.NE.nRKStages) THEN
+    t_1 = Time + RK_c(iStage) * dt
+    t_2 = Time + RK_c(iStage+1) * dt
+  ELSE
+    t_1 = Time + RK_c(iStage) * dt
+    t_2 = Time + dt
+  END IF
+END IF
+#else
+t_1 = Time
+t_2 = Time + dt
+#endif
+
+! Calculate the current pulse, starting at zero
+NbrOfRepetitions = INT(Time/Ray%Period)
+
+! Leave the subroutine if the maximum number of pulses has been reached
+IF((NbrOfRepetitions+1).GT.Ray%NbrOfPulses) THEN
+  TimeScalingFactor = 0.
+  RETURN
+END IF
+
+! Gaussian pulse only: Add time shift of -SQRT(8) * Ray%PulseDuration so that I_max is after half of the pulse duration
+! For the square pulse, this reduces to dt, Ray%tShift = 0.
+! In case of multiple pulses, shift the time interval accordingly
+t_1 = t_1 - Ray%tShift - NbrOfRepetitions * Ray%Period
+t_2 = t_2 - Ray%tShift - NbrOfRepetitions * Ray%Period
+
+! Calculate the time-dependent ray intensity
+SELECT CASE(Ray%PulseType)
+CASE('Gaussian')
+  ! check if t_2 is outside of the pulse
+  IF(t_2.GT.2.0*Ray%tShift) t_2 = 2.0*Ray%tShift
+  ! Determine the time scaling factor
+  TimeScalingFactor = 0.5 * SQRT(PI) * Ray%PulseDuration * (ERF(t_2/Ray%PulseDuration)-ERF(t_1/Ray%PulseDuration))
+CASE('square')
+  IF(t_1.LT.Ray%PulseDuration) THEN
+    ! check if t_2 is outside of the pulse
+    IF(t_2.GT.Ray%PulseDuration) t_2 = Ray%PulseDuration
+    TimeScalingFactor = t_2 - t_1
+  ELSE
+    TimeScalingFactor = 0.
+  END IF
+CASE DEFAULT
+  CALL Abort(__STAMP__,'Unknown pulse type for ray tracing: '//TRIM(Ray%PulseType)//'. Select square or Gaussian!')
+END SELECT
+
+! Additional scaling in case the power density has been changed
+TimeScalingFactor = TimeScalingFactor * Ray%IntensityAmplitudeFactor
+
+END SUBROUTINE GetPulseIntensity
+
+
 SUBROUTINE PhotoIonization_RayTracing_SEE()
 !===================================================================================================================================
 !> Routine calculates the number of secondary electrons to be emitted and inserts them on the surface, utilizing the cell-local
 !> photon energy from the raytracing
 !===================================================================================================================================
 ! MODULES                                                                                                                          !
-!----------------------------------------------------------------------------------------------------------------------------------!
 USE MOD_Globals
 USE MOD_Globals_Vars            ,ONLY: PI
-USE MOD_Timedisc_Vars           ,ONLY: dt,time
 USE MOD_Particle_Boundary_Vars  ,ONLY: Partbound,DoBoundaryParticleOutputRay
 USE MOD_Particle_Vars           ,ONLY: Species, PartState, usevMPF,SpeciesOffsetVDL
 USE MOD_RayTracing_Vars         ,ONLY: Ray,UseRayTracing,RayElemEmission
@@ -45,27 +130,21 @@ USE MOD_part_emission_tools     ,ONLY: CalcPhotonEnergy
 USE MOD_Particle_Mesh_Vars      ,ONLY: SideInfo_Shared,UseBezierControlPoints
 USE MOD_Particle_Surfaces_Vars  ,ONLY: BezierControlPoints3D, BezierSampleXi
 USE MOD_Particle_Surfaces       ,ONLY: EvaluateBezierPolynomialAndGradient, CalcNormAndTangBezier
-USE MOD_Mesh_Vars               ,ONLY: NGeo,nBCSides,offsetElem,SideToElem
+USE MOD_Mesh_Vars               ,ONLY: NGeo,offsetElem,nElems
 USE MOD_part_emission_tools     ,ONLY: CalcVelocity_FromWorkFuncSEE
 USE MOD_Particle_Boundary_Tools ,ONLY: StoreBoundaryParticleProperties
 USE MOD_part_operations         ,ONLY: CreateParticle
-USE MOD_Particle_Mesh_Tools     ,ONLY: GetGlobalNonUniqueSideID
-USE MOD_Particle_Boundary_Vars  ,ONLY: GlobalSide2SurfSide
+USE MOD_Particle_Boundary_Vars  ,ONLY: nComputeNodeSurfSides, SurfSide2GlobalSide
 #ifdef LSERK
-USE MOD_Timedisc_Vars           ,ONLY: iStage, RK_c, nRKStages
+USE MOD_Timedisc_Vars           ,ONLY: RK_c, nRKStages
 #endif
-! #if USE_MPI
-! USE MOD_Particle_Boundary_Vars  ,ONLY: nComputeNodeSurfTotalSides
-! USE MOD_MPI_Shared_Vars         ,ONLY: nComputeNodeProcessors,myComputeNodeRank
-! #else
-! USE MOD_Particle_Boundary_Vars  ,ONLY: nGlobalSurfSides
-! #endif /*USE_MPI*/
 USE MOD_Photon_TrackingVars     ,ONLY: PhotonSampWall_loc,PhotonSurfSideArea
 #if USE_HDG
 USE MOD_HDG_Vars                ,ONLY: UseFPC,FPC,UseEPC,EPC
 USE MOD_Mesh_Vars               ,ONLY: BoundaryType
-USE MOD_Particle_Boundary_Vars  ,ONLY: DoVirtualDielectricLayer
+USE MOD_Particle_Boundary_Vars  ,ONLY: DoVirtualDielectricLayer,Do2DSurfaceCharge
 USE MOD_Particle_Vars           ,ONLY: LastPartPos,PartSpecies
+USE MOD_PICDepo_Tools           ,ONLY: DepositParticleOnSurface
 #endif /*USE_HDG*/
 USE MOD_SurfaceModel_Analyze_Vars ,ONLY: SEE,CalcPhotonSEE
 USE MOD_Particle_Mesh_Vars      ,ONLY: ElemBaryNGeo
@@ -82,12 +161,13 @@ IMPLICIT NONE
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-REAL                  :: t_1, t_2, E_Intensity,vec(3)
-INTEGER               :: NbrOfRepetitions, SideID, GlobElemID, PartID, BCSideID, iLocSide, locElemID, iSurfSide, CNElemID
+REAL                  :: E_Intensity,vec(3)
+INTEGER               :: SideID, GlobElemID, PartID, locElemID, iSurfSide, CNElemID
 INTEGER               :: p, q, iPartBound, SpecID, iPart, NbrOfSEE, iSEEBC
-REAL                  :: RealNbrOfSEE, TimeScalingFactor, MPF
-REAL                  :: Particle_pos(1:3), xi(2)
+REAL                  :: RealNbrOfSEE, TimeScalingFactor, MPF,PhotonEnergy
+REAL                  :: PartPos(1:3), PartPosSurf(1:3), xi(2)
 REAL                  :: RandVal, RandVal2(2), xiab(1:2,1:2), nVec(3), tang1(3), tang2(3), Velo3D(3)
+REAL                  :: ChargeHole
 #if USE_HDG
 INTEGER               :: iBC,iUniqueFPCBC,iUniqueEPCBC,BCState
 #endif /*USE_HDG*/
@@ -101,65 +181,28 @@ IF(.NOT.UseRayTracing) RETURN
 ! 2) SEE yield for any BC greater than zero
 IF(.NOT.ANY(PartBound%PhotonSEEYield(:).GT.0.)) RETURN
 
-! Surf sides are shared, array calculation can be distributed
-!#if USE_MPI
-!firstSide = INT(REAL( myComputeNodeRank   )*REAL(nComputeNodeSurfTotalSides)/REAL(nComputeNodeProcessors))+1
-!lastSide  = INT(REAL((myComputeNodeRank+1))*REAL(nComputeNodeSurfTotalSides)/REAL(nComputeNodeProcessors))
-!#else
-!firstSide = 1
-!lastSide  = nGlobalSurfSides
-!#endif /*USE_MPI*/
+! Get the time-dependent pulse intensity factor based on the pulse type (square, Gaussian, etc.)
+CALL GetPulseIntensity(TimeScalingFactor)
 
-ASSOCIATE( tau         => Ray%PulseDuration      ,&
-           tShift      => Ray%tShift             ,&
-           lambda      => Ray%WaveLength         ,&
-           Period      => Ray%Period)
-! Temporal bound of integration
-#ifdef LSERK
-IF (iStage.EQ.1) THEN
-t_1 = Time
-t_2 = Time + RK_c(2) * dt
-ELSE
-  IF (iStage.NE.nRKStages) THEN
-    t_1 = Time + RK_c(iStage) * dt
-    t_2 = Time + RK_c(iStage+1) * dt
-  ELSE
-    t_1 = Time + RK_c(iStage) * dt
-    t_2 = Time + dt
-  END IF
-END IF
-#else
-t_1 = Time
-t_2 = Time + dt
-#endif
-
-! Calculate the current pulse
-NbrOfRepetitions = INT(Time/Period)
-
-! Add arbitrary time shift (-4 sigma_t) so that I_max is not at t=0s
-! Note that sigma_t = tau / sqrt(2)
-t_1 = t_1 - tShift - NbrOfRepetitions * Period
-t_2 = t_2 - tShift - NbrOfRepetitions * Period
-
-! check if t_2 is outside of the pulse
-IF(t_2.GT.2.0*tShift) t_2 = 2.0*tShift
-
-TimeScalingFactor = 0.5 * SQRT(PI) * tau * (ERF(t_2/tau)-ERF(t_1/tau))
+! Get the photon energy (currently: single, fixed wave length -> calculate energy once)
+PhotonEnergy = CalcPhotonEnergy(Ray%WaveLength)
 
 #if USE_LOADBALANCE
 CALL LBStartTime(tLBStart)
 #endif /*USE_LOADBALANCE*/
 
-DO BCSideID=1,nBCSides
-  locElemID = SideToElem(S2E_ELEM_ID,BCSideID)
+! Loop over all surface sides (to include inner BCs, which are not part of nBCSides)
+DO iSurfSide = 1, nComputeNodeSurfSides
+  SideID    = SurfSide2GlobalSide(SURF_SIDEID,iSurfSide)
+  ! Determine which element the particles are going to be inserted
+  GlobElemID = SideInfo_Shared(SIDE_ELEMID ,SideID)
+  locElemID = GlobElemID - offsetElem
+  ! Cycle non-local elements
+  IF((locElemID.LE.0).OR.(locElemID.GT.nElems)) CYCLE
   ! Skip elements without ionization
   IF(.NOT.RayElemEmission(1,locElemID)) CYCLE
-  iLocSide  = SideToElem(S2E_LOC_SIDE_ID,BCSideID)
-  SideID    = GetGlobalNonUniqueSideID(offsetElem+locElemID,iLocSide)
-  iSurfSide = GlobalSide2SurfSide(SURF_SIDEID,SideID)
-  !SideID = SurfSide2GlobalSide(SURF_SIDEID,iSurfSide)
-  iPartBound = PartBound%MapToPartBC(SideInfo_Shared(SIDE_BCID,SideID))
   ! Skip non-reflective BC sides
+  iPartBound = PartBound%MapToPartBC(SideInfo_Shared(SIDE_BCID,SideID))
   IF(PartBound%TargetBoundCond(iPartBound).NE.PartBound%ReflectiveBC) CYCLE
   ! Skip BC sides with zero yield
   IF(PartBound%PhotonSEEYield(iPartBound).LE.0.) CYCLE
@@ -177,8 +220,6 @@ DO BCSideID=1,nBCSides
     IPWRITE(UNIT_StdOut,*) "nSpecies   =", nSpecies
     CALL abort(__STAMP__,'Electron species index cannot greater than nSpecies!')
   END IF ! SpecID.eq.0
-  ! Determine which element the particles are going to be inserted
-  GlobElemID = SideInfo_Shared(SIDE_ELEMID ,SideID)
   ! Determine the weighting factor of the electron species
   IF(usevMPF)THEN
     MPF = PartBound%PhotonSEEMacroParticleFactor(iPartBound) ! Use SEE-specific MPF
@@ -188,10 +229,10 @@ DO BCSideID=1,nBCSides
   ! Loop over the subsides
   DO p = 1, Ray%nSurfSample
     DO q = 1, Ray%nSurfSample
+      IF(PhotonSampWall_loc(p,q,iSurfSide).LT.0.0) CALL abort(__STAMP__,'ERROR in PhotoIonization_RayTracing_SEE: PhotonSampWall_loc not defined!')
       ! Calculate the number of SEEs per subside
-      !E_Intensity = PhotonSampWall(2,p,q,iSurfSide) * TimeScalingFactor
-      E_Intensity = PhotonSampWall_loc(p,q,BCSideID) * PhotonSurfSideArea(p,q,iSurfSide) * TimeScalingFactor
-      RealNbrOfSEE = E_Intensity / CalcPhotonEnergy(lambda) * PartBound%PhotonSEEYield(iPartBound) / MPF
+      E_Intensity = PhotonSampWall_loc(p,q,iSurfSide) * PhotonSurfSideArea(p,q,iSurfSide) * TimeScalingFactor
+      RealNbrOfSEE = E_Intensity / PhotonEnergy * PartBound%PhotonSEEYield(iPartBound) / MPF
       ! Add random number to calculated real/float value of SEE particles and user INT()for lower-bound cut-off
       CALL RANDOM_NUMBER(RandVal)
       NbrOfSEE = INT(RealNbrOfSEE+RandVal)
@@ -224,7 +265,7 @@ DO BCSideID=1,nBCSides
           IF(UseBezierControlPoints)THEN
             ! Use Bezier polynomial
             xi=(xiab(:,2)-xiab(:,1))*RandVal2+xiab(:,1)
-            CALL EvaluateBezierPolynomialAndGradient(xi,NGeo,3,BezierControlPoints3D(1:3,0:NGeo,0:NGeo,SideID),Point=Particle_pos(1:3))
+            CALL EvaluateBezierPolynomialAndGradient(xi,NGeo,3,BezierControlPoints3D(1:3,0:NGeo,0:NGeo,SideID),Point=PartPosSurf(1:3))
           ELSE
             ! Sanity check
             CALL abort(__STAMP__,'Photoionization with ray tracing requires BezierControlPoints3D')
@@ -234,11 +275,11 @@ DO BCSideID=1,nBCSides
           ! Move particle slightly into the domain away from the surface because TriaTracking loses the particle during restart
           ! as the InsideQuad3D test returns "not inside" for these particles and they are deleted
           CNElemID = GetCNElemID(GlobElemID)
-          vec(1:3) = ElemBaryNGeo(1:3,CNElemID) - Particle_pos(1:3)
-          Particle_pos(1:3) = Particle_pos(1:3) + 1e-7 * vec(1:3)
+          vec(1:3) = ElemBaryNGeo(1:3,CNElemID) - PartPosSurf(1:3)
+          PartPos(1:3) = PartPosSurf(1:3) + 1e-7 * vec(1:3)
           ! Create new particle
           ! Create with PEM%LastGlobalElemID = 0 to prevent tracking directly after creation
-          CALL CreateParticle(SpecID,Particle_pos(1:3),GlobElemID,0,Velo3D(1:3),0.,0.,0.,NewPartID=PartID,NewMPF=MPF)
+          CALL CreateParticle(SpecID,PartPos(1:3),GlobElemID,0,Velo3D(1:3),0.,0.,0.,NewPartID=PartID,NewMPF=MPF)
           ! 1. Store the particle information in PartStateBoundary.h5
           IF(DoBoundaryParticleOutputRay) CALL StoreBoundaryParticleProperties(PartID,SpecID,PartState(1:3,PartID),&
                                                    UNITVECTOR(PartState(4:6,PartID)),nVec,iPartBound=iPartBound,mode=2,MPF_optIN=MPF)
@@ -246,7 +287,7 @@ DO BCSideID=1,nBCSides
           ! 2. Check if floating boundary conditions (FPC) are used and consider electron holes
           IF(UseFPC)THEN
             iBC = PartBound%MapToFieldBC(iPartBound)
-            IF(iBC.LE.0) CALL abort(__STAMP__,'iBC = PartBound%MapToFieldBC(PartBCIndex) must be >0',IntInfoOpt=iBC)
+            IF(iBC.LE.0) CALL abort(__STAMP__,'UseFPC=T: iBC = PartBound%MapToFieldBC(PartBCIndex) must be >0',IntInfoOpt=iBC)
             IF(BoundaryType(iBC,BC_TYPE).EQ.20)THEN ! BCType = BoundaryType(iBC,BC_TYPE)
               BCState = BoundaryType(iBC,BC_STATE) ! State is iFPC
               iUniqueFPCBC = FPC%Group(BCState,2)
@@ -257,7 +298,7 @@ DO BCSideID=1,nBCSides
           ! 3. Check if electric potential condition (EPC) are used and consider electron holes
           IF(UseEPC)THEN
             iBC = PartBound%MapToFieldBC(iPartBound)
-            IF(iBC.LE.0) CALL abort(__STAMP__,'iBC = PartBound%MapToFieldBC(PartBCIndex) must be >0',IntInfoOpt=iBC)
+            IF(iBC.LE.0) CALL abort(__STAMP__,'UseEPC=T: iBC = PartBound%MapToFieldBC(PartBCIndex) must be >0',IntInfoOpt=iBC)
             IF(BoundaryType(iBC,BC_TYPE).EQ.8)THEN ! BCType = BoundaryType(iBC,BC_TYPE)
               BCState = BoundaryType(iBC,BC_STATE) ! State is iEPC
               iUniqueEPCBC = EPC%Group(BCState,2)
@@ -266,6 +307,7 @@ DO BCSideID=1,nBCSides
           END IF ! UseEPC
 
           ! 3. Check if SEE holes are to be deposited
+          ! 3a. VDL
           IF(DoVirtualDielectricLayer)THEN
             IF(ABS(PartBound%PermittivityVDL(iPartBound)).GT.0.0)THEN
               ! Set velocity to zero as these virtual particles are deleted after the tracking/MPI communication step
@@ -274,7 +316,7 @@ DO BCSideID=1,nBCSides
               ! Create particle (with opposite charge by setting a nagative species index)
               ! Create with PEM%LastGlobalElemID = GlobElemID to trigger tracking directly after creation to find a possible new host
               ! element
-              CALL CreateParticle(SpecID,Particle_pos(1:3),GlobElemID,GlobElemID,Velo3D(1:3),0.,0.,0.,NewPartID=PartID,NewMPF=MPF)
+              CALL CreateParticle(SpecID,PartPosSurf(1:3),GlobElemID,GlobElemID,Velo3D(1:3),0.,0.,0.,NewPartID=PartID,NewMPF=MPF)
 
               ! Set new particle position: Shift away from face by ratio of real VDL thickness and permittivity.
               ! Note the negative sign that is required as the normal vector points outwards has already been applied above
@@ -288,6 +330,19 @@ DO BCSideID=1,nBCSides
               PartSpecies(PartID) = -PartSpecies(PartID)
             END IF ! ABS(PartBound%PermittivityVDL(iPartBound)).GT.0.0
           END IF ! DoVirtualDielectricLayer
+
+          ! 3b. 2D surface charge deposition
+          IF(Do2DSurfaceCharge) THEN
+            iBC = PartBound%MapToFieldBC(iPartBound)
+            IF(iBC.LE.0) CALL abort(__STAMP__,'Do2DSurfaceCharge=T: iBC = PartBound%MapToFieldBC(PartBCIndex) must be >0',IntInfoOpt=iBC)
+            ! Method 3: 2D Surface Charging
+            IF (PartBound%UseSurfaceCharge(iBC)) THEN
+              ! Calculate the opposite charge
+              ChargeHole = -Species(SpecID)%ChargeIC*MPF
+              ! Deposit the charge(s). Use the previously calcualted reference coordinates xi(1:2) directly
+              CALL DepositParticleOnSurface(ChargeHole, PartPosSurf(1:3), GlobElemID, SideID, PartID=0, xi=xi(1:2))
+            END IF ! PartBound%UseSurfaceCharge(locBCID)
+          END IF ! Do2DSurfaceCharge
 #endif /*USE_HDG*/
         END DO ! iPart = 1, NbrOfSEE
       END IF ! NbrOfSEE.GT.0
@@ -296,9 +351,7 @@ DO BCSideID=1,nBCSides
 #if USE_LOADBALANCE
 CALL LBElemSplitTime(locElemID,tLBStart)
 #endif /*USE_LOADBALANCE*/
-END DO
-
-END ASSOCIATE
+END DO ! iSurfSide = 1, nComputeNodeSurfSides
 
 END SUBROUTINE PhotoIonization_RayTracing_SEE
 
@@ -312,14 +365,14 @@ SUBROUTINE PhotoIonization_RayTracing_Volume()
 USE MOD_Globals
 ! Variables
 USE MOD_Globals_Vars            ,ONLY: PI, c
-USE MOD_Timedisc_Vars           ,ONLY: dt,time
+USE MOD_Timedisc_Vars           ,ONLY: dt
 USE MOD_Mesh_Vars               ,ONLY: nElems, offsetElem
 USE MOD_Mesh_Vars               ,ONLY: NGeo,wBaryCL_NGeo,XiCL_NGeo,XCL_NGeo
 USE MOD_RayTracing_Vars         ,ONLY: UseRayTracing, Ray,RayElemEmission
 USE MOD_RayTracing_Vars         ,ONLY: U_N_Ray_loc,N_DG_Ray_loc,N_Inter_Ray
 USE MOD_RayTracing_Vars         ,ONLY: RaySecondaryVectorX,RaySecondaryVectorY,RaySecondaryVectorZ
 USE MOD_Particle_Vars           ,ONLY: Species, PartState, usevMPF, PartMPF, PDM, PEM, PartSpecies
-USE MOD_DSMC_Vars               ,ONLY: ChemReac, DSMC, BGGas, Coll_pData, CollisMode, PartStateIntEn
+USE MOD_DSMC_Vars               ,ONLY: ChemReac, DSMC, BGGas, Coll_pData, CollisMode
 USE MOD_DSMC_Vars               ,ONLY: newAmbiParts, iPartIndx_NodeNewAmbi
 ! Functions/Subroutines
 USE MOD_Eval_xyz                ,ONLY: TensorProductInterpolation
@@ -329,7 +382,7 @@ USE MOD_part_emission_tools     ,ONLY: CalcVelocity_maxwell_lpn
 USE MOD_DSMC_PolyAtomicModel    ,ONLY: DSMC_SetInternalEnr
 USE MOD_part_tools              ,ONLY: CalcVelocity_maxwell_particle
 #if defined(LSERK)
-USE MOD_TimeDisc_Vars           ,ONLY: iStage,nRKStages,RK_c
+USE MOD_TimeDisc_Vars           ,ONLY: nRKStages,RK_c
 #endif /*defined(LSERK)*/
 USE MOD_Particle_Boundary_Tools ,ONLY: StoreBoundaryParticleProperties
 USE MOD_Particle_Boundary_Vars  ,ONLY: DoBoundaryParticleOutputRay
@@ -349,9 +402,8 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 INTEGER               :: iElem,k,l,m,iReac,iPair,iGlobalElem,iVar
 INTEGER               :: SpecID,nPair,NRayLoc,BGGSpecID
-INTEGER               :: NbrOfRepetitions
 INTEGER               :: PartID,newPartID
-REAL                  :: t_1, t_2, E_Intensity, TimeScalingFactor
+REAL                  :: E_Intensity, TimeScalingFactor, PhotonEnergy
 REAL                  :: density, NbrOfPhotons, NbrOfReactions
 REAL                  :: RandNum,RandVal(3),Xi(3)
 REAL                  :: RandomPos(1:3),MPF
@@ -369,42 +421,11 @@ IF(CollisMode.NE.3) RETURN
 
 IF(.NOT.ChemReac%AnyPhIonReaction) RETURN
 
-! Determine the time-dependent ray intensity
-ASSOCIATE(tau         => Ray%PulseDuration      ,&
-          tShift      => Ray%tShift             ,&
-          lambda      => Ray%WaveLength         ,&
-          Period      => Ray%Period)
+! Get the time-dependent pulse intensity factor based on the pulse type (square, Gaussian, etc.)
+CALL GetPulseIntensity(TimeScalingFactor)
 
-#ifdef LSERK
-IF (iStage.EQ.1) THEN
-t_1 = Time
-t_2 = Time + RK_c(2) * dt
-ELSE
-  IF (iStage.NE.nRKStages) THEN
-    t_1 = Time + RK_c(iStage) * dt
-    t_2 = Time + RK_c(iStage+1) * dt
-  ELSE
-    t_1 = Time + RK_c(iStage) * dt
-    t_2 = Time + dt
-  END IF
-END IF
-#else
-t_1 = Time
-t_2 = Time + dt
-#endif
-
-! Calculate the current pulse
-NbrOfRepetitions = INT(Time/Period)
-
-! Add arbitrary time shift (-4 sigma_t) so that I_max is not at t=0s
-! Note that sigma_t = tau / sqrt(2)
-t_1 = t_1 - tShift - NbrOfRepetitions * Period
-t_2 = t_2 - tShift - NbrOfRepetitions * Period
-
-! check if t_2 is outside of the pulse
-IF(t_2.GT.2.0*tShift) t_2 = 2.0*tShift
-
-TimeScalingFactor = 0.5 * SQRT(PI) * tau * (ERF(t_2/tau)-ERF(t_1/tau))
+! Get the photon energy (currently: single, fixed wave length -> calculate energy once)
+PhotonEnergy = CalcPhotonEnergy(Ray%WaveLength)
 
 #if USE_LOADBALANCE
 CALL LBStartTime(tLBStart)
@@ -440,11 +461,11 @@ DO iVar = 1, 2
       DO l=0,NRayLoc
         DO k=0,NRayLoc
           E_Intensity = U_N_Ray_loc(iElem)%U(iVar,k,l,m) * TimeScalingFactor
-          ! Number of photons (TODO: spectrum)
-          NbrOfPhotons = E_Intensity / (CalcPhotonEnergy(lambda) * c * dt)
+          ! Number of photons (spectrum not implemented)
+          NbrOfPhotons = E_Intensity / (PhotonEnergy * c * dt)
           DO iReac = 1, ChemReac%NumOfReact
             SpecID = ChemReac%Reactants(iReac,1)
-            ! TODO: Background gas density distribution
+            ! FEATURE: Background gas density distribution
             BGGSpecID = BGGas%MapSpecToBGSpec(SpecID)
             density = BGGas%NumberDensity(BGGSpecID)
             ! Determine the number of particles to insert
@@ -554,9 +575,6 @@ DO iVar = 1, 2
               END IF ! DoBoundaryParticleOutputRay
               ! Velocity (set it to zero, as it will be subtracted in the chemistry module)
               PartState(4:6,newPartID) = 0.
-              ! Internal energies (set it to zero)
-              PartStateIntEn(1:2,newPartID) = 0.
-              IF(DSMC%ElectronicModel.GT.0) PartStateIntEn(3,newPartID) = 0.
               ! Insert the products and distribute the reaction energy (Requires: Pair indices, Coll_pData(iPair)%iPart_p1/2)
               IF(DoBoundaryParticleOutputRay) THEN
                 ! Store the electron particle information in PartStateBoundary.h5
@@ -577,55 +595,7 @@ DO iVar = 1, 2
   END DO            ! iElem = 1, nElems
 END DO              ! iVar = 1, 2
 
-
-END ASSOCIATE
-
 END SUBROUTINE PhotoIonization_RayTracing_Volume
 
-
-! SUBROUTINE CalcPhotoIonizationNumber(iReac,iElem,NbrOfPhotons,NbrOfReactions)
-! !===================================================================================================================================
-! !>
-! !===================================================================================================================================
-! ! MODULES
-! USE MOD_Globals
-! USE MOD_Globals_Vars  ,ONLY: c
-! USE MOD_Particle_Vars ,ONLY: Species
-! USE MOD_DSMC_Vars     ,ONLY: BGGas,ChemReac
-! USE MOD_TimeDisc_Vars ,ONLY: dt
-! ! IMPLICIT VARIABLE HANDLING
-! IMPLICIT NONE
-! !-----------------------------------------------------------------------------------------------------------------------------------
-! ! INPUT VARIABLES
-! INTEGER, INTENT(IN)           :: i
-! REAL, INTENT(IN)              :: NbrOfPhotons
-! !-----------------------------------------------------------------------------------------------------------------------------------
-! ! OUTPUT VARIABLES
-! REAL, INTENT(OUT)             :: NbrOfReactions
-! !-----------------------------------------------------------------------------------------------------------------------------------
-! ! LOCAL VARIABLES
-! INTEGER                       :: iReac,SpecID
-! REAL                          :: density
-! !===================================================================================================================================
-
-! SpecID = ChemReac%Reactants(iReac,1)
-
-! ! TODO: Background gas density distribution
-! density = BGGas%NumberDensity(BGGas%MapSpecToBGSpec(SpecID))
-! ! TODO: Variable particle weight
-! ! TODO: Variable particle time step
-
-! SELECT CASE(TRIM(ChemReac%ReactModel(iReac)))
-! CASE('phIon')
-!   ! Collision number: Z = n_gas * n_ph * sigma_reac * v (in the case of photons its speed of light)
-!   ! Number of reactions: N = Z * dt * V (number of photons cancels out the volume)
-!   NbrOfReactions = density * NbrOfPhotons * ChemReac%CrossSection(iReac) * c * dt / Species(SpecID)%MacroParticleFactor
-! CASE('phIonXSec')
-!   ! TODO:
-! CASE DEFAULT
-!   CYCLE
-! END SELECT
-
-! END SUBROUTINE CalcPhotoIonizationNumber
 
 END MODULE MOD_Particle_Photoionization

@@ -25,7 +25,7 @@ ABSTRACT INTERFACE
   SUBROUTINE RotRelaxDiaRoutine(iPair,iPart,FakXi)
     INTEGER,INTENT(IN)          :: iPair, iPart               ! index of collision pair
     REAL,INTENT(IN)             :: FakXi
-  END SUBROUTINE
+  END SUBROUTINE RotRelaxDiaRoutine
 END INTERFACE
 
 PROCEDURE(RotRelaxDiaRoutine),POINTER :: RotRelaxDiaRoutineFuncPTR !< pointer defining the function called for rotational relaxation
@@ -52,10 +52,9 @@ CONTAINS
 SUBROUTINE DSMC_RotRelaxDiaQuant(iPair,iPart,FakXi)
 ! MODULES
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, Coll_pData, SpecDSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, Coll_pData, SpecDSMC
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
-
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -100,7 +99,7 @@ DO WHILE (ARM)
     ARM = .FALSE.
   END IF
 END DO
-PartStateIntEn( 2,iPart) = REAL(iQuant) * (REAL(iQuant) + 1.) * BoltzmannConst * SpecDSMC(iSpec)%CharaTRot
+PartIntEn(iPart)%ERot = REAL(iQuant) * (REAL(iQuant) + 1.) * BoltzmannConst * SpecDSMC(iSpec)%CharaTRot
 END SUBROUTINE DSMC_RotRelaxDiaQuant
 
 
@@ -111,7 +110,7 @@ END SUBROUTINE DSMC_RotRelaxDiaQuant
 !===================================================================================================================================
 SUBROUTINE DSMC_RotRelaxDiaContinuous(iPair,iPart,FakXi)
 ! MODULES
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, Coll_pData, SpecDSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, Coll_pData, SpecDSMC
 USE MOD_Particle_Vars         ,ONLY: UseVarTimeStep, usevMPF
 USE MOD_Particle_Vars         ,ONLY: PartSpecies
 USE MOD_part_tools            ,ONLY: GetParticleWeight
@@ -140,8 +139,7 @@ iSpec = PartSpecies(iPart)
 ! fix for changed FakXi for polyatomic
 LocalFakXi = FakXi + 0.5*SpecDSMC(iSpec)%Xi_Rot
 CALL RANDOM_NUMBER(iRan)
-PartStateIntEn(2, iPart) = CollEnergy * (1.0 - iRan**(1.0/LocalFakXi))
-
+PartIntEn(iPart)%ERot = CollEnergy * (1.0 - iRan**(1.0/LocalFakXi))
 END SUBROUTINE DSMC_RotRelaxDiaContinuous
 
 
@@ -150,7 +148,7 @@ END SUBROUTINE DSMC_RotRelaxDiaContinuous
 !===================================================================================================================================
 SUBROUTINE DSMC_VibRelaxDiatomic(iPair, iPart, FakXi)
 ! MODULES
-USE MOD_DSMC_Vars             ,ONLY: DSMC, SpecDSMC, PartStateIntEn, Coll_pData, AHO
+USE MOD_DSMC_Vars             ,ONLY: DSMC, SpecDSMC, PartIntEn, Coll_pData, AHO
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst, PlanckConst, c
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, UseVarTimeStep, usevMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
@@ -206,7 +204,7 @@ IF(DSMC%VibAHO) THEN ! AHO
     END IF
   END DO
   ! vibrational energy is table value of the accepted quantum number
-  PartStateIntEn(1,iPart) = AHO%VibEnergy(iSpec,iQua)
+  PartIntEn(iPart)%EVib = AHO%VibEnergy(iSpec,iQua)
 ELSE ! SHO
   MaxColQua = Ec/(BoltzmannConst*SpecDSMC(iSpec)%CharaTVib) - DSMC%GammaQuant
   iQuaMax = MIN(INT(MaxColQua) + 1, SpecDSMC(iSpec)%MaxVibQuant)
@@ -219,7 +217,7 @@ ELSE ! SHO
     iQua = INT(iRan * iQuaMax)
     CALL RANDOM_NUMBER(iRan)
   END DO
-  PartStateIntEn(1,iPart) = (iQua + DSMC%GammaQuant) * BoltzmannConst * SpecDSMC(iSpec)%CharaTVib
+  PartIntEn(iPart)%EVib  = (iQua + DSMC%GammaQuant) * BoltzmannConst * SpecDSMC(iSpec)%CharaTVib
 END IF
 
 END SUBROUTINE DSMC_VibRelaxDiatomic
@@ -331,7 +329,7 @@ USE MOD_Globals            ,ONLY: Abort
 USE MOD_Globals_Vars       ,ONLY: Pi, BoltzmannConst
 USE MOD_Particle_Vars      ,ONLY: UseVarTimeStep, usevMPF
 USE MOD_part_tools         ,ONLY: GetParticleWeight
-USE MOD_DSMC_Vars          ,ONLY: SpecDSMC, Coll_pData, PartStateIntEn, DSMC, useRelaxProbCorrFactor, CollInf
+USE MOD_DSMC_Vars          ,ONLY: SpecDSMC, Coll_pData, PartIntEn, DSMC, useRelaxProbCorrFactor, CollInf
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -355,7 +353,7 @@ ELSE
 END IF
 
 RotDOF     = SpecDSMC(iSpec1)%Xi_Rot
-RotEn      = PartStateIntEn(2,iPart)
+RotEn      = PartIntEn(iPart)%ERot(1)
 ProbRot    = 0.
 ProbRotMax = 0.
 
@@ -446,7 +444,7 @@ SUBROUTINE DSMC_calc_P_vib(iPair, iPart, iSpec, jSpec, Xi_rel, iElem, ProbVib)
 USE MOD_Globals            ,ONLY: Abort
 USE MOD_Globals_Vars       ,ONLY: BoltzmannConst, PlanckConst, c, eV2Joule
 USE MOD_DSMC_Vars          ,ONLY: SpecDSMC, DSMC, VarVibRelaxProb, useRelaxProbCorrFactor, PolyatomMolDSMC, CollInf, Coll_pData, AHO
-USE MOD_DSMC_Vars          ,ONLY: PartStateIntEn
+USE MOD_DSMC_Vars          ,ONLY: PartIntEn
 USE MOD_MCC_Vars           ,ONLY: XSec_Relaxation, SpecXSec
 USE MOD_MCC_XSec           ,ONLY: XSec_CalcVibRelaxProb
 USE MOD_Part_Tools         ,ONLY: GetParticleWeight
@@ -513,9 +511,9 @@ ELSE IF(DSMC%VibRelaxProb.EQ.3.0) THEN
   ! Calculation of vibrational relaxation probability according to Bird, can be used with SHO and AHO
   ! collision energy = relative translational energy of iPair + pre-collision vibrational energy of iPart
   IF (usevMPF.OR.UseVarTimeStep) THEN
-    Ec = (Coll_pData(iPair)%Ec + PartStateIntEn(1,iPart)*GetParticleWeight(iPart)) / GetParticleWeight(iPart)
+    Ec = (Coll_pData(iPair)%Ec + PartIntEn(iPart)%EVib(1)*GetParticleWeight(iPart)) / GetParticleWeight(iPart)
   ELSE
-    Ec = Coll_pData(iPair)%Ec + PartStateIntEn(1,iPart)*GetParticleWeight(iPart)
+    Ec = Coll_pData(iPair)%Ec + PartIntEn(iPart)%EVib(1)*GetParticleWeight(iPart)
   END IF
   ! dissociation temperature
   DissTemp = SpecDSMC(iSpec)%Ediss_eV * eV2Joule / BoltzmannConst

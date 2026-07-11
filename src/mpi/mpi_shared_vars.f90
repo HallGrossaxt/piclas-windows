@@ -76,4 +76,4 @@ TYPE(MPI_Info)     :: MPI_INFO_SHARED_LOOSE                 !> MPI_INFO object a
 
 !> Other variables in particle_mesh_vars.f90
 #endif /*USE_MPI*/
-END MODULE
+END MODULE MOD_MPI_Shared_Vars

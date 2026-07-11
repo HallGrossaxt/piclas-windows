@@ -15,7 +15,17 @@
 !> Provides parameters, used globally (please use EXTREMELY carefully!)
 !===================================================================================================================================
 MODULE MOD_Globals_Vars
-! MODULES
+! Kind type parameters to specify a REAL type with a storage size of 32, 64, and 128 bits.
+! It is negative if a target platform does not support the particular kind.
+USE, INTRINSIC :: ISO_FORTRAN_ENV, ONLY: sp => real32, &
+                                         dp => real64, &
+                                         qp => real128
+! Kind type parameters to specify an INTEGER type with a storage size of 8, 16, 32, and 64 bits.
+! It is negative if a target platform does not support the particular kind.
+USE, INTRINSIC :: ISO_FORTRAN_ENV, ONLY: i1 => int8,  &
+                                         i2 => int16, &
+                                         i4 => int32, &
+                                         i8 => int64
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -23,9 +33,9 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 CHARACTER(LEN=6),PARAMETER :: ProgramName  = 'PICLas'              !> name of this program
 INTEGER,PARAMETER          :: MajorVersion = 4                     !> FileVersion number saved in each hdf5 file with hdf5 header
-INTEGER,PARAMETER          :: MinorVersion = 1                     !> FileVersion number saved in each hdf5 file with hdf5 header
+INTEGER,PARAMETER          :: MinorVersion = 2                     !> FileVersion number saved in each hdf5 file with hdf5 header
 INTEGER,PARAMETER          :: PatchVersion = 0                     !> FileVersion number saved in each hdf5 file with hdf5 header
-REAL,PARAMETER             :: FileVersionReal  = REAL(MajorVersion,8)+REAL(MinorVersion,8)/10._8+REAL(PatchVersion,8)/100._8
+REAL,PARAMETER             :: FileVersionReal  = REAL(MajorVersion,8)+REAL(MinorVersion,8)/10.+REAL(PatchVersion,8)/100.
                                                                    !> OLD number saved in each hdf5 file with hdf5 header
 INTEGER,PARAMETER          :: FileVersionInt = PatchVersion+MinorVersion*100+MajorVersion*10000
                                                                    !>  NEWnumber saved in each hdf5 file with hdf5 header
@@ -45,11 +55,11 @@ REAL                       :: SimulationEfficiency                 !> relates th
 REAL                       :: StartT                               !> Timer start
 REAL                       :: PID                                  !> Performance index: (CalcTimeEnd-CalcTimeStart)*nProcessors/(nGlobalElems*(PP_N+1)**3*iter_loc)
 REAL                       :: memory(1:4)                          !> RAM: used, available, total and initial (total at the beginning of the simulation)
-REAL,PARAMETER             :: PI=ACOS(-1.0_8)                      !> the number pi ~= 3.14
-REAL,PARAMETER             :: sPI=1.0_8/PI                          !> inverse of pi
+REAL,PARAMETER             :: PI=ACOS(-1.0)                         !> the number pi ~= 3.14
+REAL,PARAMETER             :: sPI=1.0/PI                            !> inverse of pi
 REAL,PARAMETER             :: epsMach=EPSILON(0.0)                  !> Machine accuracy
-REAL,PARAMETER             :: TwoepsMach=2.0_8*epsMach              !> twice the machine accuracy
-REAL,PARAMETER             :: EuMas          = 0.577215664901533_8  !> Euler-Mascheroni constant
+REAL,PARAMETER             :: TwoepsMach=2.0d0*epsMach              !> twice the machine accuracy
+REAL,PARAMETER             :: EuMas          = 0.577215664901533_dp !> Euler-Mascheroni constant
 REAL,PARAMETER             :: PlanckConst    = 6.62606957e-34       !> Planck constant [J s] SI-Unit!
 REAL,PARAMETER             :: ElementaryCharge = 1.602176634e-19    !> redefinition of SI base units in 2018-2019,
                                                                     !> => negative charge of an electron, eV to Joule, ...
@@ -68,7 +78,7 @@ REAL,PARAMETER             :: BohrRadius     = 5.2917721067E-11     !> Radius, 1
 REAL,PARAMETER             :: AtomicMassUnit = 1.660539040E-27      !> Atomic mass unit [kg]
 REAL,PARAMETER             :: GravityAccelerationEarth = 9.8067     !> Acceleration due to Earth's gravity [m/s^2]
 
-REAL,PARAMETER             :: maxEXP= LOG(HUGE(0.))
+REAL,PARAMETER             :: maxEXP= LOG(HUGE(1.))
 ! Set variables (natural constants and derived quantities) from user input or hard coded
 ! depending on compile flag (PICLAS_READIN_CONSTANTS=ON)
 #if USE_READIN_CONSTANTS
@@ -91,7 +101,5 @@ REAL,PARAMETER :: c_inv  = 1/c                !> 1/c   = 3.3356409519815204e-9 [
 REAL,PARAMETER :: RelativisticLimit = 1e12    !> for comparison with velocity^2 when speed of light is 299792458. Corresponds to 0.3% speed of light
 #endif /*USE_READIN_CONSTANTS*/
 !===================================================================================================================================
-
-!CONTAINS
 
 END MODULE MOD_Globals_Vars

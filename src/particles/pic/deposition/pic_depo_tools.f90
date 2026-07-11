@@ -19,30 +19,260 @@ MODULE MOD_PICDepo_Tools
 IMPLICIT NONE
 PRIVATE
 !===================================================================================================================================
-INTERFACE DepositParticleOnNodes
-  MODULE PROCEDURE DepositParticleOnNodes
-END INTERFACE
-
-INTERFACE CalcCellLocNodeVolumes
-  MODULE PROCEDURE CalcCellLocNodeVolumes
-END INTERFACE
-
-INTERFACE ReadTimeAverage
-  MODULE PROCEDURE ReadTimeAverage
-END INTERFACE
-
-INTERFACE beta
-  MODULE PROCEDURE beta
-END INTERFACE
-
-INTERFACE DepositPhotonSEEHoles
-  MODULE PROCEDURE DepositPhotonSEEHoles
-END INTERFACE
-
 PUBLIC:: DepositParticleOnNodes,CalcCellLocNodeVolumes,ReadTimeAverage,beta,DepositPhotonSEEHoles
+PUBLIC:: DepositParticleOnSurface
 !===================================================================================================================================
 
 CONTAINS
+
+
+!===================================================================================================================================
+!> Two-dimensional particle deposition on surface with linear weighting in reference space.
+!> NOTE: This routine is one of three methods used during the development. Check the history for DepositParticleOnSurface1 and
+!> DepositParticleOnSurface2 for past implementations to see how these worked.
+!>
+!> This routine deposits the charge of a single particle on the face on an element with the relationshops between the nodes are
+!> depicted below.
+!>
+!>   Example: Relationship between NonUniqueVertexID, NonUniqueNodeID and FEMVertexID
+!>              for the same side (periodic mesh in y- and z-direction)
+!>
+!>                               8                  7                  1
+!>                             /|                 /|                 /|
+!>       |y                   / |                / |                / |
+!>       |                   /  |               /  |               /  |
+!>       |                5 /   |            5 /   |            1 /   |
+!>       |______x          |    |             |    |             |    |
+!>       /                 |   / 4            |   / 3            |   / 1
+!>      /                  |  /               |  /               |  /
+!>     /z                  | /                | /                | /
+!>                         |/                 |/                 |/
+!>                        1                  1                  1
+!>                  NonUniqueVertexID    NonUniqueNodeID      FEMVertexID
+!>                     (iVertexInd)
+!>
+!===================================================================================================================================
+SUBROUTINE DepositParticleOnSurface(Charge,PartPos,GlobalElemID,NonUniqueGlobalSideID,PartID,xi)
+! MODULES
+USE MOD_Globals
+#if USE_LOADBALANCE
+USE MOD_Mesh_Vars              ,ONLY: offsetElem
+USE MOD_LoadBalance_Timers     ,ONLY: LBStartTime,LBElemPauseTime
+#endif /*USE_LOADBALANCE*/
+#if USE_MPI
+USE MOD_PICDepo_Vars           ,ONLY: SurfNodeSourceMPI
+#else
+USE MOD_PICDepo_Vars           ,ONLY: SurfNodeSource
+#endif /*USE_MPI*/
+USE MOD_Mesh_Vars              ,ONLY: NonUniqueGlobalNodeIDToFEMVertexID
+USE MOD_Mesh_Vars              ,ONLY: NonUniqueGlobalSideIDToNonUniqueGlobalNodeID
+USE MOD_PICDepo_Vars           ,ONLY: FEMVertexID2DepoSurfNodeID
+USE MOD_Mesh_Tools             ,ONLY: GetCNElemID
+USE MOD_Particle_Intersection  ,ONLY: ComputeBiLinearIntersection
+USE MOD_Particle_Tracking_Vars ,ONLY: TrackInfo
+!----------------------------------------------------------------------------------------------------------------------------------!
+IMPLICIT NONE
+! INPUT / OUTPUT VARIABLES
+REAL,INTENT(IN)                  :: Charge        !< Charge that is deposited on nodes
+REAL,INTENT(IN)                  :: PartPos(1:3)
+INTEGER,INTENT(IN)               :: GlobalElemID
+INTEGER,INTENT(IN)               :: NonUniqueGlobalSideID
+INTEGER,INTENT(IN)               :: PartID
+REAL,INTENT(IN),OPTIONAL         :: xi(1:2)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+#if USE_LOADBALANCE
+REAL            :: tLBStart
+#endif /*USE_LOADBALANCE*/
+INTEGER         :: iNode
+INTEGER         :: NonUniqueNodeID,FEMVertexID,iDepoSurfNodeID
+REAL, PARAMETER :: EPS=1E-10
+REAL            :: alpha1, alpha2, DepoWeights(1:4)
+REAL            :: xi2,eta2,lengthPartTrajectory
+LOGICAL         :: isHit
+!===================================================================================================================================
+! Skip neutral and reflected particles. Deposit only particles that are deleted on the surface or change their charge on contact
+! (e.g. neutralization)
+IF(ABS(Charge).LE.0.0) RETURN
+
+#if USE_LOADBALANCE
+! Only measure time if particle is deposited on local proc
+IF(ElementOnProc(GlobalElemID)) CALL LBStartTime(tLBStart) ! Start time measurement
+#endif /*USE_LOADBALANCE*/
+
+#if USE_MPI
+! Single-core: Use SurfNodeSource directly as SurfNodeSourceMPI does not exist
+! Multi-core: Use local container SurfNodeSourceMPI, which is later exchanged
+! between the adjacent processes and then added to SurfNodeSourceExt
+ASSOCIATE( SurfNodeSource => SurfNodeSourceMPI )
+#endif
+
+!    ________________________
+!   |               :        |
+!   |      A1       :   A2   |
+!   |...............:........|
+!   |               :        |
+!   |               :        |  ^
+!   |               :        |  |
+!   |               :        |  |
+!   |      A4       :   A3   |  alpha2
+!   |               :        |  |
+!   |               :        |  |
+!   |               :        |
+!   |               :        |
+!   |_______________:________|
+!
+!        --- alpha1 --->
+
+IF (PartID.GT.0) THEN
+  lengthPartTrajectory = VECNORM3D(TrackInfo%PartTrajectory(1:3))
+  CALL ComputeBiLinearIntersection(isHit,& ! OUT
+                                   TrackInfo%PartTrajectory, lengthPartTrajectory, TrackInfo%alpha,& ! IN
+                                   xi2,eta2,& ! OUT
+                                   PartID,NonUniqueGlobalSideID) ! IN
+  alpha1=0.5*(xi2+1.0)
+  alpha2=0.5*(eta2+1.0)
+ELSE
+  IF(.NOT.PRESENT(xi)) CALL abort(__STAMP__,' DepositParticleOnSurface: PartID=0 requires xi(1:2) argument containing xi and eta coordinates', IERROR)
+  alpha1=0.5*(xi(1)+1.0)
+  alpha2=0.5*(xi(2)+1.0)
+END IF ! PartID.GT.0
+
+DepoWeights(2) = (1-alpha1)*(1-alpha2)
+DepoWeights(1) = (alpha1)*(1-alpha2)
+DepoWeights(4) = (alpha1)*  (alpha2)
+DepoWeights(3) = (1-alpha1)*  (alpha2)
+
+DO iNode = 1, 4
+  ! Get the non-unique node index
+  NonUniqueNodeID = NonUniqueGlobalSideIDToNonUniqueGlobalNodeID(iNode,NonUniqueGlobalSideID)
+  ! Get the unique FEM vertex index
+  FEMVertexID = NonUniqueGlobalNodeIDToFEMVertexID(NonUniqueNodeID)
+  ! Get surface deposition node index
+  iDepoSurfNodeID = FEMVertexID2DepoSurfNodeID(FEMVertexID)
+  ! Add charge contribution
+  SurfNodeSource(iDepoSurfNodeID) = SurfNodeSource(iDepoSurfNodeID) + DepoWeights(iNode)*Charge
+END DO ! iNode = 1, 4
+#if USE_MPI
+END ASSOCIATE
+#endif
+
+#if USE_LOADBALANCE
+! Only measure time if particle is deposited on local proc
+IF(ElementOnProc(GlobalElemID)) CALL LBElemPauseTime(GlobalElemID-offsetElem,tLBStart)
+#endif /*USE_LOADBALANCE*/
+
+END SUBROUTINE DepositParticleOnSurface
+
+
+FUNCTION Calc_inv2D(M)
+!===================================================================================================================================
+!> calc inverse of M
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+REAL,INTENT(IN)          :: M(2,2)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL                     :: Calc_inv2D(2,2)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                     :: M_inv(2,2)
+REAL                     :: detjb
+!===================================================================================================================================
+M_inv = 0.
+! Determines the determinant of xj and checks for zero values
+detjb = M (1, 1) * M (2, 2) - M (1, 2) * M (2, 1)
+IF ( detjb == 0.d0 ) then
+  IPWRITE(UNIT_errOut,*)"Determinant is:",detjb
+  IPWRITE(UNIT_errOut,*)"KM:",M_inv
+  CALL abort(__STAMP__,"Zero determinant of Jacobian in M_inv")
+END IF
+! Determines the inverse of xj
+M_inv (1, 1) = M (2, 2)/ detjb
+M_inv (1, 2) = - M (1, 2) / detjb
+M_inv (2, 1) = - M (2, 1) / detjb
+M_inv (2, 2) = M (1, 1) / detjb
+Calc_inv2D = M_inv
+END FUNCTION Calc_inv2D
+
+
+FUNCTION Calc_dF_inv2D(xi,P)
+!===================================================================================================================================
+!===================================================================================================================================
+! MODULES
+  USE MOD_Globals,        ONLY : Abort
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+REAL,INTENT(IN)          :: xi(2)
+REAL,INTENT(IN)          :: P(2,4)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL                     :: Calc_dF_inv2D(2,2)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                     :: dF(2,2)
+REAL                     :: dF_inv(2,2)
+REAL                     :: detjb
+!===================================================================================================================================
+dF = 0.
+dF(:,1)= 0.25 * ((P(:,2)-P(:,1))*(1-xi(2))+(P(:,3)-P(:,4))*(1+xi(2)))
+dF(:,2)= 0.25 * ((P(:,4)-P(:,1))*(1-xi(1))+(P(:,3)-P(:,2))*(1+xi(1)))
+
+! Determines the determinant of xj and checks for zero values
+!
+detjb = dF(1, 1) * dF(2, 2) - dF(1, 2) * dF(2, 1)
+
+IF ( detjb <= 0.d0 ) then
+  WRITE(*,*)"Negative determinant of Jacobian in calc_df_inv:"
+  WRITE(*,*)"dF",dF
+  WRITE(*,*)"Determinant is:",detjb
+  CALL Abort(&
+       __STAMP__,&
+      'Negative determinant of Jacobian in calc_df_inv')
+END IF
+!
+! Determines the inverse of xj
+!
+dF_inv(1, 1) = dF(2, 2) / detjb
+dF_inv(1, 2) = - dF(1, 2) / detjb
+dF_inv(2, 1) = - dF(2, 1) / detjb
+dF_inv(2, 2) = dF(1, 1) / detjb
+
+Calc_dF_inv2D = dF_inv
+
+END FUNCTION Calc_dF_inv2D
+
+FUNCTION Calc_F2D(xi,x,P)
+!===================================================================================================================================
+!===================================================================================================================================
+! MODULES
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+REAL,INTENT(IN)          :: xi(2)
+REAL,INTENT(IN)          :: x(2)
+REAL,INTENT(IN)          :: P(2,4)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL                     :: Calc_F2D(2)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+!===================================================================================================================================
+Calc_F2D = 0.25 *(P(:,1)*(1-xi(1)) * (1-xi(2)) &
+              + P(:,2)*(1+xi(1)) * (1-xi(2)) &
+              + P(:,3)*(1+xi(1)) * (1+xi(2)) &
+              + P(:,4)*(1-xi(1)) * (1+xi(2))) &
+              - x;
+END FUNCTION Calc_F2D
+
 
 !===================================================================================================================================
 !> Deposit surface charge of positive charges (electron holes) due to SEE from a surface
@@ -50,7 +280,8 @@ CONTAINS
 !===================================================================================================================================
 SUBROUTINE DepositPhotonSEEHoles(iBC,NbrOfParticle)
 ! MODULES
-USE MOD_Particle_Boundary_Vars ,ONLY: PartBound
+USE MOD_Globals
+USE MOD_Particle_Boundary_Vars ,ONLY: PartBound, Do2DSurfaceCharge
 USE MOD_PICDepo_Vars           ,ONLY: DoDeposition
 USE MOD_Dielectric_Vars        ,ONLY: DoDielectricSurfaceCharge
 USE MOD_Particle_Vars          ,ONLY: PEM, PartSpecies, PartState, Species, usevMPF, PartMPF
@@ -86,13 +317,15 @@ IF(DoDeposition.AND.DoDielectricSurfaceCharge.AND.PartBound%Dielectric(iBC))THEN
     ! Create electron hole (i.e. positive surface charge)
     CALL DepositParticleOnNodes(ChargeHole, PartState(1:3,ParticleIndex), PEM%GlobalElemID(ParticleIndex))
   END DO
+ELSEIF(Do2DSurfaceCharge) THEN
+  CALL abort(__STAMP__,'ERROR in DepositPhotonSEEHoles: 2D surface charge not implemented!')
 END IF
 END SUBROUTINE DepositPhotonSEEHoles
 
 
 !===================================================================================================================================
 !> Deposit the charge of a single particle on the nodes corresponding to the deposition method 'cell_volweight_mean', where the
-!> charge is stored in NodeSourceExtTmp, which is added to NodeSource in the standard deposition procedure.
+!> charge is stored in NodeSourceExtMPI, which is added to NodeSource in the standard deposition procedure.
 !> Note that the corresponding volumes are not accounted for yet. The volumes are applied in the deposition routine.
 !===================================================================================================================================
 SUBROUTINE DepositParticleOnNodes(Charge,PartPos,GlobalElemID)
@@ -109,7 +342,7 @@ USE MOD_LoadBalance_Timers ,ONLY: LBStartTime,LBElemPauseTime
 #endif /*USE_LOADBALANCE*/
 USE MOD_Particle_Mesh_Vars ,ONLY: NodeInfo_Shared
 #if USE_MPI
-USE MOD_PICDepo_Vars       ,ONLY: NodeSourceExtTmp
+USE MOD_PICDepo_Vars       ,ONLY: NodeSourceExtMPI
 #else
 USE MOD_PICDepo_Vars       ,ONLY: NodeSourceExt
 #endif /*USE_MPI*/
@@ -131,7 +364,7 @@ LOGICAL                          :: SucRefPos
 REAL                             :: norm,PartDistDepo(8),DistSum
 !===================================================================================================================================
 
-! Skip for neutral particles and reflected particles or species swapped particles where impacting and reflecting particle carry the
+! Skip neutral and reflected particles or species swapped particles where impacting and reflecting particle carry the
 ! same charge. Deposit only particles that are deleted on the surface or change their charge on contact (e.g. neutralization)
 IF(ABS(Charge).LE.0.0) RETURN
 
@@ -143,7 +376,10 @@ IF(ElementOnProc(GlobalElemID)) CALL LBStartTime(tLBStart) ! Start time measurem
 CALL GetPositionInRefElem(PartPos, TempPartPos(1:3), GlobalElemID, ForceMode = .TRUE., isSuccessful = SucRefPos)
 
 #if USE_MPI
-ASSOCIATE( NodeSourceExt => NodeSourceExtTmp )
+! Single-core: Use NodeSourceExt directly as NodeSourceExtMPI does not exist
+! Multi-core: Use local container NodeSourceExtMPI, which is later exchanged
+! between the adjacent processes and then added to NodeSourceExt
+ASSOCIATE( NodeSourceExt => NodeSourceExtMPI )
 #endif
   ! Check if GetPositionInRefElem was able to find the reference position (via ref. mapping), else use distance-based deposition
   IF(SucRefPos)THEN

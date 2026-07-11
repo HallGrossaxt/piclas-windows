@@ -161,12 +161,13 @@ CALL prms%CreateLogicalOption(   'Particles-DSMC-averagedCollisionParameters'  &
                                             ' T: Part-Species[$]-omega,-Tref,-dref,-alphaVSS\n'//&
                                             '    species-specific parameters(T)\n    can be found in tables e.g. in\n'//&
                                             '    VHS: bird1994 (table A1 and A2)\n    VSS: bird1994 (table A1 and A3)\n'//&
-                                            '         weaver2015\n         (https://doi.org/10.1063/1.4921245)\n'//&
+                                            '         Pfeiffer2022\n         (https://doi.org/10.1063/5.0118040)\n'//&
                                             ' F: Part-Collision[$]-omega,-Tref,-dref,-alphaVSS\n'//&
                                             '    collision-specific parameters(F)\n    can be found in tables e.g. in\n'//&
+                                            '    Pfeiffer2022\n                      (https://doi.org/10.1063/5.0118040)\n'//&
                                             '    VHS/VSS: krishnan2015\n             (https://doi.org/10.2514/6.2015-3373)\n'//&
                                             '    VHS/VSS: krishnan2016\n             (https://doi.org/10.1063/1.4939719)', 'T')
-CALL prms%CreateIntOption(   'Part-Collision[$]-partnerSpecies[$]'  &
+CALL prms%CreateIntArrayOption( 'Part-Collision[$]-partnerSpecies'  &
                                            ,'Colliding partnerSpecies(1,2) equal to SpeciesID from ini.\n'//&
                                             'e.g: Collision ID=1 Ar+NO\n     Part-Species2(Ar) + Part-Species3(NO)\n'//&
                                             '     write Part-Collision1-partnerSpecies1=2\n'//&
@@ -340,10 +341,12 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 CHARACTER(32)         :: hilf , hilf2
 INTEGER               :: iCase, iSpec, jSpec, iInit, iDOF, VarNum, err
-INTEGER               :: iColl, jColl, pColl  ! for collision parameter read in
+INTEGER               :: iColl, jColl, pColl, CollInfAv  ! for collision parameter read in
 REAL                  :: A1, A2, delta_ij     ! species constant for cross section (p. 24 Laux)
 LOGICAL               :: PostCollPointerSet
 LOGICAL               :: AttrExists
+LOGICAL               :: CollParDefined
+LOGICAL, ALLOCATABLE  :: CollInfUseAv(:)
 CHARACTER(LEN=64)     :: dsetname
 INTEGER(HID_T)        :: file_id_specdb                       ! File identifier
 INTEGER               :: IntToLog
@@ -415,14 +418,12 @@ END IF
 DSMC%ElectronicModel         = GETINT('Particles-DSMC-ElectronicModel')
 IF(SampleElecExcitation.AND.(DSMC%ElectronicModel.NE.3)) CALL CollectiveStop(__STAMP__,&
     'Part-SampleElectronicExcitation = T requires Particles-DSMC-ElectronicModel = 3')
+ALLOCATE(PartIntEn(PDM%maxParticleNumber))
 IF (DSMC%ElectronicModel.GT.0) THEN
-  ! Allocate internal energy array WITH electronic energy
-  ALLOCATE(PartStateIntEn(1:3,PDM%maxParticleNumber))
   ! Allocate model-specific variables
   SELECT CASE(DSMC%ElectronicModel)
     CASE(1) ! Model by Liechty, each particle has a specific electronic state
     CASE(2) ! Model by Burt, each particle has an electronic distribution function
-      IF(.NOT.ALLOCATED(ElectronicDistriPart)) ALLOCATE(ElectronicDistriPart(PDM%maxParticleNumber))
     CASE(3) ! MCC model, utilizing cross-section data for specific levels
       IF(SelectionProc.EQ.2) THEN
         CALL Abort(__STAMP__,'ERROR: Selected combination of -SelectionProcedure (2) and -ElectronicModel (3) not supported!')
@@ -430,15 +431,11 @@ IF (DSMC%ElectronicModel.GT.0) THEN
     CASE(4) ! Landau-Teller based model, relaxation of given distribution function
       ALLOCATE(ElecRelaxPart(1:PDM%maxParticleNumber))
       ElecRelaxPart = .TRUE.
+    CASE(5) ! Vibronic Model
     CASE DEFAULT
       CALL Abort(__STAMP__,'ERROR: Please select an electronic model between 1 and 4!')
   END SELECT
-ELSE
-  ! Allocate internal energy array WITHOUT electronic energy
-  ALLOCATE(PartStateIntEn(1:2,PDM%maxParticleNumber))
 ENDIF
-
-PartStateIntEn = 0. ! nullify
 
 DSMC%ElectronicModelDatabase = TRIM(GETSTR('Particles-DSMCElectronicDatabase','none'))
 IF (SpeciesDatabase.EQ.'none') THEN
@@ -626,27 +623,54 @@ IF(DoFieldIonization.OR.CollisMode.NE.0) THEN
       CollInf%collidingSpecies(iColl,:) = GETINTARRAY('Part-Collision'//TRIM(hilf)//'-partnerSpecies',2,'0,0')
     END DO ! iColl = CollInf%NumCase
   END IF ! averagedCollisionParameters
-  DO iColl = 1, CollInf%NumCase ! check if any collidingSpecies pair is set multiple times
+  CollInfAv = 0
+  DO iColl = 1, CollInf%NumCase
     WRITE(UNIT=hilf,FMT='(I0)') iColl
+    ! Count the number of defined collision-specific cases
+    IF ((CollInf%collidingSpecies(iColl,1).NE.0).AND.(CollInf%collidingSpecies(iColl,2).NE.0)) CollInfAv = CollInfAv + 1
     DO pColl = 1,2 ! collision partner
       WRITE (UNIT = hilf2,FMT = '(I0)') pColl
-      IF (CollInf%collidingSpecies(iColl,pColl) .EQ. 0) THEN
-          CALL Abort(__STAMP__,'ERROR: Partner species '//TRIM(hilf2)//' for Collision'//TRIM(hilf)//' not defined. '// &
-                    'Part-Collision'//TRIM(hilf)//'-partnerSpecies required ')
-      END IF ! collidingSpecies .EQ. 0
       IF (CollInf%collidingSpecies(iColl,pColl).GT.nSpecies) THEN
         CALL Abort(__STAMP__,'ERROR: Partner species '//TRIM(hilf2)//' for Collision'//TRIM(hilf)//' .GT. nSpecies')
       END IF
     END DO ! pColl = 2
-    DO jColl=1, CollInf%NumCase
+  END DO ! iColl = nColl
+
+  ! Define collision-specific pairs and use species-averaged values for the others
+  IF(.NOT.CollInf%averagedCollisionParameters) THEN
+    ALLOCATE(CollInfUseAv(CollInf%NumCase))
+    CollInfUseAv = .FALSE.
+    DO iSpec = 1, nSpecies
+      DO jSpec = iSpec, nSpecies
+        CollParDefined = .FALSE.
+        DO iColl = 1, CollInf%NumCase
+          IF (((CollInf%collidingSpecies(iColl,1).EQ.iSpec).AND.(CollInf%collidingSpecies(iColl,2).EQ.jSpec)) &
+              .OR.((CollInf%collidingSpecies(iColl,2).EQ.iSpec).AND.(CollInf%collidingSpecies(iColl,1).EQ.jSpec))) THEN
+            CollParDefined = .TRUE. ! Not averaged parameter are defined for the collision
+          END IF
+        END DO
+        ! Use averaged values for the not defined parameter
+        IF (.NOT.CollParDefined) THEN
+          CollInfAv = CollInfAv + 1
+          CollInfUseAv(CollInfAv) = .TRUE.
+          CollInf%collidingSpecies(CollInfAv,1) = iSpec
+          CollInf%collidingSpecies(CollInfAv,2) = jSpec
+          WRITE(UNIT=hilf,FMT='(I0)') iSpec
+          WRITE(UNIT=hilf2,FMT='(I0)') jSpec
+          LBWRITE(*,*) '| Collision-specific parameter for pair '//TRIM(hilf)//'-'//TRIM(hilf2)//' not defined. Use of average values.'
+        END IF
+      END DO
+    END DO
+  END IF
+
+  ! check if any collidingSpecies pair is set multiple times
+  DO iColl = 1, CollInf%NumCase
+    IF(ANY(CollInf%collidingSpecies(iColl,:).EQ.0)) CALL Abort(__STAMP__,'ERROR: Collision-specific array not fully defined!')
+    DO jColl = 1, CollInf%NumCase
       WRITE(UNIT=hilf2,FMT='(I0)') jColl
       IF ((CollInf%collidingSpecies(iColl,1) .EQ. CollInf%collidingSpecies(jColl,2))  .AND. &
           (CollInf%collidingSpecies(iColl,2) .EQ. CollInf%collidingSpecies(jColl,1))) THEN
-        IF (iColl.NE.jColl) THEN
-            CALL Abort(&
-            __STAMP__&
-            ,'ERROR: Partner species for Collision'//TRIM(hilf)//' .EQ. Collision'//TRIM(hilf2))
-        END IF ! iColl .EQ. jColl
+        IF (iColl.NE.jColl) CALL Abort(__STAMP__,'ERROR: Partner species for Collision'//TRIM(hilf)//' .EQ. Collision'//TRIM(hilf2))
       END IF ! check for redundant collision partner combination
     END DO !jColl = nColl
   END DO ! iColl = nColl
@@ -668,10 +692,17 @@ IF(DoFieldIonization.OR.CollisMode.NE.0) THEN
       CollInf%omega (iSpec,jSpec) = 0.5 * (SpecDSMC(iSpec)%omega + SpecDSMC(jSpec)%omega)
       CollInf%alphaVSS  (iSpec,jSpec) = 0.5 * (SpecDSMC(iSpec)%alphaVSS  + SpecDSMC(jSpec)%alphaVSS)
     ELSE ! collision-specific parameters
-      CollInf%Tref      (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-Tref'     )
-      CollInf%dref      (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-dref'     )
-      CollInf%omega (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-omega'    )
-      CollInf%alphaVSS  (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-alphaVSS' )
+      IF (.NOT.CollInfUseAv(iColl)) THEN
+        CollInf%Tref      (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-Tref'     )
+        CollInf%dref      (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-dref'     )
+        CollInf%omega (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-omega'    )
+        CollInf%alphaVSS  (iSpec,jSpec) = GETREAL('Part-Collision'//TRIM(hilf)//'-alphaVSS' )
+      ELSE
+        CollInf%Tref      (iSpec,jSpec) = 0.5 * (SpecDSMC(iSpec)%Tref      + SpecDSMC(jSpec)%Tref)
+        CollInf%dref      (iSpec,jSpec) = 0.5 * (SpecDSMC(iSpec)%dref      + SpecDSMC(jSpec)%dref)
+        CollInf%omega (iSpec,jSpec) = 0.5 * (SpecDSMC(iSpec)%omega + SpecDSMC(jSpec)%omega)
+        CollInf%alphaVSS  (iSpec,jSpec) = 0.5 * (SpecDSMC(iSpec)%alphaVSS  + SpecDSMC(jSpec)%alphaVSS)
+      END IF
     END IF ! averagedCollisionParameters
     IF (iSpec.NE.jSpec) THEN ! fill lower triangular matrix
       CollInf%Tref      (jSpec,iSpec) = CollInf%Tref      (iSpec,jSpec)
@@ -680,16 +711,14 @@ IF(DoFieldIonization.OR.CollisMode.NE.0) THEN
       CollInf%alphaVSS  (jSpec,iSpec) = CollInf%alphaVSS  (iSpec,jSpec)
     END IF ! filled lower triangular matrix
     IF(CollInf%dref(iSpec,jSpec) * CollInf%Tref(iSpec,jSpec) * CollInf%alphaVSS(iSpec,jSpec) .EQ. 0) THEN
-      CALL Abort(__STAMP__,&
-        'ERROR: Check collision parameters! (Part-Collision'//TRIM(hilf)//'-Tref * dref * alphaVSS) .EQ. 0 - but must not be 0)')
+      CALL Abort(__STAMP__,'ERROR: Check collision parameters! (Part-Collision'//TRIM(hilf)//'-Tref * dref * alphaVSS) .EQ. 0 - but must not be 0)')
     END IF ! check if collision parameters are set
     ! omega is defined between 0 (= hard sphere) and 0.5 (= Maxwell molecule), CAUTION: omega_PICLas = omega_Bird1994 - 0.5
     IF ((CollInf%omega(iSpec,jSpec).LT.0.0) .OR. (CollInf%omega(iSpec,jSpec).GT.0.5)) THEN
       CALL Abort(__STAMP__,'ERROR: Check set parameter Part-Collision'//TRIM(hilf)//'-omega, which must be between 0 and 0.5 (CAUTION: omega_PICLas = omega_Bird1994 - 0.5)!')
     END IF
     IF ((CollInf%alphaVSS(iSpec,jSpec).LT.1) .OR. (CollInf%alphaVSS(iSpec,jSpec).GT.2)) THEN
-      CALL Abort(__STAMP__,&
-        'ERROR: Check set parameter Part-Collision'//TRIM(hilf)//'-alphaVSS must not be lower 1 or greater 2')
+      CALL Abort(__STAMP__,'ERROR: Check set parameter Part-Collision'//TRIM(hilf)//'-alphaVSS must not be lower 1 or greater 2')
     END IF ! alphaVSS parameter check
   END DO ! iColl=nColl
 
@@ -1144,7 +1173,6 @@ ELSE !CollisMode.GT.0
         ! method is used (Gimelshein, SelectionProc = 2)
         CALL Abort(__STAMP__,'ERROR: No single-mode polyatomic relaxation possible with chosen selection procedure! SelectionProc:', SelectionProc)
       END IF
-      IF(.NOT.ALLOCATED(VibQuantsPar)) ALLOCATE(VibQuantsPar(PDM%maxParticleNumber))
       ALLOCATE(PolyatomMolDSMC(DSMC%NumPolyatomMolecs))
       DO iSpec = 1, nSpecies
         IF (SpecDSMC(iSpec)%PolyatomicMol) THEN
@@ -1303,11 +1331,9 @@ ELSE !CollisMode.GT.0
     ! 3. Case: Temperature required for the mean free path with the VHS model
     ALLOCATE(DSMC%InstantTransTemp(nSpecies+1))
     DSMC%InstantTransTemp = 0.0
-    IF((DSMC%ElectronicModel.EQ.2).OR.useRelaxProbCorrFactor) THEN
+    IF (useRelaxProbCorrFactor.AND.(DSMC%ElectronicModel.EQ.1)) THEN
       ALLOCATE(DSMC%InstantTXiElec(2,nSpecies))
       DSMC%InstantTXiElec = 0.0
-    END IF
-    IF (useRelaxProbCorrFactor.AND.(DSMC%ElectronicModel.EQ.1)) THEN
       DO iSpec = 1, nSpecies
         ALLOCATE(SpecDSMC(iSpec)%ElecRelaxCorrectFac(nSpecies))
       END DO
@@ -2056,7 +2082,7 @@ SDEALLOCATE(DSMC%CalcVibProb)
 SDEALLOCATE(DSMC%CalcRotProb)
 SDEALLOCATE(DSMC%InstantTXiElec)
 SDEALLOCATE(SampDSMC)
-SDEALLOCATE(PartStateIntEn)
+SDEALLOCATE(PartIntEn)
 SDEALLOCATE(ElecRelaxPart)
 SDEALLOCATE(SpecDSMC)
 IF(DSMC%NumPolyatomMolecs.GT.0) THEN
@@ -2134,8 +2160,6 @@ SDEALLOCATE(CollInf%dref)
 SDEALLOCATE(CollInf%Tref)
 SDEALLOCATE(CollInf%OldCollPartner)
 CollInf%ProhibitDoubleColl=.FALSE.
-!SDEALLOCATE(VibQuantsPar)
-! SDEALLOCATE(XiEq_Surf)
 SDEALLOCATE(DSMC_Solution)
 SDEALLOCATE(DSMC_SolutionPressTens)
 CALL DeleteElemNodeVol()
@@ -2151,7 +2175,6 @@ SDEALLOCATE(BGGas%NumberDensity)
 SDEALLOCATE(BGGas%DistributionSpeciesIndex)
 SDEALLOCATE(BGGas%Distribution)
 SDEALLOCATE(BGGas%DistributionNumDens)
-SDEALLOCATE(BGGas%Region)
 SDEALLOCATE(BGGas%RegionElemType)
 #ifdef drift_diffusion
 SDEALLOCATE(BGGas%ReducedTownsendCoefficient)

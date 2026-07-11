@@ -66,6 +66,7 @@
   volume   = {30},
   year     = {2018}
 }
+
 @article{Pfeiffer2021,
   author  = {Pfeiffer, Marcel and Mirza, Asim and Nizenkov, Paul},
   year    = {2021},
@@ -74,6 +75,18 @@
   pages   = {036106},
   doi     = {10.1063/5.0037915},
   title   = {{Multi-species modeling in the particle-based ellipsoidal statistical Bhatnagar–Gross–Krook method for monatomic gas species}}
+}
+
+@article{pfeiffer_optimized_2022,
+  title = {An optimized collision-averaged variable soft sphere parameter set for air, carbon, and corresponding ionized species},
+  volume = {34},
+  url = {https://pubs.aip.org/pof/article/34/11/117110/2848697/An-optimized-collision-averaged-variable-soft},
+  doi = {10.1063/5.0118040},
+  pages = {117110},
+  number = {11},
+  journal = {Physics of Fluids},
+  author = {Pfeiffer, M.},
+  year = {2022},
 }
 
 @article{Jun2019,
@@ -1057,7 +1070,6 @@ year = {1974},
   doi = {10.2514/6.1989-366},
   urldate = {2024-10-07},
   langid = {english},
-  file = {/home/felix/Zotero/storage/9GMQRAXZ/Barth and Jespersen - 1989 - The design and application of upwind schemes on unstructured meshes.pdf}
 }
 
 @article{Venkatakrishnan1995,
@@ -1074,7 +1086,6 @@ year = {1974},
   urldate = {2023-05-12},
   abstract = {This paper addresses the practical problem of obtaining convergence to steady state solutions of the Euler equations when limiters are used in conjunction with upwind schemes on unstructured grids. The base scheme forms a gradient and limits it by imposing monotonicity conditions in the reconstruction stage. It is shown by analysis in one dimension that such an approach leads to various schemes meeting total-variation-diminishing requirements in one dimension. In multiple dimensions these schemes produce steady-state solutions that are monotone and devoid of oscillations. However, convergence stalls after a few orders of reduction in the residual. A new limiter is introduced that is particularly suited for unstructured grid applications. When reduced to one dimension, it is shown that this limiter satisfies the standard theory. With this limiter, it is shown that converged steady-state solutions can be obtained. However, the solutions are not monotone. There appears to be a conflict between achieving convergence and monotone solutions with the higher order schemes that employ limiters in the framework presented.},
   langid = {english},
-  file = {/home/felix/Zotero/storage/IY7VLGGS/Venkatakrishnan - 1995 - Convergence to Steady State Solutions of the Euler.pdf;/home/felix/Zotero/storage/UH4IZK3G/S0021999185710844.html}
 }
 
 @techreport{Carlson1994,
@@ -1136,21 +1147,64 @@ year = {1974},
   doi = {10.1016/j.cpc.2025.109648},
   urldate = {2025-05-13},
   langid = {english},
-  year = {2019},
 }
 
 @article{Birdsall1980,
-	title = {Plasma self-heating and saturation due to numerical instabilities},
-	volume = {36},
-	issn = {0021-9991},
-	url = {https://www.sciencedirect.com/science/article/pii/0021999180901710},
-	doi = {10.1016/0021-9991(80)90171-0},
-	abstract = {The cold-beam nonphysical instability due to the aliases produced by the numerical spatial grid is presented in detail for momentum-conserving linear weighting codes. Additions to previous work include: linear analysis dispersion diagrams showing large growth rates, ωi ≤ 0.2 ωp ; methods for reducing ωi , effectively broadening the finite-size particle width; simulation results verifying the linear theory, plus plots showing the p = 1 alias in phase space (νx, x); the growth of beam thermal spread (νt2 in temperature) and loss of energy conservation; end-of-growth (saturation) at small thermal spread (λD/Δχ = νt/ωpΔχ ⋍ 0.046, for λB/Δχ ≡ ν0/ωpΔχ ≥ 0.3, i.e., νt ≤ 0.14ν0), with return to near energy conservation (stability); demonstration of no growth for a warm beam, with νt(initial) νt(saturation); and the mechanism of stabilization (trapping). A thermal (Maxwellian) plasma, also nonphysically unstable at small λD/Δχ, is also found to approach stabilization by self-heating. The two-stream physical instability is affected by the grid, with the aliasing instability also present; the linear theory for this is presented, with guidelines for minimizing the effects of the grid.},
-	number = {1},
-	urldate = {2025-11-06},
-	journal = {Journal of Computational Physics},
-	author = {Birdsall, Charles K. and Maron, Neil},
-	month = jun,
-	year = {1980},
-	pages = {1--19},
+  title = {Plasma self-heating and saturation due to numerical instabilities},
+  volume = {36},
+  issn = {0021-9991},
+  url = {https://www.sciencedirect.com/science/article/pii/0021999180901710},
+  doi = {10.1016/0021-9991(80)90171-0},
+  abstract = {The cold-beam nonphysical instability due to the aliases produced by the numerical spatial grid is presented in detail for momentum-conserving linear weighting codes. Additions to previous work include: linear analysis dispersion diagrams showing large growth rates, ωi ≤ 0.2 ωp ; methods for reducing ωi , effectively broadening the finite-size particle width; simulation results verifying the linear theory, plus plots showing the p = 1 alias in phase space (νx, x); the growth of beam thermal spread (νt2 in temperature) and loss of energy conservation; end-of-growth (saturation) at small thermal spread (λD/Δχ = νt/ωpΔχ ⋍ 0.046, for λB/Δχ ≡ ν0/ωpΔχ ≥ 0.3, i.e., νt ≤ 0.14ν0), with return to near energy conservation (stability); demonstration of no growth for a warm beam, with νt(initial) νt(saturation); and the mechanism of stabilization (trapping). A thermal (Maxwellian) plasma, also nonphysically unstable at small λD/Δχ, is also found to approach stabilization by self-heating. The two-stream physical instability is affected by the grid, with the aliasing instability also present; the linear theory for this is presented, with guidelines for minimizing the effects of the grid.},
+  number = {1},
+  urldate = {2025-11-06},
+  journal = {Journal of Computational Physics},
+  author = {Birdsall, Charles K. and Maron, Neil},
+  month = jun,
+  year = {1980},
+  pages = {1--19},
+}
+
+@article{Kopper2025,
+  doi = {10.21105/joss.08769},
+  url = {https://doi.org/10.21105/joss.08769},
+  year = {2025},
+  publisher = {The Open Journal},
+  volume = {10},
+  number = {115},
+  pages = {8769},
+  author = {Kopper, Patrick and Blind, Marcel P. and Schwarz, Anna and Kurz, Marius and Rodach, Felix and Copplestone, Stephen M. and Beck, Andrea D.},
+  title = {PyHOPE: A Python Toolkit for Three-Dimensional Unstructured High-Order Meshes},
+  journal = {Journal of Open Source Software},
+}
+
+@article{Charoy2019,
+  doi = {10.1088/1361-6595/ab46c5},
+  url = {https://doi.org/10.1088/1361-6595/ab46c5},
+  year = {2019},
+  month = {oct},
+  publisher = {IOP Publishing},
+  volume = {28},
+  number = {10},
+  pages = {105010},
+  author = {Charoy, T and Boeuf, J P and Bourdon, A and Carlsson, J A and Chabert, P and Cuenot, B and Eremin, D and Garrigues, L and Hara, K and Kaganovich, I D and Powis, A T and Smolyakov, A and Sydorenko, D and Tavant, A and Vermorel, O and Villafana, W},
+  title = {2D axial-azimuthal particle-in-cell benchmark for low-temperature partially magnetized plasmas},
+  journal = {Plasma Sources Science and Technology},
+}
+
+@article{Taccogna2022,
+  title = {Coupling plasma physics and chemistry in the {PIC} model of electric propulsion: Application to an air-breathing, low-power Hall thruster},
+  volume = {10},
+  issn = {2296-424X},
+  url = {https://www.frontiersin.org/articles/10.3389/fphy.2022.1006994/full},
+  doi = {10.3389/fphy.2022.1006994},
+  shorttitle = {Coupling plasma physics and chemistry in the {PIC} model of electric propulsion},
+  pages = {1006994},
+  journaltitle = {Frontiers in Physics},
+  shortjournal = {Front. Phys.},
+  author = {Taccogna, Francesco and Cichocki, Filippo and Minelli, Pierpaolo},
+  urldate = {2025-05-02},
+  date = {2022-10-19},
+  langid = {english},
+  journal={Frontiers in Physics},
 }

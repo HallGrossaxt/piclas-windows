@@ -17,6 +17,7 @@
 !===================================================================================================================================
 MODULE MOD_LoadDistribution
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -193,7 +194,7 @@ nProcs      = nProcessors
 ! Readin of PartInt: Read in only by MPIRoot in single mode because the root performs the distribution of elements (domain decomposition)
 ! due to the load distribution scheme
 #ifdef PARTICLES
-IF (MPIRoot) ALLOCATE(PartIntGlob(PartIntSize,1:nGlobalElems))
+IF(MPIRoot) ALLOCATE(PartIntGlob(PartIntSize,1:nGlobalElems))
 
 ! Redistribute/read PartInt array
 IF (PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance)) THEN
@@ -202,7 +203,11 @@ IF (PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance)) THEN
   END DO
   ! Sanity check
   IF(.NOT.ALLOCATED(PartInt)) CALL abort(__STAMP__,'PartInt is not allocated') ! Missing call to FillParticleData()
-  CALL MPI_GATHERV(PartInt,nElemsOld,MPI_INTEGER_INT_KIND,PartIntGlob,ElemPerProc,offsetElemMPIOld(0:nProcessors-1),MPI_INTEGER_INT_KIND,0,MPI_COMM_PICLAS,iError)
+  IF(MPIRoot) THEN
+    CALL MPI_GATHERV(PartInt,nElemsOld,MPI_INTEGER_INT_KIND,PartIntGlob,ElemPerProc,offsetElemMPIOld(0:nProcessors-1),MPI_INTEGER_INT_KIND,0,MPI_COMM_PICLAS,iError)
+  ELSE
+    CALL MPI_GATHERV(PartInt,nElemsOld,MPI_INTEGER_INT_KIND,[0],[0],[0],MPI_INTEGER_INT_KIND,0,MPI_COMM_PICLAS,iError)
+  END IF
   PartIntExists = .TRUE.
 ELSE
   ! Readin of PartInt: Read in only by MPIRoot in single mode because the root performs the distribution of elements (domain decomposition)
@@ -268,7 +273,6 @@ IF(MPIRoot)THEN
       IF(.NOT.ElemTimeExists) ElemGlobalTime(iElem) = locnPart*ParticleMPIWeight*timeWeight(iElem) + 1.0
     END DO
   END IF ! PartIntExists
-
   SDEALLOCATE(PartIntGlob)
 END IF ! MPIRoot
 #endif /*PARTICLES*/
@@ -1223,7 +1227,7 @@ SUBROUTINE WriteElemTimeStatistics(WriteHeader,time_opt,iter_opt)
 ! MODULES
 USE MOD_TimeDisc_Vars    ,ONLY: tStart,tEnd,tWallRemaining
 USE MOD_LoadBalance_Vars ,ONLY: TargetWeight,nLoadBalanceSteps,CurrentImbalance,MinWeight,MaxWeight,WeightSum
-USE MOD_Globals          ,ONLY: MPIRoot,FILEEXISTS,unit_stdout,abort,nProcessors,ProcessMemUsage,nProcessors
+USE MOD_Globals          ,ONLY: MPIRoot,FILEEXISTS,unit_stdout,abort,nProcessors,nProcessors,CollectMemUsage
 USE MOD_Globals_Vars     ,ONLY: SimulationEfficiency,PID,WallTime,InitializationWallTime,ReadMeshWallTime,memory
 USE MOD_Globals_Vars     ,ONLY: DomainDecompositionWallTime,CommMeshReadinWallTime
 USE MOD_Restart_Vars     ,ONLY: DoRestart
@@ -1237,24 +1241,19 @@ USE MOD_HDG_Vars_PETSc    ,ONLY: PETScFieldTime
 #endif /*USE_HDG && USE_PETSC*/
 #endif /*PARTICLES*/
 #if USE_MPI
-USE MOD_MPI_Shared_Vars  ,ONLY: myComputeNodeRank,myLeaderGroupRank
 USE MOD_Globals
-USE MOD_MPI_Shared_Vars  ,ONLY: MPI_COMM_LEADERS_SHARED,MPI_COMM_SHARED
 #if ! (CORE_SPLIT==0)
 USE MOD_MPI_Shared_Vars  ,ONLY: NbrOfPhysicalNodes,nLeaderGroupProcs
 #endif /*! (CORE_SPLIT==0)*/
 #endif /*USE_MPI*/
 USE MOD_StringTools      ,ONLY: set_formatting,clear_formatting
-#if defined(MEASURE_MPI_WAIT)
-USE MOD_MPI_Vars          ,ONLY: MPIW8TimeMM,MPIW8CountMM
-#endif /*defined(MEASURE_MPI_WAIT)*/
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! INPUT / OUTPUT VARIABLES
 LOGICAL,INTENT(IN)                      :: WriteHeader
 REAL,INTENT(IN),OPTIONAL                :: time_opt
-INTEGER(KIND=8),INTENT(IN),OPTIONAL     :: iter_opt
+INTEGER(KIND=i8),INTENT(IN),OPTIONAL     :: iter_opt
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! LOCAL VARIABLES
 REAL                                     :: time_loc
@@ -1302,50 +1301,10 @@ CHARACTER(LEN=255),DIMENSION(nOutputVar) :: StrVarNames(nOutputVar)=(/ CHARACTER
 CHARACTER(LEN=255)         :: tmpStr(nOutputVar) ! needed because PerformAnalyze is called multiple times at the beginning
 CHARACTER(LEN=1000)        :: tmpStr2
 CHARACTER(LEN=1),PARAMETER :: delimiter=","
-#if USE_MPI
-REAL                       :: ProcMemoryUsed    ! Used memory on a single proc
-REAL                       :: NodeMemoryUsed    ! Sum of used memory across one compute node
-#endif /*USE_MPI*/
 REAL                       :: MemUsagePercent
-#if defined(MEASURE_MPI_WAIT)
-INTEGER(KIND=8)               :: CounterStart,CounterEnd
-REAL(KIND=8)                  :: Rate
-#endif /*defined(MEASURE_MPI_WAIT)*/
 !===================================================================================================================================
-
-! Get process memory info
-CALL ProcessMemUsage(memory(1),memory(2),memory(3)) ! memUsed,memAvail,memTotal
-
-! Only CN roots communicate available and total memory info (count once per node)
-#if USE_MPI
-#if defined(MEASURE_MPI_WAIT)
-CALL SYSTEM_CLOCK(count=CounterStart)
-#endif /*defined(MEASURE_MPI_WAIT)*/
-IF(nProcessors.GT.1)THEN
-  ! Collect data on node roots
-  ProcMemoryUsed = memory(1)
-  IF (myComputeNodeRank.EQ.0) THEN
-    CALL MPI_REDUCE(ProcMemoryUsed , NodeMemoryUsed , 1 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_SHARED , IERROR)
-    memory(1) = NodeMemoryUsed
-  ELSE
-    CALL MPI_REDUCE(ProcMemoryUsed , 0              , 1 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_SHARED , IERROR)
-  END IF
-
-  ! collect data from node roots on first root node
-  IF (myComputeNodeRank.EQ.0) THEN ! only leaders
-    IF (myLeaderGroupRank.EQ.0) THEN ! first node leader MUST be MPIRoot
-      CALL MPI_REDUCE(MPI_IN_PLACE , memory(1:3) , 3 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_LEADERS_SHARED , IERROR)
-    ELSE
-      CALL MPI_REDUCE(memory(1:3)       , 0      , 3 , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_LEADERS_SHARED , IERROR)
-    END IF ! myLeaderGroupRank.EQ.0
-  END IF ! myComputeNodeRank.EQ.0
-END IF ! nProcessors.EQ.1
-#if defined(MEASURE_MPI_WAIT)
-CALL SYSTEM_CLOCK(count=CounterEnd, count_rate=Rate)
-MPIW8TimeMM  = MPIW8TimeMM + REAL(CounterEnd-CounterStart,8)/Rate
-MPIW8CountMM = MPIW8CountMM + 1_8
-#endif /*defined(MEASURE_MPI_WAIT)*/
-#endif /*USE_MPI*/
+! Get memory info. Mode=0: Collect data across all nodes on MPIRoot
+CALL CollectMemUsage(Mode=0)
 
 ! --------------------------------------------------
 ! Only MPI root outputs the data to file

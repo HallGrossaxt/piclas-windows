@@ -143,7 +143,7 @@ CASE(10)
   PetscCallA(PCFactorGetMatrix(pc,F,ierr))
 #if USE_DEBUG
   ! Increase MUMPS diagnostics level: Errors, warnings, and main statistics printed.
-  PetscCallA(MatMumpsSetIcntl(F, 4, 2, ierr))
+  IF(PETScDisplayDiagnostics) PetscCallA(MatMumpsSetIcntl(F, 4, 2, ierr))
 #endif /*USE_DEBUG*/
   ! === Compression
   ! Enable BLR compression with automatic settings: showed better performance for initial factorization and better memory footprint

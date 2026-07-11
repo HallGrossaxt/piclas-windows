@@ -17,6 +17,7 @@ MODULE MOD_Photon_Tracking
 ! Routines for photon tracking in radiative transfer solver
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -313,8 +314,8 @@ IMPLICIT NONE
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER(KIND=8),PARAMETER        :: MaxIterPhoton(1:2)=(/1000,1000000000/) ! Maximum number of cycles in the do while loop for each photon for bilinear and TriaTracking
-INTEGER(KIND=8)                  :: IterPhoton(2)
+INTEGER(KIND=i8),PARAMETER        :: MaxIterPhoton(1:2)=(/1000,1000000000/) ! Maximum number of cycles in the do while loop for each photon for bilinear and TriaTracking
+INTEGER(KIND=i8)                 :: IterPhoton(2)
 INTEGER                          :: NblocSideID, NbElemID, ind, nbSideID, nMortarElems, BCType, localSideID, iPBC, GlobSideID
 INTEGER                          :: ElemID,OldElemID,nlocSides
 INTEGER                          :: LocalSide
@@ -337,12 +338,12 @@ GlobSideID           = 0
 DoneLastElem(:,:)    = 0
 InterPointSelect     = .FALSE.
 LastInterPointSelect = .FALSE.
-IterPhoton           = 0_8
+IterPhoton           = 0_i8
 TriNum               = 1
 
 ! 1) Loop tracking until Photon is considered "done" (either absorbed or deleted)
 THEWHILELOOP: DO WHILE (.NOT.Done)
-  IterPhoton(2) = IterPhoton(2) + 1_8 ! Stop when MaxIterPhoton(2) is reached with this counter
+  IterPhoton(2) = IterPhoton(2) + 1_i8 ! Stop when MaxIterPhoton(2) is reached with this counter
   IF(IterPhoton(2).GE.MaxIterPhoton(2))THEN
     CALL StoreLostPhotonProperties(ElemID,TRIM(__FILE__),__LINE__,99999)
     Done = .TRUE.
@@ -438,7 +439,7 @@ THEWHILELOOP: DO WHILE (.NOT.Done)
 
   IF ((NrOfThroughSides.EQ.0).AND.(.NOT.UsePhotonTriaTracking)) THEN
     ! Check if tracking fails to converge
-    IterPhoton(1) = IterPhoton(1) + 1_8 ! Stop when MaxIterPhoton(2) is reached with this counter
+    IterPhoton(1) = IterPhoton(1) + 1_i8 ! Stop when MaxIterPhoton(2) is reached with this counter
     IF(IterPhoton(1).GE.MaxIterPhoton(1))THEN
       CALL StoreLostPhotonProperties(ElemID,TRIM(__FILE__),__LINE__,9999)
       Done = .TRUE.

@@ -12,10 +12,12 @@
 !==================================================================================================================================
 #include "piclas.h"
 
-MODULE MOD_Particle_SurfFlux
 !===================================================================================================================================
 !> Module for particle insertion through the surface flux
 !===================================================================================================================================
+MODULE MOD_Particle_SurfFlux
+! Modules
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -203,7 +205,11 @@ DO iSpec=1,nSpecies
 
             AcceptPos=.TRUE.
             IF (SF%CircularInflow) THEN !check rmax-rejection
-              IF (.NOT.InSideCircularInflow(iSpec, iSF, iSide, Particle_pos)) AcceptPos=.FALSE.
+              IF(Species(iSpec)%Surfaceflux(iSF)%racetrackLength.GT.0.0) THEN
+                IF (.NOT.InSideRaceTrackInflow(iSpec, iSF, iSide, Particle_pos)) AcceptPos=.FALSE.
+              ELSE
+                IF (.NOT.InSideCircularInflow(iSpec, iSF, iSide, Particle_pos)) AcceptPos=.FALSE.
+              END IF
             END IF ! CircularInflow
             !-- save position if accepted:
             IF (AcceptPos) THEN
@@ -360,7 +366,7 @@ INTEGER, INTENT(OUT), ALLOCATABLE   :: PartInsSubSides(:,:,:)
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER(KIND=8)        :: inserted_Particle_iter,inserted_Particle_time,inserted_Particle_diff
+INTEGER(KIND=i8)       :: inserted_Particle_iter,inserted_Particle_time,inserted_Particle_diff
 INTEGER                :: currentBC, PartInsSF, IntSample
 REAL                   :: VFR_total, PartIns, RandVal1
 INTEGER, ALLOCATABLE   :: PartInsProc(:)
@@ -409,7 +415,7 @@ IF (.NOT.SF%ReduceNoise .OR. MPIroot) THEN !ReduceNoise: root only
   END IF
   !-- evaluate inserted_Particle_time and inserted_Particle_iter
   inserted_Particle_diff = inserted_Particle_time - SF%InsertedParticle - inserted_Particle_iter - SF%InsertedParticleSurplus
-  SF%InsertedParticleSurplus = ABS(MIN(inserted_Particle_iter + inserted_Particle_diff,0_8))
+  SF%InsertedParticleSurplus = ABS(MIN(inserted_Particle_iter + inserted_Particle_diff,0_i8))
   PartInsSF = MAX(INT(inserted_Particle_iter + inserted_Particle_diff,4),0)
   SF%InsertedParticle = SF%InsertedParticle + INT(PartInsSF,8)
   IF (SF%ReduceNoise) THEN
@@ -580,7 +586,7 @@ SELECT CASE(Species(iSpec)%Surfaceflux(iSF)%SurfFluxSideRejectType(iSide))
 CASE(0) !- RejectType=0 : complete side is inside valid bounds
   InSideCircularInflow=.TRUE.
 CASE(1) !- RejectType=1 : complete side is outside of valid bounds
-  CALL abort(__STAMP__,'side outside of valid bounds was considered although nVFR=0...?!')
+  CALL abort(__STAMP__,'ERROR in InSideCircularInflow: Side should have been skipped before this call!')
 CASE(2) !- RejectType=2 : side is partly inside valid bounds
   point(1)=Particle_pos(Species(iSpec)%Surfaceflux(iSF)%dir(2))-origin(1)
   point(2)=Particle_pos(Species(iSpec)%Surfaceflux(iSF)%dir(3))-origin(2)
@@ -591,10 +597,69 @@ CASE(2) !- RejectType=2 : side is partly inside valid bounds
     InSideCircularInflow=.FALSE.
   END IF
 CASE DEFAULT
-  CALL abort(__STAMP__,'wrong SurfFluxSideRejectType!')
+  CALL abort(__STAMP__,'ERROR in InSideCircularInflow: Unknown SurfFluxSideRejectType!')
 END SELECT !SurfFluxSideRejectType
 
 END FUNCTION InSideCircularInflow
+
+
+!===================================================================================================================================
+!> Determines whether a particle position lies inside the race track (stadium) shaped inflow region.
+!> Uses the distance from the particle to the central line segment of the race track.
+!===================================================================================================================================
+FUNCTION InSideRaceTrackInflow(iSpec, iSF, iSide, Particle_pos)
+! MODULES
+USE MOD_Globals
+USE MOD_Particle_Vars           ,ONLY: Species
+USE MOD_Particle_Boundary_Tools ,ONLY: PointToSegmentDist2D
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)             :: iSpec, iSF, iSide
+REAL, INTENT(IN)                :: Particle_pos(3)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! RESULT
+LOGICAL                         :: InSideRaceTrackInflow
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+REAL                            :: point(2), origin(2), dirVec(2), halfLength
+REAL                            :: segA(2), segB(2), dist
+!===================================================================================================================================
+InSideRaceTrackInflow = .FALSE.
+
+SELECT CASE(Species(iSpec)%Surfaceflux(iSF)%SurfFluxSideRejectType(iSide))
+CASE(0) ! Complete side is inside valid bounds
+  InSideRaceTrackInflow = .TRUE.
+
+CASE(1) ! Complete side is outside of valid bounds
+  CALL abort(__STAMP__,'ERROR in InSideRaceTrackInflow: Side should have been skipped before this call!')
+
+CASE(2) ! Side is partly inside valid bounds
+  origin     = Species(iSpec)%Surfaceflux(iSF)%origin
+  dirVec     = Species(iSpec)%Surfaceflux(iSF)%racetrackDir
+  halfLength = Species(iSpec)%Surfaceflux(iSF)%racetrackLength
+
+  ! Particle position in origin-shifted 2D surface coordinates
+  point(1) = Particle_pos(Species(iSpec)%Surfaceflux(iSF)%dir(2)) - origin(1)
+  point(2) = Particle_pos(Species(iSpec)%Surfaceflux(iSF)%dir(3)) - origin(2)
+
+  ! Central segment endpoints
+  segA = -halfLength * dirVec
+  segB =  halfLength * dirVec
+
+  ! Distance to central segment
+  dist = PointToSegmentDist2D(point, segA, segB)
+
+  IF ((dist .LE. Species(iSpec)%Surfaceflux(iSF)%rmax) .AND. (dist .GE. Species(iSpec)%Surfaceflux(iSF)%rmin)) THEN
+    InSideRaceTrackInflow = .TRUE.
+  END IF
+
+CASE DEFAULT
+  CALL abort(__STAMP__,'ERROR in InSideRaceTrackInflow: Unknown SurfFluxSideRejectType!')
+END SELECT
+
+END FUNCTION InSideRaceTrackInflow
 
 
 !===================================================================================================================================
@@ -1322,7 +1387,7 @@ USE MOD_Particle_Sampling_Vars    ,ONLY: AdaptBCMapElemToSample, AdaptBCMacroVal
 USE MOD_Part_Tools                ,ONLY: InRotRefFrameCheck, GetNextFreePosition
 USE MOD_Particle_SurfaceFlux_Vars ,ONLY: tSurfaceFlux
 USE MOD_Mesh_Vars                 ,ONLY: SideToElem
-USE MOD_DSMC_Vars                 ,ONLY: AmbiPolarSFMapping, AmbipolElecVelo, DSMC
+USE MOD_DSMC_Vars                 ,ONLY: AmbiPolarSFMapping, DSMC, PartIntEn
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -1450,9 +1515,9 @@ CASE('constant')
     ! Build complete velo-vector
     Vec3D(1:3) = vec_nIn(1:3) * SF%VeloIC
     IF(Mode.EQ.3) THEN    ! Ambipolar diffusion
-      IF (ALLOCATED(AmbipolElecVelo(PositionNbr)%ElecVelo)) DEALLOCATE(AmbipolElecVelo(PositionNbr)%ElecVelo)
-      ALLOCATE(AmbipolElecVelo(PositionNbr)%ElecVelo(3))
-      AmbipolElecVelo(PositionNbr)%ElecVelo(1:3) = Vec3D(1:3)
+      IF (ALLOCATED(PartIntEn(PositionNbr)%ElecVelo)) DEALLOCATE(PartIntEn(PositionNbr)%ElecVelo)
+      ALLOCATE(PartIntEn(PositionNbr)%ElecVelo(3))
+      PartIntEn(PositionNbr)%ElecVelo(1:3) = Vec3D(1:3)
     ELSE
       PartState(4:6,PositionNbr) = Vec3D(1:3)
     END IF
@@ -1616,9 +1681,9 @@ CASE('maxwell','maxwell_lpn')
     Vec3D(1:3) = Vec3D(1:3) + vec_t1(1:3) * ( Velo_t1+Velo1*SQRT(BoltzmannConst*T/Species(iSpec)%MassIC) )
     Vec3D(1:3) = Vec3D(1:3) + vec_t2(1:3) * ( Velo_t2+Velo2*SQRT(BoltzmannConst*T/Species(iSpec)%MassIC) )
     IF(Mode.EQ.3) THEN    ! Ambipolar diffusion
-      IF (ALLOCATED(AmbipolElecVelo(PositionNbr)%ElecVelo)) DEALLOCATE(AmbipolElecVelo(PositionNbr)%ElecVelo)
-      ALLOCATE(AmbipolElecVelo(PositionNbr)%ElecVelo(3))
-      AmbipolElecVelo(PositionNbr)%ElecVelo(1:3) = Vec3D(1:3)
+      IF (ALLOCATED(PartIntEn(PositionNbr)%ElecVelo)) DEALLOCATE(PartIntEn(PositionNbr)%ElecVelo)
+      ALLOCATE(PartIntEn(PositionNbr)%ElecVelo(3))
+      PartIntEn(PositionNbr)%ElecVelo(1:3) = Vec3D(1:3)
     ELSE
       PartState(4:6,PositionNbr) = Vec3D(1:3)
     END IF

@@ -191,9 +191,11 @@
 
 ! VertexInfo in H5 file
 #define VERTEXINFOSIZE_H5      3
+#define VERTEXINFOSIZE         4
 #define VERTEX_FEMID           1
 #define VERTEX_FIRSTCONNECTIND 2
 #define VERTEX_LASTCONNECTIND  3
+#define VERTEX_NONUNIQUENODEID 4
 ! VertexConnectInfo
 #define VERTEXCONNECTINFOSIZE_H5  2
 #define VERTEXCONNECT_NBELEMID    1
@@ -367,10 +369,13 @@
 ! Virtual Dielectric Layer (VDL): PartBound%SurfaceModel
 #define VDL_MODEL_ID 99
 
+! 2D Surface Charge: PartBound%SurfaceModel
+#define SURF_CHARGE_ID 999
+
 ! Secondary electron emission: PartBound%SurfaceModel
 #define SEE_MODELS_ID 3,4,5,6,7,8,9,10,11,12,13
 
 #if USE_HDG
 ! HDG Dirichlet BC Side IDs: BCType = BoundaryType(BC(SideID),BC_TYPE)
 #define HDGDIRICHLETBCSIDEIDS 2,4,5,6,7,8,50,51,52,60
-#endif
+#endif /*USE_HDG*/

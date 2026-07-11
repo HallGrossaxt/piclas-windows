@@ -32,6 +32,7 @@ PUBLIC :: CalculateAverageElectricPotential
 PUBLIC :: GetAverageElectricPotentialPlane
 PUBLIC :: FinalizeAverageElectricPotential
 PUBLIC :: CalculateElectricDisplacementCurrentSurface
+PUBLIC :: CalculateElectricPotentialExtrema
 #if defined(PARTICLES)
 PUBLIC :: CalculateElectricPotentialAndFieldBoundaryVDL
 #endif /*defined(PARTICLES)*/
@@ -478,6 +479,11 @@ EDC%Current = 0.
 ! 1.) Loop over all processor-local BC sides and therein find the local side ID which corresponds to the reference element and
 !     interpolate the vector field Dt = (/Dtx, Dty, Dtz/) to the boundary face
 DO SideID=1,nBCSides
+  ! Get BC index and EDC index and the mapping of the SideID boundary to the EDC boundary ID
+  iBC    = BC(SideID)
+  iEDCBC = EDC%BCIDToEDCBCID(iBC)
+  ! Skip sides not part of the output
+  IF(iEDCBC.LT.1) CYCLE
   ! Get the local element index
   ElemID   = SideToElem(S2E_ELEM_ID,SideID)
   ! Get local polynomial degree of the element
@@ -495,11 +501,9 @@ DO SideID=1,nBCSides
                  + Eface(2,:,:) * N_SurfMesh(SideID)%NormVec(2,:,:) &
                  + Eface(3,:,:) * N_SurfMesh(SideID)%NormVec(3,:,:)
 
-  ! 3.) Get BC index and EDC index and the mapping of the SideID boundary to the EDC boundary ID and store the integrated current
-  iBC    = BC(SideID)
-  iEDCBC = EDC%BCIDToEDCBCID(iBC)
+  ! 3.) Store the integrated current
   EDC%Current(iEDCBC) = EDC%Current(iEDCBC) + SUM(Eface(1,:,:) * N_SurfMesh(SideID)%SurfElem(:,:) * N_Inter(Nloc)%wGPSurf(:,:))
-
+  ! Deallocate for potentially next different N
   DEALLOCATE(Eface)
 END DO ! SideID=1,nBCSides
 
@@ -519,6 +523,95 @@ END DO ! iEDCBC = 1, EDC%NBoundaries
 #endif /*USE_MPI*/
 
 END SUBROUTINE CalculateElectricDisplacementCurrentSurface
+
+
+SUBROUTINE CalculateElectricPotentialExtrema()
+!===================================================================================================================================
+!> Calculation of the average electric potential with its own Prolong to face // check if Gauss-Lobatto or Gauss Points is used is
+!> missing ... ups
+!>
+!> 1.) Loop over all processor-local BC sides and therein find the local side ID which corresponds to the reference element and
+!      interpolate the vector field Dt = (/Dtx, Dty, Dtz/) to the boundary face
+!> 2.) Apply the normal vector: Uface(1,:,:)=DOT_PRODUCT(Uface(1:3,:,:),NormVec(1:3,:,:,SideID))
+!      Store result of dot product in first array index
+!> 3.) Get BC index and EPE index and the mapping of the SideID boundary to the EPE boundary ID and store the integrated current
+!> 4.) Communicate the integrated current values on each boundary to the MPI root process (the root outputs the values to .csv)
+!===================================================================================================================================
+! MODULES
+#if USE_MPI
+USE MOD_Globals
+#endif
+USE MOD_Mesh_Vars          ,ONLY: SideToElem,nBCSides,BC,offSetElem
+USE MOD_Analyze_Vars       ,ONLY: EPE
+USE MOD_DG_Vars            ,ONLY: U_N,N_DG_Mapping
+USE MOD_ProlongToFace      ,ONLY: ProlongToFace_Side
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+!----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER          :: ElemID,SideID,ilocSide,Nloc
+REAL,ALLOCATABLE :: Uface(:,:,:)
+INTEGER          :: iBC,iEPEBC
+!REAL             :: SIP(0:PP_N,0:PP_N)
+!REAL             :: AverageElectricPotentialProc
+!REAL             :: area_loc,integral_loc
+!===================================================================================================================================
+! Nullify
+EPE%Maximum = -HUGE(1.0)
+EPE%Minimum =  HUGE(1.0)
+
+! 1.) Loop over all processor-local BC sides and therein find the local side ID which corresponds to the reference element and
+!     interpolate the vector field Dt = (/Dtx, Dty, Dtz/) to the boundary face
+DO SideID=1,nBCSides
+  ! Get BC index and EPE index and the mapping of the SideID boundary to the EPE boundary ID
+  iBC    = BC(SideID)
+  iEPEBC = EPE%BCIDToEPEBCID(iBC)
+  ! Skip sides not part of the output
+  IF(iEPEBC.LT.1) CYCLE
+  ! Get the local element index
+  ElemID   = SideToElem(S2E_ELEM_ID,SideID)
+  ! Get local polynomial degree of the element
+  Nloc = N_DG_Mapping(2,ElemID+offSetElem)
+  ! Allocate Uface depending on the local polynomial degree
+  ALLOCATE(Uface(1,0:Nloc,0:Nloc))
+  ! Get local side index
+  ilocSide = SideToElem(S2E_LOC_SIDE_ID,SideID)
+  ! Prolong-to-face depending on orientation in reference element
+  CALL ProlongToFace_Side(1, Nloc, ilocSide, 0, U_N(ElemID)%U, Uface)
+  ! Store the integrated current
+  EPE%Maximum(iEPEBC) = MAX(MAXVAL(Uface(1,:,:)),EPE%Maximum(iEPEBC))
+  EPE%Minimum(iEPEBC) = MIN(MINVAL(Uface(1,:,:)),EPE%Minimum(iEPEBC))
+  ! Deallocate for potentially next different N
+  DEALLOCATE(Uface)
+END DO ! SideID=1,nBCSides
+
+#if USE_MPI
+! 4.) Communicate the integrated current values on each boundary to the MPI root process (the root outputs the values to .csv)
+DO iEPEBC = 1, EPE%NBoundaries
+  IF(EPE%COMM(iEPEBC)%UNICATOR.NE.MPI_COMM_NULL)THEN
+    ASSOCIATE( Maximum => EPE%Maximum(iEPEBC), COMM => EPE%COMM(iEPEBC)%UNICATOR)
+      IF(MPIroot)THEN
+        CALL MPI_REDUCE(MPI_IN_PLACE , Maximum , 1 , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , COMM , IERROR)
+      ELSE
+        CALL MPI_REDUCE(Maximum      , 0       , 1 , MPI_DOUBLE_PRECISION , MPI_MAX , 0 , COMM , IERROR)
+      END IF ! myLeaderGroupRank.EQ.0
+    END ASSOCIATE
+    ASSOCIATE( Minimum => EPE%Minimum(iEPEBC), COMM => EPE%COMM(iEPEBC)%UNICATOR)
+      IF(MPIroot)THEN
+        CALL MPI_REDUCE(MPI_IN_PLACE , Minimum , 1 , MPI_DOUBLE_PRECISION , MPI_MIN , 0 , COMM , IERROR)
+      ELSE
+        CALL MPI_REDUCE(Minimum      , 0       , 1 , MPI_DOUBLE_PRECISION , MPI_MIN , 0 , COMM , IERROR)
+      END IF ! myLeaderGroupRank.EQ.0
+    END ASSOCIATE
+  END IF ! EPE%COMM(iEPEBC)%UNICATOR.NE.MPI_COMM_NULL
+END DO ! iEPEBC = 1, EPE%NBoundaries
+#endif /*USE_MPI*/
+
+END SUBROUTINE CalculateElectricPotentialExtrema
 #endif /*USE_HDG*/
 
 END MODULE MOD_AnalyzeField_HDG

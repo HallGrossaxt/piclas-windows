@@ -33,6 +33,7 @@ PUBLIC :: GetDataSize
 PUBLIC :: GetVarnames
 PUBLIC :: GetArrayAndName
 PUBLIC :: AttributeExists
+PUBLIC :: PyHOPECompatibilityCheck
 !===================================================================================================================================
 
 CONTAINS
@@ -383,27 +384,29 @@ LBWRITE(UNIT_stdOut,'(132("-"))')
 END SUBROUTINE GetDataProps
 
 
-SUBROUTINE GetVarnames(AttribName,VarNames,AttribExists)
+SUBROUTINE GetVarnames(AttribName,VarNames,AttribExists,AttribDim)
 IMPLICIT NONE
 ! INPUT / OUTPUT VARIABLES
 CHARACTER(LEN=*),INTENT(IN)                :: AttribName
 CHARACTER(LEN=255),ALLOCATABLE,INTENT(OUT) :: VarNames(:)
 LOGICAL,INTENT(OUT)                        :: AttribExists
+INTEGER,INTENT(OUT)                        :: AttribDim
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER  :: dims, nVal
+INTEGER  :: dims
 !===================================================================================================================================
 SDEALLOCATE(VarNames)
 CALL DatasetExists(File_ID,AttribName,AttribExists,attrib=.TRUE.)
+AttribDim = 0
 IF (AttribExists) THEN
   ! get size of array
   CALL GetAttributeSize(File_ID,AttribName,dims,HSize)
-  nVal=INT(HSize(1))
+  AttribDim=INT(HSize(1))
   DEALLOCATE(HSize)
-  ALLOCATE(VarNames(nVal))
+  ALLOCATE(VarNames(AttribDim))
 
   ! read variable names
-  CALL ReadAttribute(File_ID,TRIM(AttribName),nVal,StrArray=VarNames)
+  CALL ReadAttribute(File_ID,TRIM(AttribName),AttribDim,StrArray=VarNames)
 END IF
 END SUBROUTINE GetVarnames
 
@@ -643,13 +646,13 @@ IF(PRESENT(StrScalar).OR.PRESENT(StrArray)) THEN
   ! Check if string is variable length
   call H5Tis_variable_str_f(Type_ID, vstatus, iError)
   IF(vstatus) THEN
-    CALL abort(__STAMP__,'ERROR in ReadAttribute: Read-in of variable length strings is not implemented yet!')
+    CALL abort(__STAMP__,'ReadAttribute: Read-in of variable length strings from h5 is not implemented (Type: length = variable)!')
   END IF
   ! Check the padding type of the string (H5T_STR_SPACEPAD: Pad with spaces Fortran-style, H5T_STR_NULLPAD: Pad with zeros,
   ! H5T_STR_NULLTERM: Null terminate C-style)
   CALL H5Tget_strpad_f(Type_ID, pad_type, iError)
   IF(pad_type.EQ.H5T_STR_NULLTERM_F) THEN
-    CALL abort(__STAMP__,'ERROR in ReadAttribute: Read-in of null terminated strings is not implemented yet!')
+    CALL abort(__STAMP__,'ReadAttribute: Read-in of null terminated strings from h5 is not implemented!')
   END IF
   ! Set the type in case of C type string output (e.g. by h5py) using NULLPAD (based on h5ex_t_stringCatt_F03.f90)
   IF(pad_type.EQ.H5T_STR_NULLPAD_F) THEN
@@ -819,6 +822,51 @@ ELSE
 END IF
 LOGWRITE(*,*)'...DONE!'
 END SUBROUTINE GetHDF5NextFileName
+
+
+!===================================================================================================================================
+!> Check if file and mesh file were both created with the same mesh generator (HOPR or PyHOPE)
+!===================================================================================================================================
+SUBROUTINE PyHOPECompatibilityCheck(Loc_ID_in,FileType)
+! MODULES
+USE MOD_IO_HDF5
+USE MOD_Globals
+USE MOD_Mesh_Vars  ,ONLY: tFileVersion,MeshVersion
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------!
+! INPUT / OUTPUT VARIABLES
+INTEGER(HID_T),INTENT(IN)   :: Loc_ID_in             !< file which is currently opened
+CHARACTER(LEN=*),INTENT(IN) :: FileType
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+TYPE(tFileVersion) :: FileVersion
+LOGICAL            :: PyHOPEVersionMajorExists
+!===================================================================================================================================
+FileVersion%PyHOPEVersionMajor=-1
+FileVersion%PyHOPEVersionMinor=-1
+FileVersion%PyHOPEVersionPatch=-1
+CALL DatasetExists(Loc_ID_in,'PyHOPEVersionMajor',PyHOPEVersionMajorExists,attrib=.TRUE.)
+IF (PyHOPEVersionMajorExists) THEN
+  CALL ReadAttribute(Loc_ID_in,'PyHOPEVersionMajor',1,IntScalar=FileVersion%PyHOPEVersionMajor)
+  CALL ReadAttribute(Loc_ID_in,'PyHOPEVersionMinor',1,IntScalar=FileVersion%PyHOPEVersionMinor)
+  CALL ReadAttribute(Loc_ID_in,'PyHOPEVersionPatch',1,IntScalar=FileVersion%PyHOPEVersionPatch)
+END IF ! PyHOPEVersionMajorExists
+! Check if file and mesh file were both created with the same mesh generator (HOPR or PyHOPE)
+! -----------------------------------
+! file   | mesh file | conclusion
+! -----------------------------------
+! hopr   | pyhope    | abort
+! pyhope | hopr      | abort
+! pyhope | pyhope    | allowed
+! hopr   | hopr      | allowed
+! -----------------------------------
+IF (MeshVersion%PyHOPEVersionMajor.GE.0) THEN ! PyHOPE mesh
+  IF (FileVersion%PyHOPEVersionMajor.LT.0) CALL CollectiveStop(__STAMP__,' PyHOPE mesh file + HOPR '//TRIM(FileType)//' file not allowed!')
+ELSE IF (FileVersion%PyHOPEVersionMajor.GE.0) THEN ! PyHOPE restart file
+  IF (MeshVersion%PyHOPEVersionMajor.LT.0) CALL CollectiveStop(__STAMP__,' PyHOPE '//TRIM(FileType)//' file + HOPR mesh file not allowed!')
+END IF ! MeshVersion%PyHOPEVersionMajor.GE.0
+END SUBROUTINE PyHOPECompatibilityCheck
 
 
 END MODULE MOD_HDF5_Input

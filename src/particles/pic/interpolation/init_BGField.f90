@@ -55,7 +55,7 @@ END SUBROUTINE DefineParametersBGField
 
 SUBROUTINE InitializeBackgroundField
 !===================================================================================================================================
-!>
+!> Initialize a background field from an available PICLas/superB file or superB calculation
 !===================================================================================================================================
 ! MODULES
 USE MOD_Globals

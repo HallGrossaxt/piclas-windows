@@ -16,6 +16,7 @@
 !===================================================================================================================================
 MODULE MOD_TimeDisc_Vars
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -39,9 +40,9 @@ REAL             :: CFLtoOne                          !> scaling factor to scale
 REAL             :: sdtCFLOne                         !> inverse of dt of CFLOne
 REAL             :: RKdtFrac,RKdtFracTotal
 INTEGER          :: iStage
-INTEGER(KIND=8)  :: iter                              !> iteration since first init
-INTEGER(KIND=8)  :: IterDisplayStep                   !> number of displayed iteration steps written during simulation
-INTEGER(KIND=8)  :: IterDisplayStepUser               !> number of displayed iteration steps that are defined by user
+INTEGER(KIND=i8) :: iter                              !> iteration since first init
+INTEGER(KIND=i8) :: IterDisplayStep                   !> number of displayed iteration steps written during simulation
+INTEGER(KIND=i8) :: IterDisplayStepUser               !> number of displayed iteration steps that are defined by user
 LOGICAL          :: DoDisplayIter                     !> flag if iterations are displayed (TRUE if IterDisplayStep>0)
 LOGICAl          :: TimediscInitIsDone = .FALSE.
 REAL             :: TimeDG, TimeParticle

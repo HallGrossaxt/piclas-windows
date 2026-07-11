@@ -50,7 +50,7 @@ USE MOD_Particle_Tracking_Vars   ,ONLY: TrackingMethod, TrackInfo, CountNbrOfLos
 USE MOD_Part_Tools               ,ONLY: StoreLostParticleProperties
 USE MOD_Dielectric_vars          ,ONLY: DoDielectric,isDielectricElem_Shared
 USE MOD_Particle_Mesh_Vars
-USE MOD_Particle_Boundary_Vars   ,ONLY: PartBound,DoBoundaryParticleOutputHDF5
+USE MOD_Particle_Boundary_Vars   ,ONLY: PartBound,DoBoundaryParticleOutputHDF5,DoVirtualDielectricLayer
 USE MOD_Particle_Surfaces_vars   ,ONLY: SideNormVec,SideType
 USE MOD_Particle_Vars            ,ONLY: LastPartPos
 USE MOD_SurfaceModel             ,ONLY: SurfaceModelling
@@ -93,21 +93,23 @@ crossedBC    =.FALSE.
 
 #if USE_HDG
 ! Check particle index for VDL particles, which should NOT be here and kill them (regular treatment is in DepositVirtualDielectricLayerParticles)
-IF(IsVDLSpecID(iPart))THEN
-  IF(PDM%ParticleInside(iPart))THEN
-    IF(CountNbrOfLostParts)THEN
-      ! Store particle position using PartState(1:3,iPart) via UsePartState_opt=.TRUE. to show where the particles have been
-      ! moved to via the VDL displacement. Otherwise, LastPartPos(1:3,iPart) would contain the position where the particles have
-      ! impacted on the VDL boundary (the actual tracking BC. i.e. the mesh, not the virtual layer around the BC)
-      CALL StoreLostParticleProperties(iPart,ElemID,UsePartState_opt=.TRUE.,PartMissingType_opt=PartSpecies(iPart))
-      NbrOfLostParticles=NbrOfLostParticles+1
-    END IF ! CountNbrOfLostParts
-    ! Reset to original species index before removing the particle
-    PartSpecies(iPart) = ABS(PartSpecies(iPart)) - SpeciesOffsetVDL
-    CALL RemoveParticle(iPart,BCID=PartBound%MapToPartBC(SideInfo_Shared(SIDE_BCID,SideID)))
-    RETURN
-  END IF ! PDM%ParticleInside(iPart)
-END IF ! IsVDLSpecID(iPart)
+IF(DoVirtualDielectricLayer) THEN
+  IF(IsVDLSpecID(iPart))THEN
+    IF(PDM%ParticleInside(iPart))THEN
+      IF(CountNbrOfLostParts)THEN
+        ! Store particle position using PartState(1:3,iPart) via UsePartState_opt=.TRUE. to show where the particles have been
+        ! moved to via the VDL displacement. Otherwise, LastPartPos(1:3,iPart) would contain the position where the particles have
+        ! impacted on the VDL boundary (the actual tracking BC. i.e. the mesh, not the virtual layer around the BC)
+        CALL StoreLostParticleProperties(iPart,ElemID,UsePartState_opt=.TRUE.,PartMissingType_opt=PartSpecies(iPart))
+        NbrOfLostParticles=NbrOfLostParticles+1
+      END IF ! CountNbrOfLostParts
+      ! Reset to original species index before removing the particle
+      PartSpecies(iPart) = ABS(PartSpecies(iPart)) - SpeciesOffsetVDL
+      CALL RemoveParticle(iPart,BCID=PartBound%MapToPartBC(SideInfo_Shared(SIDE_BCID,SideID)))
+      RETURN
+    END IF ! PDM%ParticleInside(iPart)
+  END IF ! IsVDLSpecID(iPart)
+END IF ! DoVirtualDielectricLayer
 #endif /*USE_HDG*/
 
 ! Calculate normal vector
@@ -303,7 +305,7 @@ USE MOD_Particle_Vars           ,ONLY: UseRotRefFrame,InRotRefFrame,PartVeloRotR
 USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
 USE MOD_Particle_Boundary_Vars  ,ONLY: RotPeriodicSideMapping, NumRotPeriodicNeigh, SurfSide2RotPeriodicSide, GlobalSide2SurfSide
 USE MOD_Particle_Tracking_Vars  ,ONLY: TrackInfo
-USE MOD_DSMC_Vars               ,ONLY: DSMC, AmbipolElecVelo
+USE MOD_DSMC_Vars               ,ONLY: DSMC, PartIntEn
 USE MOD_part_tools              ,ONLY: RotateVectorAroundAxis
 #ifdef CODE_ANALYZE
 USE MOD_Particle_Tracking_Vars  ,ONLY: PartOut,MPIRankOut
@@ -348,7 +350,7 @@ IF(UseRotRefFrame) THEN
 END IF
 Velo_old(1:3) = PartState(4:6,PartID)
 IF (DSMC%DoAmbipolarDiff) THEN
-  IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) Velo_oldAmbi(1:3) = AmbipolElecVelo(PartID)%ElecVelo(1:3)
+  IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) Velo_oldAmbi(1:3) = PartIntEn(PartID)%ElecVelo(1:3)
 END IF
 ! (1) perform the rotational periodic movement and adjust velocity vector
 rot_alpha = PartBound%RotPeriodicAngle(PartBound%MapToPartBC(SideInfo_Shared(SIDE_BCID,SideID)))
@@ -365,7 +367,7 @@ IF(UseRotRefFrame) THEN
 END IF
 IF (DSMC%DoAmbipolarDiff) THEN
   IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) THEN
-    AmbipolElecVelo(PartID)%ElecVelo(1:3) = RotateVectorAroundAxis(Velo_oldAmbi(1:3),PartBound%RotPeriodicAxis,rot_alpha)
+    PartIntEn(PartID)%ElecVelo(1:3) = RotateVectorAroundAxis(Velo_oldAmbi(1:3),PartBound%RotPeriodicAxis,rot_alpha)
   END IF
 END IF
 
@@ -501,9 +503,8 @@ USE MOD_Particle_Mesh_Tools     ,ONLY: ParticleInsideQuad3D
 USE MOD_Particle_Intersection   ,ONLY: IntersectionWithWall, ParticleThroughSideCheck3DFast
 USE MOD_part_tools              ,ONLY: StoreLostParticleProperties
 USE MOD_Particle_Tracking_Vars  ,ONLY: NbrOfLostParticles, TrackInfo, CountNbrOfLostParts,DisplayLostParticles
-USE MOD_DSMC_Vars               ,ONLY: DSMC, AmbipolElecVelo
 USE MOD_part_operations         ,ONLY: CreateParticle, RemoveParticle
-USE MOD_DSMC_Vars               ,ONLY: CollisMode, useDSMC, PartStateIntEn
+USE MOD_DSMC_Vars               ,ONLY: CollisMode, useDSMC, PartIntEn, SpecDSMC, DSMC
 USE MOD_Particle_Vars           ,ONLY: PDM,InterPlanePartNumber, InterPlanePartIndx
 USE MOD_Particle_Vars           ,ONLY: UseRotRefFrame, InRotRefFrame, RotRefFrameOmega, PartVeloRotRef, LastPartVeloRotRef
 USE MOD_part_tools              ,ONLY: RotateVectorAroundAxis
@@ -586,10 +587,18 @@ IF(DoCreateParticles) THEN
       SpecID = PartSpecies(PartID)
       NewVelo(1:3) = PartState(4:6,PartID)
       IF (useDSMC.AND.(CollisMode.GT.1)) THEN
-        VibEnergy = PartStateIntEn(1,PartID)
-        RotEnergy = PartStateIntEn(2,PartID)
+        IF((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
+          VibEnergy = PartIntEn(PartID)%EVib(1)
+          RotEnergy = PartIntEn(PartID)%ERot(1)
+        ELSE
+          VibEnergy = 0.0; RotEnergy = 0.0
+        END IF
         IF (DSMC%ElectronicModel.GT.0) THEN
-          ElecEnergy = PartStateIntEn(3,PartID)
+          IF((Species(SpecID)%InterID.NE.4).AND.(.NOT.SpecDSMC(SpecID)%FullyIonized).AND.(Species(SpecID)%InterID.NE.100)) THEN
+            ElecEnergy = PartIntEn(PartID)%EElec(1)
+          ELSE
+            ElecEnergy = 0.0
+          END IF
         ELSE
           ElecEnergy = 0.0
         ENDIF
@@ -654,7 +663,7 @@ IF(UseRotRefSubCycling) dtVar = dtVar / REAL(nSubCyclingSteps)
 ! (2) Calculate the POI and a new random POI on corresponding inter plane using a random angle within the periodic segment
 POI(1:3) = LastPartPos(1:3,PartID) + TrackInfo%PartTrajectory(1:3)*TrackInfo%alpha
 IF (DSMC%DoAmbipolarDiff) THEN
-  IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) Velo_oldAmbi(1:3) = AmbipolElecVelo(PartID)%ElecVelo(1:3)
+  IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) Velo_oldAmbi(1:3) = PartIntEn(PartID)%ElecVelo(1:3)
 END IF
 
 SELECT CASE(PartBound%RotPeriodicAxis)
@@ -715,7 +724,7 @@ Velo_old(1:3) = PartState(4:6,PartID)
 PartState(4:6,PartID) = RotateVectorAroundAxis(Velo_old(1:3),PartBound%RotPeriodicAxis,RotAlpha)
 IF (DSMC%DoAmbipolarDiff) THEN
   IF(Species(PartSpecies(PartID))%ChargeIC.GT.0.0) THEN
-    AmbipolElecVelo(PartID)%ElecVelo(1:3) = RotateVectorAroundAxis(Velo_oldAmbi(1:3),PartBound%RotPeriodicAxis,RotAlpha)
+    PartIntEn(PartID)%ElecVelo(1:3) = RotateVectorAroundAxis(Velo_oldAmbi(1:3),PartBound%RotPeriodicAxis,RotAlpha)
   END IF
 END IF
 

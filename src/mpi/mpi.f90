@@ -814,8 +814,8 @@ TYPE(MPI_Request), INTENT(INOUT) :: SendRequest(nNbProcs),RecRequest(nNbProcs)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 #if defined(MEASURE_MPI_WAIT)
-INTEGER(KIND=8)               :: CounterStart,CounterEnd
-REAL(KIND=8)                  :: Rate
+INTEGER(KIND=i8)              :: CounterStart,CounterEnd
+REAL(KIND=dp)                 :: Rate
 #endif /*defined(MEASURE_MPI_WAIT)*/
 !===================================================================================================================================
 #if defined(MEASURE_MPI_WAIT)
@@ -834,7 +834,7 @@ END DO !iProc=1,nNBProcs
   CALL SYSTEM_CLOCK(count=CounterEnd, count_rate=Rate)
   ! Note: Send and Receive are switched to have the same ordering as for particles (1. Send, 2. Receive)
   MPIW8TimeField(2) = MPIW8TimeField(2) + REAL(CounterEnd-CounterStart,8)/Rate
-  MPIW8CountField(2) = MPIW8CountField(2) + 1_8
+  MPIW8CountField(2) = MPIW8CountField(2) + 1_i8
   CALL SYSTEM_CLOCK(count=CounterStart)
 #endif /*defined(MEASURE_MPI_WAIT)*/
 
@@ -850,7 +850,7 @@ END DO !iProc=1,nNBProcs
   CALL SYSTEM_CLOCK(count=CounterEnd, count_rate=Rate)
   ! Note: Send and Receive are switched to have the same ordering as for particles (1. Send, 2. Receive)
   MPIW8TimeField(1) = MPIW8TimeField(1) + REAL(CounterEnd-CounterStart,8)/Rate
-  MPIW8CountField(1) = MPIW8CountField(1) + 1_8
+  MPIW8CountField(1) = MPIW8CountField(1) + 1_i8
 #endif /*defined(MEASURE_MPI_WAIT)*/
 
 END SUBROUTINE FinishExchangeMPIData
@@ -964,8 +964,8 @@ TYPE(MPI_Request), INTENT(INOUT)       :: SendRequest(nNbProcs),RecRequest(nNbPr
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 #if defined(MEASURE_MPI_WAIT)
-INTEGER(KIND=8)               :: CounterStart,CounterEnd
-REAL(KIND=8)                  :: Rate
+INTEGER(KIND=i8)              :: CounterStart,CounterEnd
+REAL(KIND=dp)                 :: Rate
 #endif /*defined(MEASURE_MPI_WAIT)*/
 INTEGER                       :: i,p,q,iSide,N_slave, SendIDLoc
 !===================================================================================================================================
@@ -1135,8 +1135,8 @@ TYPE(MPI_Request), INTENT(INOUT)       :: SendRequest(nNbProcs),RecRequest(nNbPr
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 #if defined(MEASURE_MPI_WAIT)
-INTEGER(KIND=8)               :: CounterStart,CounterEnd
-REAL(KIND=8)                  :: Rate
+INTEGER(KIND=i8)              :: CounterStart,CounterEnd
+REAL(KIND=dp)                 :: Rate
 #endif /*defined(MEASURE_MPI_WAIT)*/
 INTEGER                       :: i,p,q,iSide,N_slave,N_master
 !===================================================================================================================================

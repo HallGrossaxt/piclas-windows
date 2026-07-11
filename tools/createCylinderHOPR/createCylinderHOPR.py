@@ -284,21 +284,21 @@ def isOnlyDir(text):
 
 
 class tabCompleter(object):
-    """ 
+    """
     A tab completer that can either complete from
     the filesystem or from a list.
-    
+
     Partially taken from:
     http://stackoverflow.com/questions/5637124/tab-completion-in-pythons-raw-input
     """
 
     def pathCompleter(self, text, state):
-        """ 
+        """
         This is the tab completer for systems paths.
         Only tested on *nix systems
         """
         line = readline.get_line_buffer().split()
-        
+
         # replace ~ with the user's home dir. See https://docs.python.org/2/library/os.path.html
         if '~' in text:
             text = os.path.expanduser('~')
@@ -312,12 +312,12 @@ class tabCompleter(object):
 
         return [x for x in glob.glob(text + '*')][state]
 
-    
+
     def createListCompleter(self,ll):
-        """ 
+        """
         This is a closure that creates a method that autocompletes from
         the given list.
-        
+
         Since the autocomplete function can't be given a list to complete from
         a closure is used to create the listCompleter function with a list to complete
         from.
@@ -330,7 +330,7 @@ class tabCompleter(object):
 
             else:
                 return [c + " " for c in ll if c.startswith(line)][state]
-    
+
         self.listCompleter = listCompleter
 
 
@@ -379,7 +379,7 @@ def getInput(Configuration,question,variable,error,typeOfInput,sanityCheck=None)
         if Configuration.config.get(variable, None) is None:# or Configuration.config.get(variable, None) == '':
             userInput = input(question)
 
-            if userInput == '' and variable is not "hopr":
+            if userInput == '' and variable is not "pyhope":
                 print(red(error))
                 continue
         else:
@@ -445,7 +445,7 @@ Executable = ExternalCommand()
 print()
 print("Note: You can enter numbers in different formats, e.g., 0.1 or 1e-1 but not 1/10.")
 
-getInput(Configuration , "Please enter the path to the HOPR executable: "                                                                                                    , "hopr"     , "Please supply the path to the HOPR executable"  , "str")
+getInput(Configuration , "Please enter the path to the PyHOPE executable: "                                                                                                    , "pyhope"     , "Please supply the path to the PyHOPE executable"  , "str")
 getInput(Configuration , "Please enter the radius of the (inner) cylinder1: "                                                                                                 , "r1"       , "Please supply a value for the radius"           , "float" , sanityCheck=0)
 getInput(Configuration , "Please enter the radius of the simulation domain (outer cylinder): "                                                                               , "r2"       , "Please supply a value for the radius"           , "float" , sanityCheck=1)
 getInput(Configuration , "Please enter the type of cylinder you want\n  1: quarter cylinder\n  2: half cylinder\n  3: full cylinder: "                                       , "mode"     , "Please supply a number for the desired mesh"    , "int"   , sanityCheck=2)
@@ -490,7 +490,7 @@ Configuration.SaveConfig()
 #  # Set length in z direction
 #  if Configuration.config["z-extent"] == 0:
 #      #+ - lz
-#  
+#
 #  else:
 #      #0 +lz
 
@@ -696,7 +696,7 @@ vv=(/0.,0.,lp/)
 ! non-periodic
 !   BoundaryName=BC_back      ! BC index 1
 !   BoundaryType=(/3,0,0,0/)  ! (/ Type, curveIndex, State, alpha /)
-!   
+!
 !   BoundaryName=BC_front     ! BC index 2
 !   BoundaryType=(/3,0,0,0/)  ! (/ Type, curveIndex, State, alpha /)
 """)
@@ -781,22 +781,21 @@ print("          mesh type: %s" % mesh)
 print( )
 
 
-# Run hopr
-if Configuration.config.get("hopr", None) is not None :
-    if os.path.exists(Configuration.config["hopr"]):
-        input("Hit [enter] to run hopr (or [Ctrl+c] to abort): ")
-        cmd=[Configuration.config["hopr"], 'hopr.ini']
+# Run pyhope
+if Configuration.config.get("pyhope", None) is not None :
+    if os.path.exists(Configuration.config["pyhope"]):
+        input("Hit [enter] to run pyhope (or [Ctrl+c] to abort): ")
+        cmd=[Configuration.config["pyhope"], 'hopr.ini']
         try:
             Executable.execute_cmd(cmd, cwd)
         except Exception as e:
             print()
-            print(red("Failed to run the executable [%s]" % Configuration.config["hopr"]))
-            print(red("You can try and run the command by hand in this directory via: %s %s" % (Configuration.config["hopr"], 'hopr.ini')))
+            print(red("Failed to run the executable [%s]" % Configuration.config["pyhope"]))
+            print(red("You can try and run the command by hand in this directory via: %s %s" % (Configuration.config["pyhope"], 'hopr.ini')))
     else:
-        print(red("Error: hopr executable not found under [%s]" % Configuration.config["hopr"]))
+        print(red("Error: pyhope executable not found under [%s]" % Configuration.config["pyhope"]))
         exit(1)
 else:
     print("Done")
-
 
 

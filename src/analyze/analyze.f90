@@ -96,6 +96,7 @@ CALL prms%CreateRealOption('AvgPotential-Plane-x-coord', 'x-coordinate of the av
 CALL prms%CreateRealOption('AvgPotential-Plane-Tolerance', 'Absolute tolerance for checking the averaged electric potential plane '&
                                                          , '1E-5')
 CALL prms%CreateLogicalOption( 'CalcElectricTimeDerivative' ,"Calculate the time derivative of the electric displacement field D=eps*E and output to .h5 and .csv files.",".FALSE.")
+CALL prms%CreateLogicalOption( 'CalcElectricPotentialExtrema' ,"Calculate the electric potential extrema (min/max) on all BC except periodic, Neumann and FPC BC and output them to .csv file.",".FALSE.")
 #endif /*USE_HDG*/
 !-- TimeAverage
 CALL prms%CreateLogicalOption( 'CalcTimeAverage'            , 'Flag if time averaging should be performed','.FALSE.')
@@ -147,6 +148,8 @@ USE MOD_Mesh_Vars             ,ONLY: offSetElem
 USE MOD_Mesh_Tools            ,ONLY: GetCNElemID
 #if USE_HDG
 USE MOD_Analyze_Vars          ,ONLY: CalcAverageElectricPotential,PosAverageElectricPotential,CalcElectricTimeDerivative
+USE MOD_Analyze_Vars          ,ONLY: CalcElectricPotentialExtrema
+USE MOD_Analyze_HDG           ,ONLY: InitCalcElectricTimeDerivativeSurface,InitCalcElectricPotentialExtrema
 USE MOD_AnalyzeField_HDG      ,ONLY: GetAverageElectricPotentialPlane
 #ifdef PARTICLES
 USE MOD_PICInterpolation_Vars ,ONLY: useAlgebraicExternalField,AlgebraicExternalField
@@ -188,7 +191,7 @@ IF(DoCalcErrorNorms)THEN
   ! Get logical for writing the analytical solution, the error norms L2 and LInf to .h5
   OutputErrorNormsToH5 = GETLOGICAL('OutputErrorNormsToH5')
   ! Allocate container for exact solution (Gauss-Lobatto nodes)
-  ALLOCATE(Uex(1:PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze,1:nElems))
+  ALLOCATE(Uex(1:2*PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze,1:nElems))
   Uex = 0.
 END IF ! DoCalcErrorNorms
 
@@ -259,6 +262,11 @@ END IF
 ! Calculate the time derivative of D=eps0*E and output to h5
 CalcElectricTimeDerivative = GETLOGICAL('CalcElectricTimeDerivative')
 CALL InitCalcElectricTimeDerivativeSurface()
+
+!-- Electric potential extrema
+! Calculate the min/max values of the electric potential at the field boundaries (exclude periodic)
+CalcElectricPotentialExtrema = GETLOGICAL('CalcElectricPotentialExtrema')
+CALL InitCalcElectricPotentialExtrema()
 
 #endif /*USE_HDG*/
 
@@ -365,7 +373,7 @@ INTEGER                       :: iElem,k,l,m,Nloc
 #if USE_MPI
 REAL                          :: L_2_Error_tmp(PP_nVar), L_Inf_Error_tmp(PP_nVar)
 #endif /*USE_MPI*/
-REAL                          :: U_exact(1:PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
+REAL                          :: U_exact(1:2*PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: U_NAnalyze(1:PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: Coords_NAnalyze(3,0:NAnalyze,0:NAnalyze,0:NAnalyze)
 REAL                          :: J_NAnalyze(1,0:NAnalyze,0:NAnalyze,0:NAnalyze)
@@ -393,14 +401,17 @@ DO iElem=1,PP_nElems
         L_Inf_Error = MAX(L_Inf_Error,abs(U_NAnalyze(:,k,l,m) - U_exact(1:PP_nVar,k,l,m)))
         IntegrationWeight = wAnalyze(k)*wAnalyze(l)*wAnalyze(m)*J_NAnalyze(1,k,l,m)
         ! To sum over the elements, We compute here the square of the L_2 error
-        L_2_Error = L_2_Error+(U_NAnalyze(:,k,l,m) - U_exact(1:PP_nVar,k,l,m))*&
-                              (U_NAnalyze(:,k,l,m) - U_exact(1:PP_nVar,k,l,m))*IntegrationWeight
+        U_exact(PP_nVar+1:2*PP_nVar,k,l,m) = (U_NAnalyze(:,k,l,m) - U_exact(1:PP_nVar,k,l,m))*&
+                                             (U_NAnalyze(:,k,l,m) - U_exact(1:PP_nVar,k,l,m))*IntegrationWeight
+        ! Add contribution
+        L_2_Error(:) = L_2_Error(:)+U_exact(PP_nVar+1:2*PP_nVar,k,l,m)
       END DO ! k
     END DO ! l
   END DO ! m
   ! Output the exact solution, the L2 error and LInf error to .h5 (in NodeTypeGL = 'GAUSS-LOBATTO')
   IF(OutputErrorNormsToH5)THEN
-    Uex(1:PP_nVar,:,:,:,iElem) = U_exact(1:PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)
+    Uex(        1:PP_nVar  ,:,:,:,iElem) = U_exact(        1:PP_nVar  ,0:NAnalyze,0:NAnalyze,0:NAnalyze)
+    Uex(PP_nVar+1:2*PP_nVar,:,:,:,iElem) = U_exact(PP_nVar+1:2*PP_nVar,0:NAnalyze,0:NAnalyze,0:NAnalyze)/MeshVolume
   END IF ! OutputErrorNormsToH5
 END DO ! iElem=1,PP_nElems
 #if USE_MPI
@@ -524,6 +535,7 @@ USE MOD_TimeAverage          ,ONLY: FinalizeTimeAverage
 #endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))*/
 #if USE_HDG
 USE MOD_Analyze_Vars         ,ONLY: CalcAverageElectricPotential,EDC
+USE MOD_Analyze_Vars         ,ONLY: CalcElectricPotentialExtrema,EPE
 USE MOD_AnalyzeField_HDG     ,ONLY: FinalizeAverageElectricPotential
 USE MOD_Analyze_Vars         ,ONLY: CalcElectricTimeDerivative
 #endif /*USE_HDG*/
@@ -535,7 +547,7 @@ IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 #if USE_HDG && USE_MPI
-INTEGER :: iEDCBC
+INTEGER :: iEDCBC,iEPEBC
 #endif /*USE_HDG && USE_MPI*/
 !===================================================================================================================================
 #if PP_nVar>=6
@@ -555,6 +567,19 @@ IF(CalcElectricTimeDerivative)THEN
   SDEALLOCATE(EDC%COMM)
 #endif /*USE_MPI*/
 END IF ! CalcElectricTimeDerivative
+! Electric potential extrema (EPE)
+IF(CalcElectricPotentialExtrema)THEN
+  SDEALLOCATE(EPE%Minimum)
+  SDEALLOCATE(EPE%Maximum)
+  SDEALLOCATE(EPE%FieldBoundaries)
+  SDEALLOCATE(EPE%BCIDToEPEBCID)
+#if USE_MPI
+  DO iEPEBC = 1, EPE%NBoundaries
+    IF(EPE%COMM(iEPEBC)%UNICATOR.NE.MPI_COMM_NULL) CALL MPI_COMM_FREE(EPE%COMM(iEPEBC)%UNICATOR,iERROR)
+  END DO
+  SDEALLOCATE(EPE%COMM)
+#endif /*USE_MPI*/
+END IF ! CalcElectricPotentialExtrema
 #endif /*USE_HDG*/
 #if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))
 IF(doCalcTimeAverage) CALL FinalizeTimeAverage
@@ -1205,132 +1230,5 @@ rPerformBezierNewton=0.
 END SUBROUTINE CodeAnalyzeOutput
 #endif /*CODE_ANALYZE*/
 #endif /*PARTICLES*/
-
-#if USE_HDG
-!===================================================================================================================================
-!> Create containers and communicators for each boundary on which the electric displacement current is calculated and agglomerated
-!> This is done for all normal BCs except periodic BCs.
-!>
-!
-!> 1.) Loop over all field BCs and check if the current processor is either the MPI root or has at least one of the BCs that
-!>     contribute to the total electric displacement current. If yes, then this processor is part of the communicator
-!> 2.) Create Mapping from electric displacement current BC index to field BC index
-!> 3.) Create Mapping from field BC index to electric displacement current BC index
-!> 4.) Check if field BC is on current proc (or MPI root)
-!> 5.) Create MPI sub-communicators
-!===================================================================================================================================
-SUBROUTINE InitCalcElectricTimeDerivativeSurface()
-! MODULES
-USE MOD_Globals
-USE MOD_Preproc
-USE MOD_Mesh_Vars        ,ONLY: nBCs,BoundaryType
-USE MOD_Analyze_Vars     ,ONLY: DoFieldAnalyze,CalcElectricTimeDerivative,EDC
-!USE MOD_Equation_Vars    ,ONLY: Et
-#if USE_LOADBALANCE
-USE MOD_LoadBalance_Vars ,ONLY: PerformLoadBalance
-#endif /*USE_LOADBALANCE*/
-#if USE_MPI
-USE MOD_Mesh_Vars        ,ONLY: BoundaryName,nBCSides,BC
-#endif /*USE_MPI*/
-IMPLICIT NONE
-!----------------------------------------------------------------------------------------------------------------------------------!
-! INPUT / OUTPUT VARIABLES
-!-----------------------------------------------------------------------------------------------------------------------------------
-! LOCAL VARIABLES
-INTEGER             :: iBC,iEDCBC
-#if USE_MPI
-LOGICAL,ALLOCATABLE :: BConProc(:)
-INTEGER             :: SideID,color
-#endif /*USE_MPI*/
-!===================================================================================================================================
-IF(.NOT.CalcElectricTimeDerivative) RETURN ! Read-in parameter that is set in  InitAnalyze() in analyze.f90
-
-! Allocate temporal derivative for E: No need to nullify as is it overwritten with E the first time it is used
-!ALLOCATE(Et(1:3,0:PP_N,0:PP_N,0:PP_N,PP_nElems))
-!Et = 0.
-
-! 1.) Loop over all field BCs and check if the current processor is either the MPI root or has at least one of the BCs that
-! contribute to the total electric displacement current. If yes, then this processor is part of the communicator
-EDC%NBoundaries = 0
-DO iBC=1,nBCs
-  IF(BoundaryType(iBC,BC_ALPHA).NE.0) CYCLE
-  EDC%NBoundaries = EDC%NBoundaries + 1
-END DO
-
-! If not electric displacement current boundaries exist, no measurement of the current can be performed
-IF(EDC%NBoundaries.EQ.0) RETURN
-
-! Automatically activate surface model analyze flag
-DoFieldAnalyze = .TRUE.
-
-! 2.) Create Mapping from electric displacement current BC index to field BC index
-ALLOCATE(EDC%FieldBoundaries(EDC%NBoundaries))
-EDC%NBoundaries = 0
-DO iBC=1,nBCs
-  IF(BoundaryType(iBC,BC_ALPHA).NE.0) CYCLE
-  EDC%NBoundaries = EDC%NBoundaries + 1
-  EDC%FieldBoundaries(EDC%NBoundaries) = iBC
-END DO
-
-! Allocate the container
-ALLOCATE(EDC%Current(1:EDC%NBoundaries))
-EDC%Current = 0.
-
-! 3.) Create Mapping from field BC index to electric displacement current BC index
-ALLOCATE(EDC%BCIDToEDCBCID(nBCs))
-EDC%BCIDToEDCBCID = -1
-DO iEDCBC = 1, EDC%NBoundaries
-  iBC = EDC%FieldBoundaries(iEDCBC)
-  EDC%BCIDToEDCBCID(iBC) = iEDCBC
-END DO ! iEDCBC = 1, EDC%NBoundaries
-
-#if USE_MPI
-! 4.) Check if field BC is on current proc (or MPI root)
-ALLOCATE(BConProc(EDC%NBoundaries))
-BConProc = .FALSE.
-IF(MPIRoot)THEN
-  BConProc = .TRUE.
-ELSE
-  DO SideID=1,nBCSides
-    IF(BoundaryType(BC(SideID),BC_ALPHA).NE.0) CYCLE
-    iBC     = BC(SideID)
-    iEDCBC  = EDC%BCIDToEDCBCID(iBC)
-    BConProc(iEDCBC) = .TRUE.
-  END DO ! SideID=1,nBCSides
-END IF ! MPIRoot
-
-! 5.) Create MPI sub-communicators
-ALLOCATE(EDC%COMM(EDC%NBoundaries))
-DO iEDCBC = 1, EDC%NBoundaries
-  ! create new communicator
-  color = MERGE(iEDCBC, MPI_UNDEFINED, BConProc(iEDCBC))
-
-  ! set communicator id
-  EDC%COMM(iEDCBC)%ID=iEDCBC
-
-  ! create new emission communicator for electric displacement current communication. Pass MPI_INFO_NULL as rank to follow the original ordering
-  CALL MPI_COMM_SPLIT(MPI_COMM_PICLAS, color, 0, EDC%COMM(iEDCBC)%UNICATOR, iError)
-
-  ! Find my rank on the shared communicator, comm size and proc name
-  IF(BConProc(iEDCBC))THEN
-    CALL MPI_COMM_RANK(EDC%COMM(iEDCBC)%UNICATOR, EDC%COMM(iEDCBC)%MyRank, iError)
-    CALL MPI_COMM_SIZE(EDC%COMM(iEDCBC)%UNICATOR, EDC%COMM(iEDCBC)%nProcs, iError)
-
-    ! inform about size of emission communicator
-    IF (EDC%COMM(iEDCBC)%MyRank.EQ.0) THEN
-#if USE_LOADBALANCE
-      IF(.NOT.PerformLoadBalance)&
-#endif /*USE_LOADBALANCE*/
-          WRITE(UNIT_StdOut,'(A,I0,A,I0,A)') ' Electric displacement current: Emission-Communicator ',iEDCBC,' on ',&
-              EDC%COMM(iEDCBC)%nProcs,' procs for '//TRIM(BoundaryName(EDC%FieldBoundaries(iEDCBC)))
-    END IF
-  END IF ! BConProc(iEDCBC)
-END DO ! iEDCBC = 1, EDC%NBoundaries
-DEALLOCATE(BConProc)
-#endif /*USE_MPI*/
-
-
-END SUBROUTINE InitCalcElectricTimeDerivativeSurface
-#endif /*USE_HDG*/
 
 END MODULE MOD_Analyze

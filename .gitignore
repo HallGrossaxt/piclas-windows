@@ -50,7 +50,6 @@ core
 # hopr debug files
 sfc.dat
 
-
 # visualization files
 *.vtu
 *.h5
@@ -110,3 +109,6 @@ windows-tools/*.bak
 # Claude Code local settings (developer-machine specific)
 .claude/
 userblock.txt
+
+# gmsh mesh files
+*.msh

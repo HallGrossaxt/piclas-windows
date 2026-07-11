@@ -21,16 +21,7 @@ MODULE MOD_DSMC_CollisVec
 IMPLICIT NONE
 PRIVATE
 
-INTERFACE DiceDeflectedVelocityVector4Coll
-  MODULE PROCEDURE DiceDeflectedVelocityVector4Coll
-END INTERFACE
-
-INTERFACE DiceVelocityVector4Coll
-  MODULE PROCEDURE DiceVelocityVector4Coll
-END INTERFACE
-
 ABSTRACT INTERFACE
-  !FUNCTION PostCollisionVeloVec(iPair)
   FUNCTION PostCollisionVeloVec(iPair,ForceUnitVector) RESULT(VeloVec)
     INTEGER,INTENT(IN)          :: iPair               ! index of collision pair
     LOGICAL,INTENT(IN),OPTIONAL :: ForceUnitVector

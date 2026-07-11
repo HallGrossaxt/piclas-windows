@@ -112,12 +112,12 @@ INTEGER          :: BGType                     !< Type of BG-Field (Electric,Mag
 INTEGER          :: BGDataSize                 !< Type of BG-Field (Electric,Magnetic,Both)
 LOGICAL          :: BGFieldVTKOutput           !< Output the background field in VTK data format
 TYPE tPsiMag
-  REAL,ALLOCATABLE :: PsiMag(:,:,:)              
+  REAL,ALLOCATABLE :: PsiMag(:,:,:)
   REAL,ALLOCATABLE :: BGField(:,:,:,:)         !< BGField numerical solution (1:x,0:NBG,0:NBG,0:NBG,1:PP_nElems)
   REAL,ALLOCATABLE :: BGFieldAnalytic(:,:,:,:) !< BGField analytic solution (1:x,0:NBG,0:NBG,0:NBG,1:PP_nElems)
   REAL, ALLOCATABLE:: BGFieldTDep(:,:,:,:,:)   !< Time-dependent background field                                                                !< [1:3,0:NBG,0:NBG,0:NBG,1:PP_nElems,1:nTimePoints]
 END TYPE tPsiMag
-TYPE(tPsiMag),ALLOCATABLE    :: N_BG(:) 
+TYPE(tPsiMag),ALLOCATABLE    :: N_BG(:)
 !===================================================================================================================================
 
 LOGICAL           :: InterpolationInitIsDone = .FALSE. !< Flag whether the initialization has been completed or not

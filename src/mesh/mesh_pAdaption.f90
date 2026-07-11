@@ -17,6 +17,7 @@ MODULE MOD_Mesh_pAdaption
 ! Contains subroutines to build (curviilinear) meshes and provide metrics, etc.
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -25,8 +26,9 @@ PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
 PUBLIC :: InitpAdaption
+PUBLIC :: GetLocSideList
 #if !(PP_TimeDiscMethod==700)
-PUBLIC::Set_N_DG_Mapping
+PUBLIC :: Set_N_DG_Mapping
 #endif /*!(PP_TimeDiscMethod==700)*/
 
 INTEGER,PARAMETER,PUBLIC :: PRM_P_ADAPTION_DBG2 = -2 ! Debugging
@@ -51,34 +53,35 @@ SUBROUTINE InitpAdaption()
 ! MODULES
 USE MOD_Globals
 USE MOD_PreProc
-!USE MOD_DG_Vars            ,ONLY: DG_Elems_master,DG_Elems_slave
+USE MOD_Mesh_Vars          ,ONLY: NMaxGlobal,NMinGlobal
 #if !(PP_TimeDiscMethod==700)
 USE MOD_DG_Vars            ,ONLY: N_DG,pAdaptionType,pAdaptionBCLevel,NDGAllocationIsDone
-#endif /*!(PP_TimeDiscMethod==700)*/
 USE MOD_IO_HDF5            ,ONLY: AddToElemData,ElementOut,ElementOutNloc
 USE MOD_Mesh_Vars          ,ONLY: nElems,SideToElem,nBCSides,Boundarytype,BC,readFEMconnectivity,NodeCoords,nGlobalDOFs
-USE MOD_Mesh_Vars          ,ONLY: NMaxGlobal,NMinGlobal
 USE MOD_ReadInTools        ,ONLY: GETINTFROMSTR
 USE MOD_Interpolation_Vars ,ONLY: NMax,NMin
 USE MOD_Mesh_Vars          ,ONLY: readFEMconnectivity, offsetElem, nElems
+#endif /*!(PP_TimeDiscMethod==700)*/
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! INPUT/OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
+#if !(PP_TimeDiscMethod==700)
 INTEGER :: iElem,BCSideID,BCType
 REAL    :: RandVal,x
 LOGICAL :: SetBCElemsToNMax
-INTEGER(KIND=8) :: nLocalDOFs
+INTEGER(KIND=i8):: nLocalDOFs
 #if USE_MPI
 INTEGER :: NMinTmp, NMaxTmp
 #endif /*USE_MPI*/
+#endif /*!(PP_TimeDiscMethod==700)*/
 !===================================================================================================================================
+#if !(PP_TimeDiscMethod==700)
 ! Set defaults
 SetBCElemsToNMax = .FALSE. ! Initialize
 
-#if !(PP_TimeDiscMethod==700)
-pAdaptionBCLevel = 0 ! Initialize with zero to deactiavte. Valid values for the model are -2,-1,1,2 ...
+pAdaptionBCLevel = 0 ! Initialize with zero to deactivate. Valid values for the model are -2,-1,1,2 ...
 NDGAllocationIsDone = .FALSE.
 
 ! Read p-adaption specific input data
@@ -206,6 +209,12 @@ nGlobalDOFs = nLocalDOFs
 
 ! Initialize element containers
 CALL Build_N_DG_Mapping()
+! For further layers, loop over the elements again and check for already marked elements instead of the sides. This requires
+! a built N_DG_Mapping to account for neighbour elements in the halo region, N_DG_Mapping has to be rebuild afterwards
+IF(ABS(pAdaptionBCLevel).GT.1)THEN
+  CALL SetpAdaptionBCLevel2()
+  CALL Build_N_DG_Mapping()
+END IF ! pAdaptionBCLevel.GT.1
 #else
 NMinGlobal = PP_N
 NMaxGlobal = PP_N
@@ -231,22 +240,17 @@ USE MOD_Mesh_Vars          ,ONLY: readFEMconnectivity, offsetElem, nElems
 USE MOD_Mesh_Vars          ,ONLY: ElemInfo,VertexInfo,VertexConnectInfo
 USE MOD_Mesh_Vars          ,ONLY: BoundaryType
 USE MOD_Particle_Mesh_Vars ,ONLY: ElemInfo_Shared,SideInfo_Shared
-USE MOD_DG_Vars            ,ONLY: N_DG,pAdaptionBCLevel,N_DG_Mapping
+USE MOD_DG_Vars            ,ONLY: N_DG,pAdaptionBCLevel
 USE MOD_Interpolation_Vars ,ONLY: NMax,NMin
 #if USE_LOADBALANCE
-USE MOD_LoadBalance_Vars ,ONLY: PerformLoadBalance
+USE MOD_LoadBalance_Vars   ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
-#if USE_MPI
-USE MOD_DG_Vars         ,ONLY: N_DG_Mapping_Shared_Win
-USE MOD_MPI_Shared_Vars ,ONLY: MPI_COMM_SHARED
-USE MOD_MPI_Shared
-#endif /*USE_MPI*/
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! INPUT / OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER :: iElem,BCType,NonUniqueGlobalSideID,iGlobalElemID,BCIndex,ElemType,OffsetCounter
+INTEGER :: iElem,BCType,NonUniqueGlobalSideID,iGlobalElemID,BCIndex,ElemType
 INTEGER :: iVertexConnect,GlobalNbElemID,GlobalNbLocVertexID,LocSideList(3),iLocSideList,iLocSide
 INTEGER :: FirstElemInd,LastElemInd
 INTEGER :: FirstVertexInd,LastVertexInd,FirstVertexConnectInd,LastVertexConnectInd
@@ -283,7 +287,7 @@ GlobalElemIDLoop: DO iGlobalElemID = FirstElemInd, LastElemInd
   VertexConnectLoop: DO iVertexConnect = FirstVertexConnectInd, LastVertexConnectInd
     ! Check if current element has already been flagged
     IF(N_DG(iElem).EQ.NMax) EXIT VertexConnectLoop
-    ! Get neighbour infos
+    ! Get neighbour infos. Note the ABS() for +/- master/slave notation
     GlobalNbElemID      = ABS(VertexConnectInfo(VERTEXCONNECT_NBELEMID   ,iVertexConnect))
     GlobalNbLocVertexID = VertexConnectInfo(VERTEXCONNECT_NBLOCNODEID,iVertexConnect)
     ! Set sides depending on the element type: Only implemented for Hexahedral elements
@@ -307,50 +311,79 @@ GlobalElemIDLoop: DO iGlobalElemID = FirstElemInd, LastElemInd
   END DO VertexConnectLoop ! iVertexConnect = FirstVertexConnectInd, LastVertexConnectInd
 END DO GlobalElemIDLoop ! iGlobalElemID = FirstElemInd, LastElemInd
 
-
-! For further layers, loop over the elements again and check for already marked elements instead of the sides
-IF(ABS(pAdaptionBCLevel).GT.1)THEN
-  ! Allocate the shared memory container and associate pointer: N_DG_Mapping
-  CALL Allocate_N_DG_Mapping()
-
-  ! Set Nloc in N_DG_Mapping
-  CALL Set_N_DG_Mapping(OffsetCounter)
-
-#if USE_MPI
-  ! Synchronize shared array before utilization as GlobalNbElemID can be outside of the processors local elements
-  CALL BARRIER_AND_SYNC(N_DG_Mapping_Shared_Win,MPI_COMM_SHARED)
-#endif /*USE_MPI*/
-
-  ! Loop over the process-local global elements indices
-  iGlobalElemID_loop: DO iGlobalElemID = FirstElemInd, LastElemInd
-    iElem = iGlobalElemID - offsetElem
-    IF(N_DG(iElem).GT.NMin) CYCLE iGlobalElemID_loop
-    ! Get local VertexInfo of current element
-    FirstVertexInd = ElemInfo(ELEM_FIRSTVERTEXIND,iGlobalElemID)+1
-    LastVertexInd  = ElemInfo(ELEM_LASTVERTEXIND,iGlobalElemID)
-    ! Get local vertex connectivity
-    FirstVertexConnectInd = VertexInfo(VERTEX_FIRSTCONNECTIND,FirstVertexInd)+1
-    LastVertexConnectInd  = VertexInfo(VERTEX_LASTCONNECTIND,LastVertexInd)
-    iVertexConnect_loop: DO iVertexConnect = FirstVertexConnectInd, LastVertexConnectInd
-      ! Check if current element has already been flagged
-      IF(N_DG(iElem).GT.NMin) EXIT iVertexConnect_loop
-      ! Get neighbour infos
-      GlobalNbElemID = ABS(VertexConnectInfo(VERTEXCONNECT_NBELEMID   ,iVertexConnect))
-      IF(N_DG_Mapping(2,GlobalNbElemID).EQ.NMax)THEN
-        IF(pAdaptionBCLevel.EQ.-2)THEN
-          N_DG(iElem) = NMin+1
-        ELSE
-          N_DG(iElem) = NMax
-        END IF ! pAdaptionBCLevel.EQ.-2
-      END IF ! N_DG_Mapping(2,GlobalNbElemID).EQ.NMax
-    END DO iVertexConnect_loop ! iVertexConnect = FirstVertexConnectInd, LastVertexConnectInd
-  END DO iGlobalElemID_loop ! iGlobalElemID = FirstElemInd, LastElemInd
-
-#if USE_MPI
-  CALL BARRIER_AND_SYNC(N_DG_Mapping_Shared_Win,MPI_COMM_SHARED)
-#endif /*USE_MPI*/
-END IF ! pAdaptionBCLevel.GT.1
 END SUBROUTINE SetpAdaptionBCLevel
+
+!===================================================================================================================================
+!> Set Nloc of BC elements to a higher polynomial degree than in the volume: pAdaptionBCLevel = 2
+!> For further layers, loop over the elements again and check for already marked elements instead of the sides
+!===================================================================================================================================
+SUBROUTINE SetpAdaptionBCLevel2()
+! MODULES
+USE MOD_Globals
+USE MOD_Mesh_Vars          ,ONLY: readFEMconnectivity, offsetElem, nElems
+USE MOD_Mesh_Vars          ,ONLY: ElemInfo,VertexInfo,VertexConnectInfo
+USE MOD_DG_Vars            ,ONLY: N_DG,pAdaptionBCLevel,N_DG_Mapping
+USE MOD_Interpolation_Vars ,ONLY: NMax,NMin
+#if USE_LOADBALANCE
+USE MOD_LoadBalance_Vars   ,ONLY: PerformLoadBalance
+#endif /*USE_LOADBALANCE*/
+#if USE_MPI
+USE MOD_MPI_Shared
+#endif /*USE_MPI*/
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------!
+! INPUT / OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER :: iElem,iGlobalElemID
+INTEGER :: iVertexConnect,GlobalNbElemID
+INTEGER :: FirstElemInd,LastElemInd
+INTEGER :: FirstVertexInd,LastVertexInd,FirstVertexConnectInd,LastVertexConnectInd
+!===================================================================================================================================
+! Do not re-allocate during load balance here as it is communicated between the processors
+#if USE_LOADBALANCE
+IF(PerformLoadBalance) RETURN
+#endif /*USE_LOADBALANCE*/
+
+! Sanity check: This routine requires FEM connectivity
+IF(.NOT.readFEMconnectivity) CALL abort(__STAMP__,'Error in p-adaption init: readFEMconnectivity=T is required!')
+
+! Element index
+FirstElemInd = offsetElem+1
+LastElemInd  = offsetElem+nElems
+
+! Loop over the process-local global elements indices
+iGlobalElemID_loop: DO iGlobalElemID = FirstElemInd, LastElemInd
+  iElem = iGlobalElemID - offsetElem
+  IF(N_DG(iElem).GT.NMin) CYCLE iGlobalElemID_loop
+  ! Get local VertexInfo of current element
+  FirstVertexInd = ElemInfo(ELEM_FIRSTVERTEXIND,iGlobalElemID)+1
+  LastVertexInd  = ElemInfo(ELEM_LASTVERTEXIND,iGlobalElemID)
+  ! Get local vertex connectivity
+  FirstVertexConnectInd = VertexInfo(VERTEX_FIRSTCONNECTIND,FirstVertexInd)+1
+  LastVertexConnectInd  = VertexInfo(VERTEX_LASTCONNECTIND,LastVertexInd)
+  iVertexConnect_loop: DO iVertexConnect = FirstVertexConnectInd, LastVertexConnectInd
+    ! Check if current element has already been flagged
+    IF(N_DG(iElem).GT.NMin) EXIT iVertexConnect_loop
+    ! Get neighbour infos
+    GlobalNbElemID = ABS(VertexConnectInfo(VERTEXCONNECT_NBELEMID   ,iVertexConnect))
+    IF(N_DG_Mapping(2,GlobalNbElemID).EQ.NMax)THEN
+      IF(pAdaptionBCLevel.EQ.-2)THEN
+        N_DG(iElem) = NMin+1
+      ELSE
+        N_DG(iElem) = NMax
+      END IF ! pAdaptionBCLevel.EQ.-2
+    END IF ! N_DG_Mapping(2,GlobalNbElemID).EQ.NMax
+  END DO iVertexConnect_loop ! iVertexConnect = FirstVertexConnectInd, LastVertexConnectInd
+END DO iGlobalElemID_loop ! iGlobalElemID = FirstElemInd, LastElemInd
+
+#if USE_MPI
+! Wait for everybody to finish the loop to avoid changing N_DG_Mapping in Build_N_DG_Mapping, which can lead to erroneously flagging
+! elements that have just been flagged in the same loop on another process
+CALL MPI_BARRIER(MPI_COMM_PICLAS,iError)
+#endif
+
+END SUBROUTINE SetpAdaptionBCLevel2
 
 
 !===================================================================================================================================
@@ -487,7 +520,7 @@ ELSE
   ! Communication between nodes
   IF (nComputeNodeProcessors.NE.nProcessors.AND.myComputeNodeRank.EQ.0) THEN
     ! Arrays for the compute node to hold the elem offsets
-    ALLOCATE(displsDofs(   0:nLeaderGroupProcs-1), recvcountDofs(0:nLeaderGroupProcs-1))
+    IF(.NOT.ALLOCATED(displsDofs)) ALLOCATE(displsDofs(   0:nLeaderGroupProcs-1), recvcountDofs(0:nLeaderGroupProcs-1))
     displsDofs(myLeaderGroupRank) = offsetComputeNodeElem
     ! BUGG-B: MS-MPI MPI_IN_PLACE on a 1-proc communicator zeroes the in-place buffer; skip on single leader
     IF (nLeaderGroupProcs.GT.1) &
@@ -517,7 +550,7 @@ ELSE
       recvcountDofs(iProc-1) = displsDofs(iProc)-displsDofs(iProc-1)
     END DO
     recvcountDofs(nLeaderGroupProcs-1) = nDofsMapping - displsDofs(nLeaderGroupProcs-1)
-    END IF
+  END IF
 
   CALL BARRIER_AND_SYNC(N_DG_Mapping_Shared_Win ,MPI_COMM_SHARED)
 
@@ -530,10 +563,14 @@ ELSE
 END IF
 #endif /*USE_LOADBALANCE*/
 END SUBROUTINE Build_N_DG_Mapping
+#endif /*!(PP_TimeDiscMethod==700)*/
 
 
 !===================================================================================================================================
 !> Returns a list of sides (depending on the CGNS ordering) for a given local corner node index
+!> The ordering is described in the HOPR documentation: https://hopr.readthedocs.io/en/latest/_images/CGNS_edges.jpg
+!> iVertexID are CGNS sorted and NonUniqueGlobalNodeID are not (use the CNS - corner node switch - to map between the two in the
+!> local system)
 !===================================================================================================================================
 SUBROUTINE GetLocSideList(ElemType,iLocNode,LocSideList)
 ! MODULES
@@ -551,6 +588,28 @@ INTEGER, INTENT(OUT) :: LocSideList(3)
 SELECT CASE(ElemType)
 CASE(108,118,208)
   ! Hexahedral elements
+  !                      CGNS sides and corner nodes
+  !
+  !                       c8                       c7
+  !                         +---------------------+
+  !                        /|                    /|
+  !   Top: S6             / |                   / |
+  !   Bot: S1            /  |        /         /  |
+  ! Front: S2           /   |    --S6--       /   |
+  !  Back: S4          /    |     /   S4     /    |
+  !  Left: S5         /     |               /     |
+  ! Right: S3     c5 +---------------------+ c6   |
+  !                  |  S5  |              |  S3  |
+  !   zeta,k         |   c4 +--------------|------+ c3
+  !      |   eta,j   |     /               |     /
+  !      |  /        |    /    S2    /     |    /
+  !      | /         |   /       --S1--    |   /
+  !      |/_____xi,i |  /         /        |  /
+  !                  | /                   | /
+  !                  |/                    |/
+  !                  +---------------------+
+  !               c1                        c2
+  !
   SELECT CASE(iLocNode)
   CASE(1)
     LocSideList=(/1,2,5/)
@@ -575,6 +634,5 @@ CASE DEFAULT
   CALL abort(__STAMP__,'Element type not implemented: ElemType =',IntInfoOpt=ElemType)
 END SELECT
 END SUBROUTINE GetLocSideList
-#endif /*!(PP_TimeDiscMethod==700)*/
 
 END MODULE MOD_Mesh_pAdaption

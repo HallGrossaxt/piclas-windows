@@ -253,6 +253,10 @@ The calculation is activated by
 and the output container for the 3D data is labelled `MaxPartDisplacement3D`.
 Furthermore, a container for each spatial coordinate is created, which are labelled `MaxPartDisplacementDirX`,
 `MaxPartDisplacementDirY` and `MaxPartDisplacementDirZ`, respectively.
+Additionally, the percentage of elements for each of the four properties, which yield a value smaller than 1.0, is written to
+`PartAnalyze.csv` to track the evolution over time.
+They are labelled `-PercentMaxPartDisplacement3D`, `-PercentMaxPartDisplacementDirX`,
+`-PercentMaxPartDisplacementDirY` and `-PercentMaxPartDisplacementDirZ`, respectively.
 
 **Electron Cyclotron Motion**
 The gyrokinetic or cyclotron motion of electrons can be analyzed by calculating the cyclotron frequency

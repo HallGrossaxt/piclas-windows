@@ -20,6 +20,7 @@ MODULE MOD_DSMC_Vars
 #if USE_MPI
 USE mpi_f08
 #endif /*USE_MPI*/
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -51,8 +52,20 @@ INTEGER                       :: SelectionProc              ! Mode of Selection 
 INTEGER                       :: PairE_vMPF(2)              ! 1: Pair chosen for energy redistribution
                                                             ! 2: partical with minimal MPF of this Pair
 LOGICAL                       :: useDSMC
-REAL    , ALLOCATABLE         :: PartStateIntEn(:,:)        ! 1st index: 1:npartmax
-!                                                           ! 2nd index: Evib, Erot, Eel
+
+TYPE tPartIntEn
+  REAL, ALLOCATABLE           :: EVib(:)                    ! Vibrational Energy
+  REAL, ALLOCATABLE           :: ERot(:)                    ! Rotational Energy
+  REAL, ALLOCATABLE           :: EElec(:)                   ! Electronic Energy
+  REAL, ALLOCATABLE           :: TSolid(:)                  ! Temperature of Solid Particles
+  INTEGER, ALLOCATABLE        :: QVib(:)                    ! Vibrational Quantum numbers
+  INTEGER, ALLOCATABLE        :: QRot(:)                    ! Rotational Quantum numbers
+  INTEGER, ALLOCATABLE        :: QElec(:)                   ! Electronic Quantum numbers
+  REAL, ALLOCATABLE           :: DistriFunc(:)              ! Electronic distribution function
+  REAL, ALLOCATABLE           :: ElecVelo(:)                ! Electron velocity for ambipolar diffusion
+END TYPE tPartIntEn
+
+TYPE(tPartIntEn), ALLOCATABLE :: PartIntEn(:)
 
 LOGICAL                       :: useRelaxProbCorrFactor     ! Use the relaxation probability correction factor of Lumpkin
 
@@ -136,7 +149,7 @@ TYPE tClonedParticles
   ! Clone Delay: Clones are inserted at the next time step
   INTEGER                     :: Species
   REAL                        :: PartState(1:6)
-  REAL                        :: PartStateIntEn(1:3)
+  TYPE(tPartIntEn)            :: PartIntEn
   INTEGER                     :: Element
   REAL                        :: LastPartPos(1:3)
   REAL                        :: WeightingFactor
@@ -338,18 +351,6 @@ END TYPE
 
 TYPE(tAHO)                       :: AHO
 
-TYPE tRegion
-  CHARACTER(40)                 :: Type             ! Geometric type of the region, e.g. cylinder
-                                ! Region-Type: cylinder
-  REAL                          :: RadiusIC
-  REAL                          :: Radius2IC
-  REAL                          :: CylinderHeightIC
-  REAL                          :: BasePointIC(3)
-  REAL                          :: BaseVector1IC(3)
-  REAL                          :: BaseVector2IC(3)
-  REAL                          :: NormalVector(3)
-END TYPE tRegion
-
 TYPE tBGGas
   INTEGER                       :: NumberOfSpecies          ! Number of background gas species
   LOGICAL, ALLOCATABLE          :: BackgroundSpecies(:)     ! Flag, if a species is a background gas species, [1:nSpecies]
@@ -361,6 +362,7 @@ TYPE tBGGas
   REAL, ALLOCATABLE             :: NumberDensity(:)         ! Number densities of the background gas, [1:BGGas%NumberOfSpecies]
   INTEGER, ALLOCATABLE          :: PairingPartner(:)        ! Index of the background particle generated for the pairing with a
                                                             ! regular particle
+  ! Background gas distribution
   LOGICAL                       :: UseDistribution          ! Flag for the utilization of a background gas distribution as read-in
                                                             ! from a previous DSMC/BGK simulation result
   REAL, ALLOCATABLE             :: Distribution(:,:,:)      ! Element local background gas [1:BGGSpecies,1:10,1:nElems]
@@ -369,22 +371,21 @@ TYPE tBGGas
                                                                 ! as a background distribution [1:nSpecies]
   LOGICAL, ALLOCATABLE          :: TraceSpecies(:)          ! Flag, if species is a trace element, Input: [1:nSpecies]
   REAL                          :: MaxMPF                   ! Maximum weighting factor of the background gas species
+  ! Background gas regions
   INTEGER                       :: nRegions                 ! Number of different background gas regions (read-in)
   LOGICAL                       :: UseRegions               ! Flag for the definition of different background gas regions (set after read-in)
   INTEGER, ALLOCATABLE          :: RegionElemType(:)        ! 0: outside, positive integers: inside region number
-  TYPE(tRegion), ALLOCATABLE    :: Region(:)                ! Type for the geometry definition of the different regions [1:nRegions]
-  CHARACTER(LEN=64)                         :: DatabaseName                     ! Database name from which to coefficients where calculated
-                                                                                ! , required for SpeciesDatabase
-  REAL, ALLOCATABLE                         :: ElectronMobility(:,:) ! first column: Reduced electric field (Td) 
-                                                                    ! second column: Electron Mobility mu (UNIT)
-  REAL, ALLOCATABLE                         :: DriftDiffusionCoefficient(:,:) ! first column: Reduced electric field (Td)
-                                                                              ! second column: drift diffusion coefficient D (UNIT)
-  REAL, ALLOCATABLE                         :: ReducedTownsendCoefficient(:,:) ! first column: Reduced electric field (Td)
-                                                                              ! second column: Reduced Townsend coefficient (alpha/N) in m^2
+  ! Drift-diffusion modelling
+  CHARACTER(LEN=64)             :: DatabaseName             ! Database name from which to coefficients where calculated, required for SpeciesDatabase
+  REAL, ALLOCATABLE             :: ElectronMobility(:,:)    ! first column: Reduced electric field (Td)
+                                                            ! second column: Electron Mobility mu (UNIT)
+  REAL, ALLOCATABLE             :: DriftDiffusionCoefficient(:,:)   ! first column: Reduced electric field (Td)
+                                                                    ! second column: drift diffusion coefficient D (UNIT)
+  REAL, ALLOCATABLE             :: ReducedTownsendCoefficient(:,:)  ! first column: Reduced electric field (Td)
+                                                                    ! second column: Reduced Townsend coefficient (alpha/N) in m^2
 END TYPE tBGGas
 
 TYPE(tBGGas)                    :: BGGas
-
 
 TYPE tPairData
   REAL                          :: CRela2                       ! squared relative velo of the particles in a pair
@@ -559,17 +560,6 @@ END TYPE
 
 TYPE (tPolyatomMolDSMC), ALLOCATABLE    :: PolyatomMolDSMC(:)        ! Infos for Polyatomic Molecule
 
-TYPE tPolyatomMolVibQuant !DSMC Species Param
-  INTEGER, ALLOCATABLE            :: Quants(:)            ! Vib quants of each DOF for each particle
-END TYPE
-
-TYPE (tPolyatomMolVibQuant), ALLOCATABLE    :: VibQuantsPar(:)
-
-TYPE tAmbipolElecVelo !DSMC Species Param
-  REAL, ALLOCATABLE            :: ElecVelo(:)            ! Vib quants of each DOF for each particle
-END TYPE
-
-TYPE (tAmbipolElecVelo), ALLOCATABLE    :: AmbipolElecVelo(:)
 INTEGER, ALLOCATABLE            :: AmbiPolarSFMapping(:,:)
 INTEGER, ALLOCATABLE            :: iPartIndx_NodeNewAmbi(:)
 INTEGER                         :: newAmbiParts
@@ -580,15 +570,9 @@ INTEGER, ALLOCATABLE            :: iPartIndx_NodeElecRelaxChem(:)
 INTEGER                         :: nElecRelaxChemParts
 LOGICAL, ALLOCATABLE            :: ElecRelaxPart(:)
 
-TYPE tElectronicDistriPart !DSMC Species Param
-  REAL, ALLOCATABLE               :: DistriFunc(:)            ! Vib quants of each DOF for each particle
-END TYPE
-
-TYPE (tElectronicDistriPart), ALLOCATABLE    :: ElectronicDistriPart(:)
-
 ! MacValout and MacroVolSample have to be separated due to autoinitialrestart
-INTEGER(KIND=8)                  :: iter_macvalout             ! iterations since last macro volume output
-INTEGER(KIND=8)                  :: iter_macsurfvalout         ! iterations since last macro surface output
+INTEGER(KIND=i8)                 :: iter_macvalout             ! iterations since last macro volume output
+INTEGER(KIND=i8)                 :: iter_macsurfvalout         ! iterations since last macro surface output
 LOGICAL                          :: SamplingActive             ! Identifier if DSMC Sampling is activated
 INTEGER                          :: ReactionProbGTUnityCounter ! Count the number of ReactionProb>1 (turn off the warning after
 !                                                              ! reaching 1000 outputs of said warning

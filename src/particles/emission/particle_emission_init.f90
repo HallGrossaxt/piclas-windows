@@ -17,6 +17,7 @@ MODULE MOD_Particle_Emission_Init
 !>
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -151,6 +152,7 @@ USE MOD_LoadBalance_Vars ,ONLY: PerformLoadBalance
 #endif /*USE_MPI*/
 USE MOD_Restart_Vars     ,ONLY: DoRestart
 USE MOD_Analyze_Vars     ,ONLY: DoSurfModelAnalyze
+USE MOD_StringTools      ,ONLY: LowCase
 ! IMPLICIT VARIABLE HANDLING
  IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -161,6 +163,7 @@ USE MOD_Analyze_Vars     ,ONLY: DoSurfModelAnalyze
 ! LOCAL VARIABLES
 INTEGER               :: iSpec, iInit
 CHARACTER(32)         :: hilf, hilf2, DefStr
+CHARACTER(255)        :: NeutralizationSourceLoc
 REAL                  :: MPFOld
 !===================================================================================================================================
 ALLOCATE(SpecReset(1:nSpecies))
@@ -335,10 +338,13 @@ DO iSpec = 1, nSpecies
       Species(iSpec)%Init(iInit)%ParticleEmissionType = 8
       Species(iSpec)%Init(iInit)%NINT_Correction      = 0.0
     CASE('2D_landmark_neutralization','2D_Liu2010_neutralization','3D_Liu2010_neutralization','2D_Liu2010_neutralization_Szabo',&
-         '3D_Liu2010_neutralization_Szabo')
+         '3D_Liu2010_neutralization_Szabo','2D_Taccogna2022_neutralization')
       Species(iSpec)%Init(iInit)%ParticleEmissionType = 9
       NeutralizationSource = TRIM(GETSTR('Part-Species'//TRIM(hilf2)//'-NeutralizationSource'))
-      NeutralizationBalance = 0
+      CALL LowCase(NeutralizationSource, NeutralizationSourceLoc)
+      NeutralizationSource = TRIM(NeutralizationSourceLoc)
+      NeutralizationBalance = 0.0
+      NeutralizationBalanceCurrent = 0.0
       UseNeutralization = .TRUE.
       DoSurfModelAnalyze = .TRUE.
       IF((TRIM(Species(iSpec)%Init(iInit)%SpaceIC).EQ.'3D_Liu2010_neutralization').OR.&
@@ -447,16 +453,14 @@ END IF
 
 #if drift_diffusion
 !-- Sanity check for drift-diffusion electron fluid model
-IF(.NOT.ANY(BGGas%BackgroundSpecies)) CALL CollectiveStop(__STAMP__,&
-  'ERROR: The drift-diffusion electron fluid model requires at least one species to be of type SpaceIC=background')
+IF(.NOT.ANY(BGGas%BackgroundSpecies)) CALL CollectiveStop(__STAMP__,'ERROR: The drift-diffusion electron fluid model requires at least one species to be of type SpaceIC=background')
 #endif /*drift_diffusion*/
 
 IF(UseGranularSpecies) THEN
   IF(BGGas%NumberOfSpecies.GT.1) CALL CollectiveStop(__STAMP__,&
     'ERROR: Granular species works only with a maximum of 1 BGG species!')
   IF(BGGas%NumberOfSpecies.EQ.1) THEN
-    IF((.NOT.BGGas%UseDistribution).AND.(.NOT.BGGas%UseRegions)) CALL CollectiveStop(__STAMP__,&
-      'ERROR: Granular species works only with a background gas distribution or regions!')
+    IF((.NOT.BGGas%UseDistribution).AND.(.NOT.BGGas%UseRegions)) CALL CollectiveStop(__STAMP__,'ERROR: Granular species works only with a background gas distribution or regions!')
   END IF
 END IF
 
@@ -486,6 +490,7 @@ USE MOD_Particle_Sampling_Vars  ,ONLY: UseAdaptiveBC
 USE MOD_Particle_Sampling_Adapt ,ONLY: AdaptiveBCSampling, CalcAdaptBCPartNumOutBackup
 USE MOD_SurfaceModel_Vars       ,ONLY: nPorousBC
 USE MOD_DSMC_Init               ,ONLY: SetVarVibProb2Elems
+USE MOD_part_operations         ,ONLY: RemoveParticle
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars        ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
@@ -583,7 +588,7 @@ IF(DoDielectric)THEN
     DO iPart = 1,PDM%ParticleVecLength
       ! Remove particles in dielectric elements
       CNElemID = GetCNElemID(PEM%GlobalElemID(iPart))
-      IF(isDielectricElem_Shared(CNElemID)) PDM%ParticleInside(iPart) = .FALSE.
+      IF(isDielectricElem_Shared(CNElemID)) CALL RemoveParticle(iPart)
     END DO
   END IF
 END IF
@@ -632,8 +637,7 @@ REAL                    :: factor
 !===================================================================================================================================
 Species(iSpec)%Init(iInit)%ParticleEmissionType = 7
 ! Abort if a background gas distribution is used (CalcPhotoIonizationNumber assumes a constant distribution)
-IF(BGGas%UseDistribution) CALL abort(__STAMP__,&
-  'ERROR: Photo-ionization and a background gas distribution is not implemented yet!')
+IF(BGGas%UseDistribution) CALL abort(__STAMP__,'ERROR: Photo-ionization and a background gas distribution is not implemented yet!')
 ! Check coordinate system of normal vector and two tangential vectors (they must form an orthogonal basis)
 ASSOCIATE( n1 => UNITVECTOR(Species(iSpec)%Init(iInit)%NormalIC)      ,&
            n2 => UNITVECTOR(Species(iSpec)%Init(iInit)%BaseVector1IC) ,&
@@ -644,8 +648,7 @@ ASSOCIATE( n1 => UNITVECTOR(Species(iSpec)%Init(iInit)%NormalIC)      ,&
       !,TRIM(hilf2)//': NormalIC and BaseVector1IC are not perpendicular! Their dot product yields ',RealInfoOpt=DOT_PRODUCT(n1,n2))
   !IF(DOT_PRODUCT(n1,n3).GT.1e-4) CALL abort(__STAMP__&
       !,TRIM(hilf2)//': NormalIC and BaseVector2IC are not perpendicular! Their dot product yields ',RealInfoOpt=DOT_PRODUCT(n1,n3))
-  IF(DOT_PRODUCT(n2,n3).GT.1e-4) CALL abort(__STAMP__&
-      ,TRIM(hilf2)//': BaseVector1IC and BaseVector2IC are not perpendicular! Their dot product yields ',RealInfoOpt=DOT_PRODUCT(n2,n3))
+  IF(DOT_PRODUCT(n2,n3).GT.1e-4) CALL abort(__STAMP__,TRIM(hilf2)//': BaseVector1IC and BaseVector2IC are not perpendicular! Their dot product yields ',RealInfoOpt=DOT_PRODUCT(n2,n3))
   ! Settings only for rectangle emission
   SELECT CASE(TRIM(Species(iSpec)%Init(iInit)%SpaceIC))
   CASE('photon_SEE_rectangle','photon_rectangle')
@@ -831,7 +834,7 @@ IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER                     :: iSpec, iInit
-INTEGER(KIND=8)             :: insertParticles
+INTEGER(KIND=i8)            :: insertParticles
 REAL                        :: A_ins
 !===================================================================================================================================
 
@@ -994,7 +997,6 @@ USE MOD_Particle_Emission_Vars ,ONLY: EmissionDistributionDim,EmissionDistributi
 USE MOD_Particle_Emission_Vars ,ONLY: EmissionDistributionDelta,EmissionDistributionDim
 USE MOD_Particle_Emission_Vars ,ONLY: EmissionDistributionMin
 USE MOD_Particle_Emission_Vars ,ONLY: EmissionDistributionMax,EmissionDistributionNum
-USE MOD_Particle_Emission_Vars ,ONLY: EmissionDistributionRadInd,EmissionDistributionAxisDir
 USE MOD_HDF5_Input_Field       ,ONLY: ReadExternalFieldFromHDF5
 USE MOD_Particle_Vars          ,ONLY: Species,nSpecies
 #if USE_LOADBALANCE
@@ -1028,8 +1030,8 @@ IF(TRIM(EmissionDistributionFileName(lenstr-lenmin+2:lenstr)).EQ.'.h5')THEN
       IF(TRIM(Species(iSpec)%Init(iInit)%SpaceIC).EQ.'EmissionDistribution')THEN
         CALL ReadExternalFieldFromHDF5(TRIM(Species(iSpec)%Init(iInit)%EmissionDistributionName)                                ,&
                                             Species(iSpec)%Init(iInit)%EmissionDistribution        , EmissionDistributionDelta  ,&
-            EmissionDistributionFileName , EmissionDistributionDim , EmissionDistributionAxisSym   , EmissionDistributionRadInd ,&
-            EmissionDistributionAxisDir  , EmissionDistributionMin , EmissionDistributionMax       , EmissionDistributionNum     )
+            EmissionDistributionFileName , EmissionDistributionDim , EmissionDistributionAxisSym   , &
+            EmissionDistributionMin , EmissionDistributionMax       , EmissionDistributionNum     )
         IF(.NOT.ALLOCATED(Species(iSpec)%Init(iInit)%EmissionDistribution)) CALL abort(__STAMP__,&
             "Failed to load data from: "//TRIM(EmissionDistributionFileName))
       END IF ! TRIM(Species(iSpec)%Init(iInit)%SpaceIC).EQ.'EmissionDistribution'

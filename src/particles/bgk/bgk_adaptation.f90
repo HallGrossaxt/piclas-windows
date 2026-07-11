@@ -77,11 +77,21 @@ TYPE(tTreeNode), POINTER      :: TreeNode
 
 IF(DSMC%CalcQualityFactors) THEN
   IF(BGKInitDone) THEN
-    BGK_MeanRelaxFactorCounter = 0; BGK_MeanRelaxFactor = 0.; BGK_MaxRelaxFactor = 0.; BGK_MaxRotRelaxFactor = 0.
-    BGK_PrandtlNumber=0.; BGK_ExpectedPrandtlNumber=0.; BGK_Viscosity=0.; BGK_ThermalConductivity=0.
+    BGK_MeanRelaxFactorCounter = 0
+    BGK_MeanRelaxFactor = 0.
+    BGK_MaxRelaxFactor = 0.
+    BGK_MaxRotRelaxFactor = 0.
+    BGK_PrandtlNumber=0.
+    BGK_ExpectedPrandtlNumber=0.
+    BGK_Viscosity=0.
+    BGK_ThermalConductivity=0.
   END IF
   IF(FPInitDone) THEN
-    FP_MeanRelaxFactorCounter = 0; FP_MeanRelaxFactor = 0.; FP_MaxRelaxFactor = 0.; FP_MaxRotRelaxFactor = 0.; FP_PrandtlNumber = 0.
+    FP_MeanRelaxFactorCounter = 0
+    FP_MeanRelaxFactor = 0.
+    FP_MaxRelaxFactor = 0.
+    FP_MaxRotRelaxFactor = 0.
+    FP_PrandtlNumber = 0.
   END IF
 END IF
 DoMergedCell = .FALSE.
@@ -474,11 +484,21 @@ TYPE(tTreeNode), POINTER      :: TreeNode
 
 IF(DSMC%CalcQualityFactors) THEN
   IF(BGKInitDone) THEN
-    BGK_MeanRelaxFactorCounter = 0; BGK_MeanRelaxFactor = 0.; BGK_MaxRelaxFactor = 0.; BGK_MaxRotRelaxFactor = 0.
-    BGK_PrandtlNumber=0.; BGK_ExpectedPrandtlNumber=0.; BGK_Viscosity=0.; BGK_ThermalConductivity=0.
+    BGK_MeanRelaxFactorCounter = 0
+    BGK_MeanRelaxFactor = 0.
+    BGK_MaxRelaxFactor = 0.
+    BGK_MaxRotRelaxFactor = 0.
+    BGK_PrandtlNumber=0.
+    BGK_ExpectedPrandtlNumber=0.
+    BGK_Viscosity=0.
+    BGK_ThermalConductivity=0.
   END IF
   IF(FPInitDone) THEN
-    FP_MeanRelaxFactorCounter = 0; FP_MeanRelaxFactor = 0.; FP_MaxRelaxFactor = 0.; FP_MaxRotRelaxFactor = 0.; FP_PrandtlNumber = 0.
+    FP_MeanRelaxFactorCounter = 0
+    FP_MeanRelaxFactor = 0.
+    FP_MaxRelaxFactor = 0.
+    FP_MaxRotRelaxFactor = 0.
+    FP_PrandtlNumber = 0.
   END IF
 END IF
 DoMergedCell = .FALSE.

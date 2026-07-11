@@ -44,7 +44,7 @@ TYPE tPartMPIGROUP
   LOGICAL                                 :: MPIRoot                        ! Root, MPIRank=0
   INTEGER,ALLOCATABLE                     :: GroupToComm(:)                 ! list containing the rank in PartMPI%COMM
   INTEGER,ALLOCATABLE                     :: CommToGroup(:)                 ! list containing the rank in PartMPI%COMM
-END TYPE
+END TYPE tPartMPIGROUP
 
 TYPE(tPartMPIGROUP),ALLOCATABLE           :: PartMPIInitGroup(:)            ! small communicator for initialization
 
@@ -84,7 +84,7 @@ TYPE tMPIMessage
   REAL,ALLOCATABLE                        :: content(:)                     ! message buffer real
   LOGICAL,ALLOCATABLE                     :: content_log(:)                 ! message buffer logical for BGM
   INTEGER,ALLOCATABLE                     :: content_int(:)                 ! message buffer for integer
-END TYPE
+END TYPE tMPIMessage
 
 TYPE(tMPIMessage),ALLOCATABLE             :: PartRecvBuf(:)                 ! PartRecvBuf with all required types
 TYPE(tMPIMessage),ALLOCATABLE             :: PartSendBuf(:)                 ! PartSendBuf with all required types
@@ -105,19 +105,21 @@ TYPE tParticleMPIExchange
   TYPE(MPI_Request),ALLOCATABLE           :: SendRequest(:,:)               ! Send request message handle 1 - Number, 2-Message
   TYPE(MPI_Request),ALLOCATABLE           :: RecvRequest(:,:)               ! Receive request message handle,  1 - Number, 2-Message
   TYPE(tMPIMessage),ALLOCATABLE           :: send_message(:)                ! Message, required for particle emission
-END TYPE
+END TYPE tParticleMPIExchange
 
 TYPE (tParticleMPIExchange)               :: PartMPIExchange
 TYPE (tParticleMPIExchange)               :: PartMPIInsert
 TYPE (tParticleMPIExchange)               :: PartMPILocate
+
+INTEGER                                   :: nPartMPIData = 7               ! max possible number of types communicated during particle MPI
 
 INTEGER,ALLOCATABLE                       :: PartTargetProc(:)              ! local rank id for communication
 REAL, ALLOCATABLE                         :: PartShiftVector(:,:)           ! store particle periodic map
 #endif /*USE_MPI*/
 
 #if defined(MEASURE_MPI_WAIT)
-REAL(KIND=8)                              :: MPIW8TimePart(MPIW8SIZEPART)  ! measure the time on each proc it is in MPI_WAIT() during particle communication
-INTEGER(KIND=8)                           :: MPIW8CountPart(MPIW8SIZEPART) ! counter for measurements on each proc it is in MPI_WAIT() during particle communication
+REAL(KIND=dp)                             :: MPIW8TimePart(MPIW8SIZEPART)  ! measure the time on each proc it is in MPI_WAIT() during particle communication
+INTEGER(KIND=i8)                          :: MPIW8CountPart(MPIW8SIZEPART) ! counter for measurements on each proc it is in MPI_WAIT() during particle communication
 #endif /*defined(MEASURE_MPI_WAIT)*/
 !===================================================================================================================================
 

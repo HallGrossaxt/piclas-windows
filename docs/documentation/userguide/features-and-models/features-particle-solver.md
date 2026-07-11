@@ -134,7 +134,8 @@ To enable two-dimensional simulations, the symmetry order has to be set
 
 Two-dimensional and axisymmetric simulations require a mesh in the $xy$-plane, where the $x$-axis is the rotational axis and $y$
 ranges from zero to a positive value. Additionally, the mesh shall be centered around zero in the $z$-direction with a single cell
-row, such as that $|z_{\mathrm{min}}|=|z_{\mathrm{max}}|$. It should be noted that when converting or creating the mesh using `HOPR`,
+row, such as that $|z_{\mathrm{min}}|=|z_{\mathrm{max}}|$. It should be noted that when converting or creating the mesh using
+`PyHOPE`,
 it is recommended to define the space filling curve by
 
     sfc_type = mortonZ    ! alternative: hilbertZ
@@ -348,7 +349,11 @@ Variable particle weighting based on a split and merge algorithm is currently su
 
     Part-vMPF                           = T
 
-The split and merge algorithm is called at the end of every time step. In order to manipulate the number of particles per species per cell, merge and split thresholds can be defined as is shown in the following.
+The split and merge algorithm is performed at the end of every time step or every e.g. 100 iterations:
+
+    Part-vMPFSplitAndMergeStep          = 100
+
+In order to manipulate the number of particles per species per cell, merge and split thresholds can be defined as is shown in the following.
 
     Part-Species2-vMPFMergeThreshold    = 100
 

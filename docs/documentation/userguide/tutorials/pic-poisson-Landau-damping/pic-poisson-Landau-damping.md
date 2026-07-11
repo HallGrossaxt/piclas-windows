@@ -17,11 +17,11 @@ directory to a separate location
 
 where the variable `PICLAS_PATH` contains the path to the location of the piclas repository.
 
-## Mesh Generation with HOPR (pre-processing)
+## Mesh Generation with PyHOPE (pre-processing)
 
 First, the mesh file has to be created by running
 
-    hopr hopr.ini
+    pyhope hopr.ini
 
 within the *pic-poisson-landau-damping* directory.
 
@@ -94,7 +94,7 @@ should look like this
      CMakeLists.txt
      CONTRIBUTORS.md
      docs
-     LICENCE.md
+     LICENSE.md
      README.md
      REFERENCE.md
      REGGIE.md
@@ -119,7 +119,7 @@ For this specific tutorial, make sure to set the correct compile flags
 
 which are forwarded to cmake by running the following command from inside the *build_poisson_Leapfrog* directory
 
-    cmake ../ -DPICLAS_READIN_CONSTANTS=ON -DLIBS_USE_PETSC=0N -DPICLAS_EQNSYSNAME=poisson -DPICLAS_TIMEDISCMETHOD=Leapfrog
+    cmake ../ -DPICLAS_READIN_CONSTANTS=ON -DLIBS_USE_PETSC=ON -DPICLAS_EQNSYSNAME=poisson -DPICLAS_TIMEDISCMETHOD=Leapfrog
 
 to configure the build process and run
 
@@ -344,7 +344,7 @@ Each type of the initialisation set might have a different set of parameters and
     Part-Species1-Init1-SpaceIC               = cos_distribution          ! Cosine distribution is space
     Part-Species1-Init1-ParticleNumber        = 40000                     ! Number of simulation particles for species #1 and initialisation #1
     Part-Species1-Init1-maxParticleNumber-x   = 40000                     ! Number of simulation particles in x-direction for species #1 and initialisation #1
-    Part-Species1-Init1-velocityDistribution  = maxwell_distribution_1D   ! Constant velocity distribution
+    Part-Species1-Init1-velocityDistribution  = maxwell_1D_quiet         ! Pseudo maxwellian velocity distribution
     Part-Species1-Init1-MWTemperatureIC       = 0.72429730341e23          ! Translational temprature
     Part-Species1-Init1-maxParticleNumber-y   = 1                         ! Number of particles in y
     Part-Species1-Init1-maxParticleNumber-z   = 1                         ! Number of particles in z
@@ -395,7 +395,7 @@ This help module can also output the complete set of parameters via
 
     piclas --help
 
-or a subset of them by supplying a section via 
+or a subset of them by supplying a section via
 
     piclas --help "HDG"
 

@@ -329,7 +329,6 @@ SUBROUTINE DGTimeDerivative_weakForm(t,tStage,tDeriv,doSource)
 ! MODULES
 USE MOD_Globals
 USE MOD_Preproc
-USE MOD_Vector
 USE MOD_DG_Vars           ,ONLY: U_N
 USE MOD_SurfInt           ,ONLY: SurfInt
 USE MOD_VolInt            ,ONLY: VolInt

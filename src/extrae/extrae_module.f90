@@ -21,42 +21,43 @@
 !*   Barcelona Supercomputing Center - Centro Nacional de Supercomputacion   *
 !*****************************************************************************
 
-!* -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=- 
+!* -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 !| @file: $HeadURL: https://svn.bsc.es/repos/ptools/extrae/branches/2.3/include/extrae_module.f $
 !| @last_commit: $Date: 2013-05-16 12:34:14 +0200 (dj, 16 mai 2013) $
 !| @version:     $Revision: 1724 $
-!* -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=- 
+!* -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
 
       module EXTRAE_MODULE
+      USE MOD_Globals_Vars, ONLY: i4,i8
 
-      integer*4 extrae_disable_all_options
+      integer(kind=i4) :: extrae_disable_all_options
       parameter (extrae_disable_all_options=0)
 
-      integer*4 extrae_caller_option 
+      integer(kind=i4) :: extrae_caller_option
       parameter (extrae_caller_option=1)
 
-      integer*4 extrae_hwc_option
-      parameter (extrae_hwc_option=2)  
+      integer(kind=i4) :: extrae_hwc_option
+      parameter (extrae_hwc_option=2)
 
-      integer*4 extrae_mpi_hwc_option
+      integer(kind=i4) :: extrae_mpi_hwc_option
       parameter (extrae_mpi_hwc_option=4)
 
-      integer*4 extrae_mpi_option
+      integer(kind=i4) :: extrae_mpi_option
       parameter (extrae_mpi_option=8)
 
-      integer*4 extrae_omp_option
+      integer(kind=i4) :: extrae_omp_option
       parameter (extrae_omp_option=16)
 
-      integer*4 extrae_omp_hwc_option
+      integer(kind=i4) :: extrae_omp_hwc_option
       parameter (extrae_omp_hwc_option=32)
 
-      integer*4 extrae_uf_hwc_option
+      integer(kind=i4) :: extrae_uf_hwc_option
       parameter (extrae_uf_hwc_option=64)
 
-      integer*4 extrae_sampling_option
+      integer(kind=i4) :: extrae_sampling_option
       parameter (extrae_sampling_option=128)
 
-      integer*4 extrae_enable_all_options
+      integer(kind=i4) :: extrae_enable_all_options
       parameter (extrae_enable_all_options=255)
 
       interface
@@ -71,9 +72,9 @@
          end subroutine extrae_flush
 
          subroutine extrae_version (major, minor, revision)
-         integer*4, intent (out) :: major
-         integer*4, intent (out) :: minor
-         integer*4, intent (out) :: revision
+         integer(kind=i4), intent (out) :: major
+         integer(kind=i4), intent (out) :: minor
+         integer(kind=i4), intent (out) :: revision
          end subroutine extrae_version
 
          subroutine extrae_shutdown
@@ -83,31 +84,31 @@
          end subroutine extrae_restart
 
          subroutine extrae_event (extrae_type, extrae_value)
-         integer*4, intent(in) :: extrae_type
-         integer*8, intent(in) :: extrae_value
+         integer(kind=i4), intent(in) :: extrae_type
+         integer(kind=i8), intent(in) :: extrae_value
          end subroutine extrae_event
 
          subroutine extrae_eventandcounters (extrae_type, extrae_value)
-         integer*4, intent(in) :: extrae_type
-         integer*8, intent(in) :: extrae_value
+         integer(kind=i4), intent(in) :: extrae_type
+         integer(kind=i8), intent(in) :: extrae_value
          end subroutine extrae_eventandcounters
 
 
          subroutine extrae_nevent (num, extrae_types, extrae_values)
-         integer*4, intent(in) :: num
-         integer*4, intent(in) :: extrae_types
-         integer*8, intent(in) :: extrae_values
+         integer(kind=i4), intent(in) :: num
+         integer(kind=i4), intent(in) :: extrae_types
+         integer(kind=i8), intent(in) :: extrae_values
          end subroutine extrae_nevent
 
          subroutine extrae_neventandcounters (num, extrae_types, &
            extrae_value)
-         integer*4:: num
-         integer*4:: extrae_types
-         integer*8:: extrae_values
+         integer(kind=i4):: num
+         integer(kind=i4):: extrae_types
+         integer(kind=i8):: extrae_values
          end subroutine extrae_neventandcounters
 
          subroutine extrae_counters
-         end subroutine
+         end subroutine extrae_counters
 
          subroutine extrae_previous_hwc_set
          end subroutine extrae_previous_hwc_set
@@ -116,19 +117,18 @@
          end subroutine extrae_next_hwc_set
 
          subroutine extrae_set_options (options)
-         integer*4, intent(in) :: options
+         integer(kind=i4), intent(in) :: options
          end subroutine extrae_set_options
 
          subroutine extrae_set_tracing_tasks (task_from, task_to)
-         integer*4, intent(in) :: task_from
-         integer*4, intent(in) :: task_to
+         integer(kind=i4), intent(in) :: task_from
+         integer(kind=i4), intent(in) :: task_to
          end subroutine extrae_set_tracing_tasks
 
          subroutine extrae_user_function (enter)
-         integer*4, intent(in) :: enter
+         integer(kind=i4), intent(in) :: enter
          end subroutine extrae_user_function
 
       end interface
 
       end module EXTRAE_MODULE
-

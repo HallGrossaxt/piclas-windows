@@ -205,3 +205,21 @@ Using variables via *USE MOD_Preproc, ONLY: PP_N* is not possible due to the com
 the polynomial degree between a constant values, e.g., 1, 2, 3 .. or the default value of *N*. Therefore, the *ONLY* statement is
 not allowed here.
 
+## Code Annotations
+In the context of the tags (`TODO`, `FIXME`, `HACK`, `NOTE`, `OPTIMIZE`), code annotations are standardized
+keywords used within comments to label specific tasks, issues, or insights directly in the source code.
+They offer the two main functionalities:
+
+1. Searchability: They act as "bookmarks." Instead of searching for "to do," you can search for `TODO:`
+   across thousands of files to see exactly what’s left to finish.
+1. Tool Integration: Modern IDEs (e.g. VS Code, IntelliJ, Xcode) scan your project for these keywords and
+   compile them into a Task List or `TODO` Board, so you don't have to remember where you left a note.
+
+|Keyword    | Description                                                                                                                                                   |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|`TODO`     | Keep track of the tasks that have to completed in the feature branch. For optimization and improvement, instead use the keyword `OPTIMIZE`.                   |
+|`FIXME`    | Broken or buggy code that requires immediate attention. It marks places where a bug is suspected or confirmed but hasn't been fixed yet.                      |
+|`NOTE`     | Provide general information, explanations, or observations about a specific section of code and explains "the why" behind a non-obvious implementation.       |
+|`HACK`     | Unorthodox, non-ideal, or "quick and dirty" solutions. Also used when bypassing a bug in a third-party framework or handle an edge case in an inelegant way.  |
+|`OPTIMIZE` | Mark areas of code that are fully functional but inefficient: Single-core performance optimization, improved multi-core scaling or reduced memory consumption.|
+|`FEATURE`  | Track a specific missing functionality in the code. Marks a new feature, which is not implemented yet, but intended to be in the future.                      |

@@ -109,8 +109,14 @@ IF (CollisMode.NE.0) THEN
     END IF
     IF (nPart.LT.1) CYCLE
     IF(DSMC%CalcQualityFactors) THEN
-      DSMC%CollProbMax = 0.0; DSMC%CollProbSum = 0.0;DSMC%CollProbMean = 0.0; DSMC%CollProbMeanCount = 0; DSMC%CollSepDist = 0.0; DSMC%CollSepCount = 0
-      DSMC%MeanFreePath = 0.0; DSMC%MCSoverMFP = 0.0
+      DSMC%CollProbMax = 0.0
+      DSMC%CollProbSum = 0.0
+      DSMC%CollProbMean = 0.0
+      DSMC%CollProbMeanCount = 0
+      DSMC%CollSepDist = 0.0
+      DSMC%CollSepCount = 0
+      DSMC%MeanFreePath = 0.0
+      DSMC%MCSoverMFP = 0.0
       IF(DSMC%RotRelaxProb.GT.2) DSMC%CalcRotProb = 0.
       DSMC%CalcVibProb = 0.
     END IF

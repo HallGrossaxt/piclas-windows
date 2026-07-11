@@ -2,9 +2,10 @@
 SetFactory("OpenCASCADE");
 v() = ShapeFromFile("70degCone_2DSurf.step");
 //
-Translate {0, 0, -1.0} {
-  Surface{1}; 
-}
+// Translate {0, 0, -1.0} {
+//   Surface{1}; 
+// }
+Physical Surface("ROTSYM") = {1};
 //
 Physical Curve("SYMAXIS") = {3};
 //

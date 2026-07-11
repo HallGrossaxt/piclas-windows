@@ -357,8 +357,9 @@ USE MOD_Equation_Vars_FV       ,ONLY: StrVarNames_FV
 #else
 USE MOD_Equation_Vars          ,ONLY: StrVarNames
 #endif
-USE MOD_Particle_Boundary_Vars ,ONLY: PartStateBoundary,PartStateBoundaryVecLength,nVarPartStateBoundary
+USE MOD_Particle_Boundary_Vars ,ONLY: PartStateBoundary,PartStateBoundaryVecLength,nVarPartStateBoundary!,PartStateBoundaryMemory
 USE MOD_TimeDisc_Vars          ,ONLY: iter
+USE MOD_Particle_Boundary_Init ,ONLY: InitPartStateBoundary
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -483,9 +484,7 @@ PartStateBoundaryVecLength = 0
 
 ! Re-allocate PartStateBoundary for a small number of particles and double the array size each time the
 ! maximum is reached
-DEALLOCATE(PartStateBoundary)
-ALLOCATE(PartStateBoundary(1:nVarPartStateBoundary,1:10))
-PartStateBoundary=0.
+CALL InitPartStateBoundary(ReInitialise=.TRUE.)
 
 GETTIME(EndT)
 CALL DisplayMessageAndTime(EndT-StartT, 'DONE', DisplayDespiteLB=.TRUE., DisplayLine=.FALSE.)
@@ -1380,17 +1379,28 @@ DO iDelay=0,tempDelay
     iPart = iPart + 1
     PartData(1:6,iPart)=ClonedParticles(pcount,iDelay)%PartState(1:6)
     PartData(7,iPart)=REAL(ClonedParticles(pcount,iDelay)%Species)
+    iSpec = ClonedParticles(pcount,iDelay)%Species
     PartData(8,iPart)=REAL(iElem_glob)
     PartData(9,iPart)=REAL(iDelay)
     iPos = 9
     IF (useDSMC) THEN
       ! Internal energy modelling: vibrational + rotational
       IF(CollisMode.GT.1) THEN
-        PartData(1+iPos:2+iPos,iPart) = ClonedParticles(pcount,iDelay)%PartStateIntEn(1:2)
+        IF ((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
+          PartData(1+iPos,iPart) = ClonedParticles(pcount,iDelay)%PartIntEn%EVib(1)
+          PartData(2+iPos,iPart) = ClonedParticles(pcount,iDelay)%PartIntEn%ERot(1)
+        ELSE
+          PartData(1+iPos,iPart) = 0.0
+          PartData(2+iPos,iPart) = 0.0
+        END IF
         iPos = iPos + 2
         ! Electronic energy modelling
         IF(DSMC%ElectronicModel.GT.0) THEN
-          PartData(1+iPos,iPart) = ClonedParticles(pcount,iDelay)%PartStateIntEn(3)
+          IF((Species(iSpec)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) THEN
+            PartData(1+iPos,iPart) = ClonedParticles(pcount,iDelay)%PartIntEn%EElec(1)
+          ELSE
+            PartData(1+iPos,iPart) = 0.0
+          END IF
           iPos = iPos + 1
         END IF
       END IF
@@ -1538,7 +1548,7 @@ CHARACTER(LEN=*),INTENT(IN) :: FileName
 ! LOCAL VARIABLES
 INTEGER           :: iSpec,iInit ! ,InitGroup
 CHARACTER(LEN=50) :: InitName
-INTEGER(KIND=IK)  :: NeutralizationBalanceTmp(1:1) ! This is a dummy array of size 1 !
+REAL              :: NeutralizationBalanceTmp(1:1) ! This is a dummy array of size 1 !
 !===================================================================================================================================
 ! Only root writes the data
 IF(.NOT.MPIRoot) RETURN
@@ -1550,7 +1560,6 @@ DO iSpec=1,nSpecies
      CASE(9) ! '2D_landmark_neutralization'
        ! Re-load the value because the emission communicator can change during load balance restarts: MPIRoot is always part of this
        ! specific communicator
-
        NeutralizationBalanceTmp(1) = NeutralizationBalanceGlobal
 
        WRITE(InitName,'(A,I0,A,I0)') 'Spec',iSpec,'Init',iInit
@@ -1564,7 +1573,7 @@ DO iSpec=1,nSpecies
                                nValGlobal  = (/nGlobalEntries/) , &
                                nVal        = (/nEntries      /) , &
                                offset      = (/offsetEntries /) , &
-                               collective  = .FALSE. , IntegerArray = NeutralizationBalanceTmp)
+                               collective  = .FALSE. , RealArray = NeutralizationBalanceTmp)
        END ASSOCIATE
        CALL CloseDataFile()
 
@@ -1598,7 +1607,7 @@ INTEGER(KIND=IK),INTENT(OUT) :: globnPart(6)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 #if USE_MPI
-INTEGER(KIND=8)              :: locnPart8,locnPart8Recv,globnPart8 ! always integer KIND=8
+INTEGER(KIND=i8)             :: locnPart8,locnPart8Recv,globnPart8 ! always integer KIND=8
 INTEGER(KIND=IK)             :: SimNumSpecMin,SimNumSpecMax
 #else
 CHARACTER(LEN=255) :: dummy_char
@@ -1682,8 +1691,7 @@ USE MOD_Particle_Vars          ,ONLY: locnPart,offsetnPart
 USE MOD_Particle_Vars          ,ONLY: VibQuantData,ElecDistriData,AD_Data,MaxQuantNum,MaxElecQuant
 USE MOD_Particle_Vars          ,ONLY: PartState, PartSpecies, PartMPF, usevMPF, nSpecies, Species
 USE MOD_Particle_Vars          ,ONLY: UseRotRefFrame, PartVeloRotRef
-USE MOD_DSMC_Vars              ,ONLY: UseDSMC, CollisMode,PartStateIntEn, DSMC, PolyatomMolDSMC, SpecDSMC, VibQuantsPar
-USE MOD_DSMC_Vars              ,ONLY: ElectronicDistriPart, AmbipolElecVelo
+USE MOD_DSMC_Vars              ,ONLY: UseDSMC, CollisMode,PartIntEn, DSMC, PolyatomMolDSMC, SpecDSMC
 USE MOD_LoadBalance_Vars       ,ONLY: nPartsPerElem
 #ifdef CODE_ANALYZE
 USE MOD_Particle_Tracking_Vars ,ONLY: PartOut,MPIRankOut
@@ -1726,7 +1734,7 @@ END IF
 IF (useDSMC.AND.(DSMC%ElectronicModel.EQ.2)) THEN
   MaxElecQuant = 0
   DO iSpec = 1, nSpecies
-    IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
+    IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
       IF (SpecDSMC(iSpec)%MaxElecQuant.GT.MaxElecQuant) MaxElecQuant = SpecDSMC(iSpec)%MaxElecQuant
     END IF
   END DO
@@ -1781,6 +1789,7 @@ DO iElem_loc=1,PP_nElems
       END IF
 #endif /*(PP_TimeDiscMethod==508) || (PP_TimeDiscMethod==509)*/
       PartData(7,iPart)=REAL(PartSpecies(pcount))
+      iSpec  = PartSpecies(pcount)
       ! Sanity check: output of particles with species ID zero is prohibited
       IF(PartData(7,iPart).LE.0) CALL abort(__STAMP__,&
           'Found particle for output to .h5 with species ID zero, which indicates a corrupted simulation.')
@@ -1801,11 +1810,23 @@ DO iElem_loc=1,PP_nElems
       IF (withDSMC) THEN
         ! Internal energy modelling: vibrational + rotational
         IF(CollisMode.GT.1) THEN
-          PartData(1+iPos:2+iPos,iPart) = PartStateIntEn(1:2,pcount)
+          IF ((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
+            PartData(1+iPos,iPart) = PartIntEn(pcount)%EVib(1)
+            PartData(2+iPos,iPart) = PartIntEn(pcount)%ERot(1)
+          ELSE IF (Species(iSpec)%InterID.EQ.100) THEN
+            PartData(1+iPos,iPart) = PartIntEn(pcount)%TSolid(1)
+            PartData(2+iPos,iPart) = 0.
+          ELSE
+            PartData(1+iPos:2+iPos,iPart) = 0.0
+          END IF
           iPos = iPos + 2
           ! Electronic energy modelling
           IF(DSMC%ElectronicModel.GT.0) THEN
-            PartData(1+iPos,iPart) = PartStateIntEn(3,pcount)
+            IF((Species(iSpec)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
+              PartData(1+iPos,iPart) = PartIntEn(pcount)%EElec(1)
+            ELSE
+              PartData(1+iPos,iPart) = 0.0
+            END IF
             iPos = iPos + 1
           END IF
         END IF
@@ -1846,7 +1867,7 @@ IF(withDSMC.AND.(DSMC%NumPolyatomMolecs.GT.0))THEN
         IF (SpecDSMC(PartSpecies(pcount))%PolyatomicMol) THEN
           iPolyatMole = SpecDSMC(PartSpecies(pcount))%SpecToPolyArray
           VibQuantData(1:PolyatomMolDSMC(iPolyatMole)%VibDOF,iPart) = &
-            VibQuantsPar(pcount)%Quants(1:PolyatomMolDSMC(iPolyatMole)%VibDOF)
+            PartIntEn(pcount)%QVib(1:PolyatomMolDSMC(iPolyatMole)%VibDOF)
         ELSE
            VibQuantData(:,iPart) = 0
         END IF
@@ -1881,9 +1902,9 @@ IF(withDSMC.AND.(DSMC%ElectronicModel.EQ.2))THEN
       PartInt(2,iElem_glob) = PartInt(1,iElem_glob) + INT(PEM%pNumber(iElem_loc),IK)
       pcount = PEM%pStart(iElem_loc)
       DO iPart=PartInt(1,iElem_glob)+1_IK,PartInt(2,iElem_glob)
-        IF (.NOT.((Species(PartSpecies(pcount))%InterID.EQ.4).OR.SpecDSMC(PartSpecies(pcount))%FullyIonized)) THEN
+        IF (.NOT.((Species(PartSpecies(pcount))%InterID.EQ.4).OR.SpecDSMC(PartSpecies(pcount))%FullyIonized).AND.(Species(PartSpecies(pcount))%InterID.NE.100)) THEN
           ElecDistriData(1:SpecDSMC(PartSpecies(pcount))%MaxElecQuant,iPart) = &
-            ElectronicDistriPart(pcount)%DistriFunc(1:SpecDSMC(PartSpecies(pcount))%MaxElecQuant)
+            PartIntEn(pcount)%DistriFunc(1:SpecDSMC(PartSpecies(pcount))%MaxElecQuant)
         ELSE
            ElecDistriData(:,iPart) = 0
         END IF
@@ -1919,7 +1940,7 @@ IF(withDSMC.AND.DSMC%DoAmbipolarDiff)THEN
       pcount = PEM%pStart(iElem_loc)
       DO iPart=PartInt(1,iElem_glob)+1_IK,PartInt(2,iElem_glob)
         IF (Species(PartSpecies(pcount))%ChargeIC.GT.0.0) THEN
-          AD_Data(1:3,iPart) = AmbipolElecVelo(pcount)%ElecVelo(1:3)
+          AD_Data(1:3,iPart) = PartIntEn(pcount)%ElecVelo(1:3)
         ELSE
           AD_Data(1:3,iPart) = 0
         END IF

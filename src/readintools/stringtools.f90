@@ -115,7 +115,8 @@ PUBLIC :: set_formatting
 PUBLIC :: clear_formatting
 PUBLIC :: GetFileExtension
 PUBLIC :: KEYVALUE
-PUBLIC::  split_string
+PUBLIC :: split_string
+PUBLIC :: Basename
 
 LOGICAL :: use_escape_codes = .TRUE.  !< If set to .FALSE., output will consist only of standard text, allowing the
                                       !< escape characters to be switched off in environments which don't support them.
@@ -287,6 +288,29 @@ DO
   END IF
 END DO
 END SUBROUTINE split_string
+
+!==================================================================================================================================
+!> Cut of the preceeding path of a relative or absolute file path string and return only the pure data file name at the end of the
+!> string. Example
+!> INPUT: ../../../../examples/2D_split2hex/cmd_0001/run_0001/1D_State_000.00000000000070000.h5
+!> OUTPUT: 1D_State_000.00000000000070000.h5
+!==================================================================================================================================
+SUBROUTINE Basename(pathname, delimiter, filename)
+! MODULES
+IMPLICIT NONE
+! INPUT / OUTPUT VARIABLES
+CHARACTER (LEN = *), INTENT(IN)  :: pathname   !< Variable-length character string of the file path that is to be split
+CHARACTER,           INTENT(IN)  :: delimiter  !< Character along which to split
+CHARACTER(LEN=100),  INTENT(OUT) :: filename   !< Data file name to be returned
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+CHARACTER(LEN=100) :: Substrings(25)
+INTEGER            :: SubstringsCount
+!==================================================================================================================================
+Substrings=' '
+CALL split_string(TRIM(pathname), TRIM(delimiter), Substrings, SubstringsCount)
+filename = ADJUSTL(TRIM(Substrings(SubstringsCount)))
+END SUBROUTINE Basename
 
 !==================================================================================================================================
 !> Generates an ANSI escape sequence from the supplied style string.

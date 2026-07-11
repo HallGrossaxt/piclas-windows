@@ -18,6 +18,7 @@
 MODULE MOD_MPI_Shared
 !----------------------------------------------------------------------------------------------------------------------------------
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i2,i8
 IMPLICIT NONE
 PRIVATE
 
@@ -286,7 +287,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_LOGICAL_1'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -356,7 +357,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_LOGICAL_2'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -428,7 +429,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_INT_1'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -501,7 +502,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_INT_2'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -574,7 +575,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_INT_3'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -647,7 +648,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_INT_4'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -714,7 +715,7 @@ END SUBROUTINE ALLOCATE_SHARED_INT_4
 !INTEGER(KIND=MPI_ADDRESS_KIND)            :: WIN_SIZE                 !> Size of the allocated memory window on current proc
 !!==================================================================================================================================
 !! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-!WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+!WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 !DISP_UNIT = 1
 
 !#ifdef DEBUG_MEMORY
@@ -774,7 +775,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_1'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -844,7 +845,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_1_nValReal8'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -914,7 +915,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_1_nValInt8'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -967,7 +968,7 @@ IMPLICIT NONE
 ! INPUT/OUTPUT VARIABLES
 INTEGER(KIND=IK),INTENT(IN)               :: nVal(1)                  !> Local number of variables in each rank
 TYPE(MPI_Win),INTENT(OUT)                 :: SM_WIN                   !> Shared memory window
-INTEGER(KIND=2),INTENT(OUT),POINTER       :: DataPointer(:)         !> Pointer to the RMA window
+INTEGER(KIND=i2),INTENT(OUT),POINTER       :: DataPointer(:)         !> Pointer to the RMA window
 #ifdef DEBUG_MEMORY
 CHARACTER(LEN=*),INTENT(IN)               :: SM_WIN_NAME              !> Shared memory window name
 CHARACTER(LEN=*),INTENT(IN)               :: SM_CALL_FILE             !> File from which the call comes
@@ -984,7 +985,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(64),PARAMETER                   :: FuncName='ALLOCATE_SHARED_INT_1_nValKIND_KIND2'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -1056,7 +1057,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_2'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -1129,7 +1130,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_3'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -1202,7 +1203,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_4'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -1275,7 +1276,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_5'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -1348,7 +1349,7 @@ CHARACTER(32)                             :: hilf                     !> Convert
 CHARACTER(32),PARAMETER                   :: FuncName='ALLOCATE_SHARED_REAL_6'
 !==================================================================================================================================
 ! Only node MPI root actually allocates the memory, all other nodes allocate memory with zero length but use the same displacement
-WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
+WIN_SIZE  = MERGE(MPI_SIZE(PRODUCT(INT(nVal,KIND=i8)),KIND(DataPointer)),INT(0,MPI_ADDRESS_KIND),myComputeNodeRank.EQ.0)
 DISP_UNIT = 1
 
 #ifdef DEBUG_MEMORY
@@ -1406,8 +1407,8 @@ TYPE(mpi_comm),INTENT(INOUT):: Communicator !> Shared memory communicator
 ! LOCAL VARIABLES
 ! LOGICAL                     :: Barrier
 #if defined(MEASURE_MPI_WAIT)
-INTEGER(KIND=8)               :: CounterStart,CounterEnd
-REAL(KIND=8)                  :: Rate
+INTEGER(KIND=i8)              :: CounterStart,CounterEnd
+REAL(KIND=dp)                 :: Rate
 #endif /*defined(MEASURE_MPI_WAIT)*/
 !==================================================================================================================================
 ! IF (PRESENT(Barrier_Opt)) THEN; Barrier = Barrier_Opt
@@ -1428,7 +1429,7 @@ IF(iError.NE.MPI_SUCCESS) CALL Abort(__STAMP__,'Error in MPI_WIN_SYNC',iError)
 #if defined(MEASURE_MPI_WAIT)
 CALL SYSTEM_CLOCK(count=CounterEnd, count_rate=Rate)
 MPIW8TimeBaS  = MPIW8TimeBaS + REAL(CounterEnd-CounterStart,8)/Rate
-MPIW8CountBaS = MPIW8CountBaS + 1_8
+MPIW8CountBaS = MPIW8CountBaS + 1_i8
 #endif /*defined(MEASURE_MPI_WAIT)*/
 
 END SUBROUTINE BARRIER_AND_SYNC
@@ -1503,7 +1504,7 @@ USE MOD_Globals
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
-INTEGER(KIND=8),INTENT(IN) :: nVal
+INTEGER(KIND=i8),INTENT(IN) :: nVal
 INTEGER,INTENT(IN)         :: VarSize
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! OUTPUT VARIABLES
@@ -1512,7 +1513,7 @@ INTEGER(KIND=MPI_ADDRESS_KIND) :: MPI_SIZE
 ! LOCAL VARIABLES
 !===================================================================================================================================
 
-IF (INT(nVal*INT(VarSize,KIND=8),KIND=8).LT.INT(HUGE(INT(1,KIND=MPI_ADDRESS_KIND)),KIND=8)) THEN
+IF (INT(nVal*INT(VarSize,KIND=i8),KIND=i8).LT.INT(HUGE(INT(1,KIND=MPI_ADDRESS_KIND)),KIND=i8)) THEN
   MPI_SIZE = INT(nVal,KIND=MPI_ADDRESS_KIND) * INT(VarSize,KIND=MPI_ADDRESS_KIND)
 ELSE
   MPI_SIZE = -1

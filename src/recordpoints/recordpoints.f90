@@ -14,6 +14,7 @@
 
 MODULE MOD_RecordPoints
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 IMPLICIT NONE
 PRIVATE
 !----------------------------------------------------------------------------------------------------------------------------------
@@ -161,7 +162,7 @@ CHARACTER(LEN=255),INTENT(IN) :: FileString !< name of hdf5 file for readin of r
 !----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 CHARACTER(LEN=255)            :: MeshFile_RPList
-INTEGER(8)                    :: nGlobalElems_RPList
+INTEGER(KIND=i8)              :: nGlobalElems_RPList
 INTEGER                       :: iElem,iRP,iRP_glob
 INTEGER,ALLOCATABLE           :: OffsetRPArray(:,:)
 REAL,ALLOCATABLE              :: xi_RP(:,:)
@@ -358,11 +359,18 @@ USE MOD_Equation_Vars_FV       ,ONLY: DVMMethod, DVMnSpecies, DVMSpecData, DVMCo
 USE MOD_DistFunc               ,ONLY: MacroValuesFromDistribution, TargetDistribution, MoleculeRelaxEnergy
 USE MOD_Mesh_Vars_FV           ,ONLY: Elem_xGP_FV
 #else
-USE MOD_DG_Vars           ,ONLY: U_N,N_DG_Mapping
-USE MOD_RecordPoints_Vars ,ONLY: L_xi_RP,L_eta_RP,L_zeta_RP
+USE MOD_DG_Vars           ,ONLY: N_DG_Mapping
+USE MOD_RecordPoints_Vars ,ONLY: L_eta_RP,L_zeta_RP
 USE MOD_Mesh_Vars         ,ONLY: offSetElem
+#if ( USE_HDG && (PP_nVar==1) && !(USE_FV) ) || !(USE_HDG)
+USE MOD_DG_Vars           ,ONLY: U_N
+USE MOD_RecordPoints_Vars ,ONLY: L_xi_RP
+#endif /*USE_HDG*/
 #endif /*DVM*/
 USE MOD_RecordPoints_Vars ,ONLY: RP_ElemID,nRP
+
+
+
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
@@ -473,7 +481,7 @@ REAL,   INTENT(IN)             :: OutputTime
 LOGICAL,INTENT(IN)             :: finalizeFile
 !----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-CHARACTER(LEN=255)             :: FileString,hilf,hilf2
+CHARACTER(LEN=255)             :: FileString,hilf
 CHARACTER(LEN=255)             :: tmp255
 REAL                           :: startT,endT
 #if USE_HDG
@@ -487,6 +495,7 @@ INTEGER,PARAMETER       :: AddVar=0
 #ifdef discrete_velocity
 ! REAL,DIMENSION(PP_nVar_FV) :: Weights, VeloX, VeloY, VeloZ
 ! INTEGER                    :: iVel, jVel, kVel, upos
+CHARACTER(LEN=255)           :: hilf2
 INTEGER                      :: iSpec
 #endif
 !===================================================================================================================================

@@ -266,9 +266,9 @@ USE MOD_Mesh_Vars              ,ONLY: offsetElem,nElems
 USE MOD_RayTracing_Vars        ,ONLY: N_DG_Ray_loc,Ray,nVarRay,U_N_Ray_loc,PREF_VDM_Ray,N_Inter_Ray,RayElemEmission
 USE MOD_ChangeBasis            ,ONLY: ChangeBasis3D
 USE MOD_RayTracing_Vars        ,ONLY: RaySecondaryVectorX,RaySecondaryVectorY,RaySecondaryVectorZ
-USE MOD_Mesh_Vars              ,ONLY: nBCSides,offsetElem,SideToElem
-USE MOD_Particle_Mesh_Tools    ,ONLY: GetGlobalNonUniqueSideID
 USE MOD_HDF5_input             ,ONLY: ReadAttribute
+USE MOD_Particle_Boundary_Vars ,ONLY: nComputeNodeSurfSides, SurfSide2GlobalSide
+USE MOD_Particle_Mesh_Vars     ,ONLY: SideInfo_Shared
 #if USE_MPI
 USE MOD_MPI_Shared
 USE MOD_MPI_Shared_Vars        ,ONLY: MPI_COMM_SHARED,MPI_COMM_LEADERS_SHARED,myComputeNodeRank
@@ -277,6 +277,9 @@ USE MOD_Photon_TrackingVars    ,ONLY: PhotonSampWallHDF5_Shared,PhotonSampWallHD
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars       ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
+USE MOD_Dielectric_Vars        ,ONLY: DoDielectric,isDielectricElem_Shared
+USE MOD_Mesh_Tools             ,ONLY: GetCNElemID
+USE MOD_HDF5_Input             ,ONLY: PyHOPECompatibilityCheck
 !#if MPI
 !#endif /*MPI*/
 IMPLICIT NONE
@@ -285,10 +288,12 @@ IMPLICIT NONE
 LOGICAL,INTENT(IN)   :: onlySurfData
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER              :: iElem,Nloc,iVar,k,l,m,iSurfSideHDF5,nSurfSidesHDF5,BCSideID,iLocSide,locElemID,GlobalSideID,SideID
+INTEGER              :: iElem,Nloc,iVar,k,l,m,iSurfSideHDF5,nSurfSidesHDF5,iSurfSide,locElemID,GlobalSideID,SideID,GlobalElemID
 INTEGER              :: nSurfSampleHDF5,N_HDF5
 INTEGER              :: iDOF,offsetDOF,nDOFLocal,nDOFTotal
-LOGICAL              :: ContainerExists
+INTEGER              :: OutputCounter
+INTEGER              :: CNElemID, GlobalNbSideID, GlobalNbElemID, CNNbElemID
+LOGICAL              :: ContainerExists, SideOnProc, AttributeExists
 INTEGER, ALLOCATABLE :: GlobalSideIndex(:)
 REAL, ALLOCATABLE    :: N_DG_Ray_locREAL(:)
 REAL, ALLOCATABLE    :: UNMax(:,:,:,:,:),UNMax_loc(:,:,:,:)
@@ -297,6 +302,7 @@ REAL, ALLOCATABLE    :: U_N_Ray_2D_local(:,:)                     !< for read-in
 INTEGER              :: sendbuf,recvbuf
 #endif /*USE_MPI*/
 REAL                 :: StartT,EndT
+REAL                 :: IntensityAmplitudeReadin
 !===================================================================================================================================
 
 LBWRITE(UNIT_stdOut,'(A)',ADVANCE='NO')' Reading ray tracing result from file...'
@@ -310,6 +316,8 @@ IF(myComputeNodeRank.EQ.0)THEN
 #else
   CALL OpenDataFile(RadiationSurfState,create=.FALSE.,single=.TRUE. ,readOnly=.TRUE.)
 #endif
+  ! Check PyHOPE versions in restart.h5 file
+  CALL PyHOPECompatibilityCheck(File_ID,'ray tracing result')
   CALL DatasetExists(File_ID,'SurfaceDataGlobalSideIndex',ContainerExists)
   IF(.NOT.ContainerExists) CALL CollectiveStop(__STAMP__,'SurfaceDataGlobalSideIndex container not in '//TRIM(RadiationSurfState))
   CALL GetDataSize(File_ID,'SurfaceDataGlobalSideIndex',nDims,HSize,attrib=.FALSE.)
@@ -349,6 +357,11 @@ IF(myComputeNodeRank.EQ.0)THEN
     CALL abort(__STAMP__,'Number of nSurfSample in .h5 file differs from the ini file parameter "RayTracing-nSurfSample"!')
   END IF ! nSurfSampleHDF5.NE.Ray%nSurfSample
   CALL ReadArray('SurfaceData',4,(/3_IK,INT(Ray%nSurfSample,IK),INT(Ray%nSurfSample,IK),INT(nSurfSidesHDF5,IK)/),0_IK,1,RealArray=PhotonSampWallHDF5)
+  CALL DatasetExists(File_ID,'IntensityAmplitude',AttributeExists,attrib=.TRUE.)
+  IF(AttributeExists) THEN
+    CALL ReadAttribute(File_ID,'IntensityAmplitude',1,RealScalar=IntensityAmplitudeReadin)
+    Ray%IntensityAmplitudeFactor = Ray%IntensityAmplitude / IntensityAmplitudeReadin
+  END IF
   CALL CloseDataFile()
   ! Small hack: replace 3rd index with global ID
   DO iSurfSideHDF5 = 1, nSurfSidesHDF5
@@ -356,14 +369,17 @@ IF(myComputeNodeRank.EQ.0)THEN
   END DO ! iSurfSideHDF5 = 1, nSurfSidesHDF5
 #if USE_MPI
 END IF
+! Communicate the factor to the other processes on the node
+CALL MPI_BCAST(Ray%IntensityAmplitudeFactor,1,MPI_DOUBLE_PRECISION,0,MPI_COMM_SHARED,iError)
 ! This sync/barrier is required as it cannot be guaranteed that the zeros have been written to memory by the time the MPI_REDUCE
 ! is executed (see MPI specification). Until the Sync is complete, the status is undefined, i.e., old or new value or utter nonsense.
 CALL BARRIER_AND_SYNC(PhotonSampWallHDF5_Shared_Win,MPI_COMM_SHARED)
 #endif /*USE_MPI*/
 
-ALLOCATE(PhotonSampWall_loc(1:Ray%nSurfSample,1:Ray%nSurfSample,1:nBCSides))
+ALLOCATE(PhotonSampWall_loc(1:Ray%nSurfSample,1:Ray%nSurfSample,1:nComputeNodeSurfSides))
 PhotonSampWall_loc = -1.0
-! Loop through large loop (TODO: can this be made cheaper?)
+OutputCounter = 0
+! Loop through large loop (OPTIMIZE: can this be made cheaper?)
 DO iSurfSideHDF5 = 1, nSurfSidesHDF5
 #if USE_MPI
   GlobalSideID = INT(PhotonSampWallHDF5(3,1,1,iSurfSideHDF5))
@@ -371,18 +387,50 @@ DO iSurfSideHDF5 = 1, nSurfSidesHDF5
   GlobalSideID = GlobalSideIndex(iSurfSideHDF5)
 #endif /*USE_MPI*/
   ! Loop through process-local (hopefully small) loop
-  DO BCSideID = 1, nBCSides
-    locElemID = SideToElem(S2E_ELEM_ID,BCSideID)
-    iLocSide  = SideToElem(S2E_LOC_SIDE_ID,BCSideID)
-    SideID    = GetGlobalNonUniqueSideID(offsetElem+locElemID,iLocSide)
-    IF(GlobalSideID.EQ.SideID)THEN
-      PhotonSampWall_loc(1:Ray%nSurfSample,1:Ray%nSurfSample,BCSideID) = PhotonSampWallHDF5(2,1:Ray%nSurfSample,1:Ray%nSurfSample,iSurfSideHDF5)
-      ! Check if element fas already been flagged an emission element (either volume or surface emission)
+  DO iSurfSide = 1, nComputeNodeSurfSides
+    SideOnProc = .FALSE.
+    SideID    = SurfSide2GlobalSide(SURF_SIDEID,iSurfSide)
+    GlobalElemID = SideInfo_Shared(SIDE_ELEMID,SideID)
+    CNElemID = GetCNElemID(GlobalElemID)
+    ! Get the neighbour side ID for inner BC check
+    GlobalNbSideID = SideInfo_Shared(SIDE_NBSIDEID,SideID)
+    locElemID = GlobalElemID - offsetElem
+    ! Cycle non-process-local elements
+    IF((locElemID.LE.0).OR.(locElemID.GT.nElems)) CYCLE
+    IF(DoDielectric) THEN
+      ! Cycle dielectric elements
+      IF(isDielectricElem_Shared(CNElemID)) CYCLE
+      ! Only the inner BC side with the smaller index is output, hence, it could be on the side of a dielectric
+      SideOnProc = (GlobalSideID.EQ.SideID).OR.(GlobalSideID.EQ.GlobalNbSideID)
+      ! Consistency check: current element is not a dielectric, and if the current side has a neighbour (-> inner BC), the neighbour
+      ! element must be a dielectric
+      IF(GlobalNbSideID.GT.0) THEN
+        GlobalNbElemID = SideInfo_Shared(SIDE_ELEMID,GlobalNbSideID)
+        CNNbElemID = GetCNElemID(GlobalNbElemID)
+        IF(.NOT.isDielectricElem_Shared(CNNbElemID)) THEN
+          CALL abort(__STAMP__,'ERROR in ReadRayTracingDataFromH5: Inner BCs in Raytracing without dielectrics are not supported!')
+        END IF
+      END IF
+    ELSE
+      ! Regular check
+      SideOnProc = (GlobalSideID.EQ.SideID)
+      ! Consistency check: since only inner BCs with lower index number are output, RayElemEmission(1,locElemID) might be on either
+      ! side of the inner BC, additional treatment required
+      IF(GlobalNbSideID.GT.0) THEN
+        CALL abort(__STAMP__,'ERROR in ReadRayTracingDataFromH5: InnerBCs in Raytracing without dielectrics are not supported!')
+      END IF
+    END IF
+    ! Check whether read-in side is on the process
+    ! (and additional check whether the neighbour side (inner BC) corresponds to the read-in side)
+    IF(SideOnProc)THEN
+      ! Store the heat flux
+      PhotonSampWall_loc(1:Ray%nSurfSample,1:Ray%nSurfSample,iSurfSide) = PhotonSampWallHDF5(2,1:Ray%nSurfSample,1:Ray%nSurfSample,iSurfSideHDF5)
+      ! Check if element has already been flagged an emission element (either volume or surface emission)
       IF(.NOT.RayElemEmission(1,locElemID))THEN
-        IF(ANY(PhotonSampWall_loc(1:Ray%nSurfSample,1:Ray%nSurfSample,BCSideID).GT.0.0)) RayElemEmission(1,locElemID) = .TRUE.
+        IF(ANY(PhotonSampWall_loc(1:Ray%nSurfSample,1:Ray%nSurfSample,iSurfSide).GT.0.0)) RayElemEmission(1,locElemID) = .TRUE.
       END IF ! .NOT.RayElemEmission(1,locElemID)
-    END IF ! GlobalSideID.EQ.
-  END DO ! BCSideID = 1,nBCSides
+    END IF ! SideOnProc
+  END DO ! iSurfSide = 1, nComputeNodeSurfSides
 END DO ! iSurfSideHDF5 = 1, nSurfSidesHDF5
 
 ! Check if only the surface data is to be loaded (non-restart and non-load balance case)
@@ -403,6 +451,13 @@ N_DG_Ray_loc = INT(N_DG_Ray_locREAL)
 DEALLOCATE(N_DG_Ray_locREAL)
 ! Sanity check
 IF(ANY(N_DG_Ray_loc.LE.0)) CALL abort(__STAMP__,'N_DG_Ray_loc cannot contain zeros!')
+
+! Read-in the intensity amplitude and calculate the scaling factor
+CALL DatasetExists(File_ID,'IntensityAmplitude',AttributeExists,attrib=.TRUE.)
+IF(AttributeExists) THEN
+  CALL ReadAttribute(File_ID,'IntensityAmplitude',1,RealScalar=IntensityAmplitudeReadin)
+  Ray%IntensityAmplitudeFactor = Ray%IntensityAmplitude / IntensityAmplitudeReadin
+END IF
 
 ! Read HDF5
 CALL DatasetExists(File_ID,'DG_Solution',ContainerExists)

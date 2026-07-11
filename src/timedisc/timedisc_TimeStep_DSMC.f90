@@ -43,7 +43,7 @@ USE MOD_Particle_Vars            ,ONLY: WriteMacroSurfaceValues, Species, PartSp
 USE MOD_Particle_Vars            ,ONLY: UseVarTimeStep, PartTimeStep, VarTimeStep
 USE MOD_Particle_Vars            ,ONLY: UseSplitAndMerge
 USE MOD_Particle_Vars            ,ONLY: UseGranularSpecies
-USE MOD_DSMC_Vars                ,ONLY: DSMC, CollisMode, AmbipolElecVelo
+USE MOD_DSMC_Vars                ,ONLY: DSMC, CollisMode, PartIntEn
 USE MOD_DSMC                     ,ONLY: DSMC_main
 USE MOD_part_tools               ,ONLY: UpdateNextFreePosition
 USE MOD_part_emission            ,ONLY: ParticleInserting
@@ -196,7 +196,7 @@ DO iPart=1,PDM%ParticleVecLength
     END IF
     ! Axisymmetric treatment of particles: rotation of the position and velocity vector
     IF(DSMC%DoAmbipolarDiff.AND.(Species(PartSpecies(iPart))%ChargeIC.GT.0.0)) THEN
-      CALL CalcPartSymmetryPos(PartState(1:3,iPart),PartState(4:6,iPart),AmbipolElecVelo(iPart)%ElecVelo)
+      CALL CalcPartSymmetryPos(PartState(1:3,iPart),PartState(4:6,iPart),PartIntEn(iPart)%ElecVelo)
     ELSE
       CALL CalcPartSymmetryPos(PartState(1:3,iPart),PartState(4:6,iPart))
     END IF

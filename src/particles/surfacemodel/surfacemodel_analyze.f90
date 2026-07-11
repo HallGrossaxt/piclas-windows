@@ -14,6 +14,7 @@
 
 MODULE MOD_SurfaceModel_Analyze
 ! IMPLICIT VARIABLE HANDLING
+USE MOD_Globals_Vars, ONLY: i8
 IMPLICIT NONE
 #ifdef PARTICLES
 PRIVATE
@@ -27,6 +28,7 @@ PUBLIC:: AnalyzeSurface
 PUBLIC:: DefineParametersSurfModelAnalyze
 PUBLIC:: FinalizeSurfaceModelAnalyze
 !===================================================================================================================================
+
 CONTAINS
 
 !==================================================================================================================================
@@ -159,12 +161,14 @@ SUBROUTINE AnalyzeSurface(Time)
 ! MODULES
 USE MOD_Globals
 USE MOD_Preproc
+USE MOD_Globals_Vars              ,ONLY: ElementaryCharge
 USE MOD_Analyze_Vars              ,ONLY: DoSurfModelAnalyze
 USE MOD_SurfaceModel_Analyze_Vars
 USE MOD_Restart_Vars              ,ONLY: DoRestart
 USE MOD_Particle_Boundary_Vars    ,ONLY: PartBound
 USE MOD_SurfaceModel_Vars         ,ONLY: nPorousBC, PorousBC
 USE MOD_Particle_Vars             ,ONLY: nSpecies,UseNeutralization,NeutralizationBalanceGlobal,Species,VarTimeStep
+USE MOD_Particle_Vars             ,ONLY: NeutralizationBalanceCurrent
 #if USE_MPI
 USE MOD_Particle_Boundary_Vars    ,ONLY: SurfCOMM
 #endif /*USE_MPI*/
@@ -281,6 +285,7 @@ IF(MPIRoot)THEN
 #endif /*USE_HDG*/
       IF(UseNeutralization)THEN ! Ion thruster neutralization current (virtual cathode electrons)
         CALL WriteDataHeaderInfo(unit_index,'NeutralizationParticles',OutputCounter)
+        CALL WriteDataHeaderInfo(unit_index,'NeutralizationCurrent',OutputCounter)
       END IF ! UseNeutralization
       IF(CalcCurrentSEE)THEN
         DO iSEE = 1, SEE%NPartBoundaries
@@ -473,7 +478,18 @@ IF(MPIRoot)THEN
     END DO ! iPartBound = 1, BPO%NPartBoundaries
   END IF ! CalcBoundaryParticleOutput
 
-  IF(UseNeutralization) CALL WriteDataInfo(unit_index,RealScalar=REAL(NeutralizationBalanceGlobal))
+  IF(UseNeutralization) THEN
+    ! Output MPF counter
+    CALL WriteDataInfo(unit_index,RealScalar=REAL(NeutralizationBalanceGlobal))
+    ! Output emission current
+    IF(ABS(SurfModelAnalyzeSampleTime).LE.0.0)THEN
+      CALL WriteDataInfo(unit_index,RealScalar=0.0)
+    ELSE
+      CALL WriteDataInfo(unit_index,RealScalar=ElementaryCharge*NeutralizationBalanceCurrent/SurfModelAnalyzeSampleTime)
+    END IF ! ABS(SurfModelAnalyzeSampleTime).LE.0.0
+    ! Reset MPIRoot counters after writing the data to the file
+    NeutralizationBalanceCurrent = 0.
+  END IF
 
   IF(CalcCurrentSEE)THEN
     DO iPartBound = 1, SEE%NPartBoundaries
@@ -583,7 +599,7 @@ INTEGER           ,INTENT(IN),OPTIONAL :: IntegerScalar
 CHARACTER(LEN=*)  ,INTENT(IN),OPTIONAL :: StrScalar
 REAL              ,INTENT(IN),OPTIONAL :: RealArray(:)
 INTEGER           ,INTENT(IN),OPTIONAL :: IntegerArray(:)
-INTEGER(KIND=8)   ,INTENT(IN),OPTIONAL :: IntegerK8Array(:)
+INTEGER(KIND=i8)  ,INTENT(IN),OPTIONAL :: IntegerK8Array(:)
 CHARACTER(LEN=255),INTENT(IN),OPTIONAL :: StrArray(:)
 LOGICAL           ,INTENT(IN),OPTIONAL :: LogicalScalar
 !----------------------------------------------------------------------------------------------------------------------------------!
@@ -769,8 +785,11 @@ IMPLICIT NONE
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER            :: iGroup, counter
+INTEGER            :: iGroup
+#if USE_MPI
+INTEGER            :: counter
 REAL,ALLOCATABLE   :: SendBuff(:)
+#endif /*USE_MPI*/
 REAL               :: TimeSample, TimeSampleTemp
 !===================================================================================================================================
 
@@ -1358,8 +1377,10 @@ INTEGER,ALLOCATABLE :: MinBound(:), MaxBound(:)
 INTEGER,ALLOCATABLE :: GroupIDToBCID(:)
 INTEGER             :: firstSide, lastSide, RotAxisDir, ElemID, CNElemID
 INTEGER             :: iSide, LocSideID, iGroup, SideID, iPartBound, q, p
+#if USE_MPI
 INTEGER             :: counter
 REAL,ALLOCATABLE    :: SendBuff(:)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 ALLOCATE(GroupOutput(4,SurfaceGroup%nGroups))
 GroupOutput = 0.0

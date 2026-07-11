@@ -19,6 +19,7 @@ MODULE MOD_Radiation_Vars
 #if USE_MPI
 USE mpi_f08
 #endif /*USE_MPI*/
+USE MOD_Globals_Vars, ONLY: i2
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -106,7 +107,7 @@ REAL, ALLOCPOINT       :: Radiation_ElemEnergy_Species(:,:,:)! (number of specie
 
 REAL,ALLOCPOINT                 :: Radiation_Emission_spec(:,:)     ! (WaveLen(:), number of mesh elements)
 REAL,ALLOCPOINT                 :: Radiation_Absorption_spec(:,:)     ! (WaveLen(:), number of mesh elements)
-INTEGER(KIND = 2), ALLOCPOINT   :: Radiation_Absorption_SpecPercent(:,:,:)  ! 1:RadiationParameter%WaveLenDiscrCoarse ,1:nSpecies, 1:nGlobalElems, KIND=2? TODO
+INTEGER(KIND=i2), ALLOCPOINT    :: Radiation_Absorption_SpecPercent(:,:,:)  ! 1:RadiationParameter%WaveLenDiscrCoarse ,1:nSpecies, 1:nGlobalElems, KIND=2? TODO
 
 REAL,ALLOCPOINT                 :: MacroRadInputParameters(:,:,:)   ! DSMC Output file (iElem, iSpec, 5 (density, Tvib, Trot, Telec, Ttrans_mean))
 
@@ -118,7 +119,7 @@ REAL,ALLOCPOINT                 :: Radiation_Emission_Spec_Shared(:,:)
 TYPE(MPI_Win)                   :: Radiation_Absorption_Spec_Shared_Win
 REAL,ALLOCPOINT                 :: Radiation_Absorption_Spec_Shared(:)
 TYPE(MPI_Win)                   :: Radiation_Absorption_SpecPercent_Shared_Win
-INTEGER(KIND = 2),ALLOCPOINT    :: Radiation_Absorption_SpecPercent_Shared(:)
+INTEGER(KIND=i2),ALLOCPOINT     :: Radiation_Absorption_SpecPercent_Shared(:)
 TYPE(MPI_Win)                   :: Radiation_ElemEnergy_Species_Shared_Win
 REAL,ALLOCPOINT                 :: Radiation_ElemEnergy_Species_Shared(:,:,:)
 #endif

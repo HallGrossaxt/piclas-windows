@@ -81,10 +81,10 @@ CALL prms%CreateLogicalOption( 'CountNbrOfLostParts'&
     'information is stored in a PartStateLost*.h5 file. When particles are not found during restart in their host cell '//&
     '(sanity check), they are marked missing and are also written to PartStateLost*.h5 file even if they are re-located '//&
     'on a different processor.','.TRUE.')
-CALL prms%CreateIntOption( 'PhotonModeBPO' , 'Output mode to store position, direction, host element etc. of rays/photons in PartStateBoundary.h5 (only radiation transport or ray tracing solver):\n'&
-                                             '0: Output nothing to PartStateBoundary.h5\n'&
-                                             '1: Output the initial position of the rays and their direction vector\n'&
-                                             '2: Output initial position and all calculated intersection points calculated in radtrans tracking\n'&
+CALL prms%CreateIntOption( 'PhotonModeBPO' , 'Output mode to store position, direction, host element etc. of rays/photons in PartStateBoundary.h5 (only radiation transport or ray tracing solver):\n'//&
+                                             '0: Output nothing to PartStateBoundary.h5\n'//&
+                                             '1: Output the initial position of the rays and their direction vector\n'//&
+                                             '2: Output initial position and all calculated intersection points calculated in radtrans tracking'&
                                              ,'0')
 CALL prms%CreateLogicalOption( 'UsePhotonTriaTracking', 'Activates usage of TriaTracking methods for photon tracking or Bilinear methods (default is True). Can only be selected when ray tracing is actually performed.','.TRUE.')
 CALL prms%CreateLogicalOption( 'DoBoundaryParticleOutputRay', 'Activates output of emission particles by ray tracing SEE and ray tracing volume ionization to PartStateBoundary.h5 (with negative species IDs to indicate creation)','.FALSE.')
@@ -169,7 +169,7 @@ USE MOD_PICDepo_Vars           ,ONLY: DoDeposition,DepositionType
 USE MOD_ReadInTools            ,ONLY: GETREAL,GETINT,GETLOGICAL,GetRealArray, GETINTFROMSTR
 USE MOD_Symmetry_Vars          ,ONLY: Symmetry
 USE MOD_Particle_Vars          ,ONLY: DoVirtualCellMerge
-USE MOD_Particle_Boundary_Vars ,ONLY: PartBound
+USE MOD_Particle_Boundary_Vars ,ONLY: PartBound,Do2DSurfaceCharge
 USE MOD_DSMC_Vars              ,ONLY: DoCellLocalWeighting
 #ifdef CODE_ANALYZE
 !USE MOD_Particle_Surfaces_Vars ,ONLY: SideBoundingBoxVolume
@@ -250,7 +250,11 @@ IF((TrackingMethod.EQ.TRIATRACKING).AND.(Symmetry%Order.EQ.3).AND.(nSurfSample.G
 ! Set initial values
 BezierElevation = -1
 NGeoElevated = -1
-IF (TrackingMethod.EQ.TRACING .OR. TrackingMethod.EQ.REFMAPPING .OR. nSurfSampleAndTriaTracking .OR. UseRayTracing) THEN
+IF (TrackingMethod.EQ.TRACING    .OR.&
+    TrackingMethod.EQ.REFMAPPING .OR.&
+    nSurfSampleAndTriaTracking   .OR.&
+    UseRayTracing                .OR.&
+    Do2DSurfaceCharge) THEN
   UseBezierControlPoints = .TRUE.
   ! Bezier elevation now more important than ever, also determines size of FIBGM extent
   BezierElevation = GETINT('BezierElevation')
@@ -337,7 +341,7 @@ DoBoundaryParticleOutputRay = GETLOGICAL('DoBoundaryParticleOutputRay')
 IF((PhotonModeBPO.GE.1)         .AND.(.NOT.DoBoundaryParticleOutputHDF5)) DoBoundaryParticleOutputHDF5 = .TRUE.
 IF((DoBoundaryParticleOutputRay).AND.(.NOT.DoBoundaryParticleOutputHDF5)) DoBoundaryParticleOutputHDF5 = .TRUE.
 
-IF(DoBoundaryParticleOutputHDF5) CALL InitPartStateBoundary()
+IF(DoBoundaryParticleOutputHDF5) CALL InitPartStateBoundary(ReInitialise=.FALSE.)
 
 #ifdef CODE_ANALYZE
 PARTOUT            = GETINT('PartOut')
@@ -426,7 +430,7 @@ SELECT CASE(TrackingMethod)
 
     IF (DoDeposition) CALL BuildEpsOneCell()
 
-    IF(.NOT.UsePhotonTriaTracking)THEN
+    IF((UsePhotonTriaTracking.EQV..FALSE.) .OR. Do2DSurfaceCharge)THEN
       ! Build stuff required for bilinear tracing algorithms
       CALL BuildSideSlabAndBoundingBox() ! Required for SideSlabNormals_Shared, SideSlabIntervals_Shared, BoundingBoxIsEmpty_Shared (requires NGeoElevated)
 
@@ -435,7 +439,7 @@ SELECT CASE(TrackingMethod)
 
       ! Get basevectors for (bi-)linear sides
       CALL BuildLinearSideBaseVectors() ! Required for BaseVectors0_Shared, BaseVectors1_Shared, BaseVectors2_Shared, BaseVectors3_Shared, BaseVectorsScale_Shared ! (requires NGeoElevated)
-    END IF ! UsePhotonTriaTracking
+    END IF ! (UsePhotonTriaTracking.EQV..FALSE.) .OR. Do2DSurfaceCharge
 
     IF(Symmetry%Order.EQ.2) THEN
       CALL BuildMesh2DInfo()
@@ -558,6 +562,7 @@ USE MOD_LoadBalance_Vars       ,ONLY: ElemTime
 #endif /*USE_LOADBALANCE*/
 #endif /*USE_MPI*/
 USE MOD_Photon_TrackingVars    ,ONLY: UsePhotonTriaTracking
+USE MOD_Particle_Boundary_Vars ,ONLY: Do2DSurfaceCharge
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -735,7 +740,7 @@ SELECT CASE (TrackingMethod)
     CALL UNLOCK_AND_FREE(ElemSideNodeID_Shared_Win)
     CALL UNLOCK_AND_FREE(ElemMidPoint_Shared_Win)
 
-    IF(.NOT.UsePhotonTriaTracking)THEN
+    IF((UsePhotonTriaTracking.EQV..FALSE.) .OR. Do2DSurfaceCharge)THEN
       ! GetSideSlabNormalsAndIntervals()
       CALL UNLOCK_AND_FREE(SideSlabNormals_Shared_Win)
       CALL UNLOCK_AND_FREE(SideSlabIntervals_Shared_Win)
@@ -752,7 +757,7 @@ SELECT CASE (TrackingMethod)
       CALL UNLOCK_AND_FREE(BaseVectors2_Shared_Win)
       CALL UNLOCK_AND_FREE(BaseVectors3_Shared_Win)
       CALL UNLOCK_AND_FREE(BaseVectorsScale_Shared_Win)
-    END IF ! .NOT.UsePhotonTriaTracking
+    END IF ! (UsePhotonTriaTracking.EQV..FALSE.) .OR. Do2DSurfaceCharge
 
     ! BuildElementRadiusTria()
     CALL UNLOCK_AND_FREE(ElemBaryNGeo_Shared_Win)
@@ -853,7 +858,7 @@ SELECT CASE (TrackingMethod)
     END IF !PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
 
-    IF(.NOT.UsePhotonTriaTracking)THEN
+    IF((UsePhotonTriaTracking.EQV..FALSE.) .OR. Do2DSurfaceCharge)THEN
       ! GetSideSlabNormalsAndIntervals()
       ADEALLOCATE(SideSlabNormals_Shared)
       ADEALLOCATE(SideSlabIntervals_Shared)
@@ -870,7 +875,7 @@ SELECT CASE (TrackingMethod)
       ADEALLOCATE(BaseVectors2_Shared)
       ADEALLOCATE(BaseVectors3_Shared)
       ADEALLOCATE(BaseVectorsScale_Shared)
-    END IF ! .NOT.UsePhotonTriaTracking
+    END IF ! (UsePhotonTriaTracking.EQV..FALSE.) .OR. Do2DSurfaceCharge
 
     ! BuildElementRadiusTria
     ADEALLOCATE(ElemBaryNGeo_Shared)

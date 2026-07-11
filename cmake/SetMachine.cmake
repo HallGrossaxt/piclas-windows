@@ -33,8 +33,13 @@ MESSAGE(STATUS "Generating for [${CMAKE_GENERATOR}] build system")
 # CMAKE_Fortran_COMPILER_ID that is used below
 # > This block must be called before ENABLE_LANGUAGE
 # =========================================================================
+# HLRS Hunter
+IF (CMAKE_FQDN_HOST MATCHES "^hunter")
+  SET(CMAKE_C_COMPILER       mpicc)
+  SET(CMAKE_CXX_COMPILER     mpicxx)
+  SET(CMAKE_Fortran_COMPILER mpif90)
 # HLRS Vulcan
-IF (CMAKE_FQDN_HOST MATCHES "^cl[0-9]fr")
+ELSEIF (CMAKE_FQDN_HOST MATCHES "^cl[0-9]fr")
   SET(CMAKE_C_COMPILER       mpicc)
   SET(CMAKE_CXX_COMPILER     mpicxx)
   SET(CMAKE_Fortran_COMPILER mpif90)

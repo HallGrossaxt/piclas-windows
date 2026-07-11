@@ -48,6 +48,10 @@ INTEGER,ALLOCATABLE :: SmallMortarType(:,:)   !< Type of Mortar side ([1] Type, 
                                               !< [1] Type: mortar type this small side belongs to (1-3)
                                               !< [2] Side: Small side number (1-4)
 INTEGER             :: ZeroPotentialDOF
+#if USE_DEBUG
+! Increase MUMPS diagnostics level: Errors, warnings, and main statistics printed.
+LOGICAL             :: PETScDisplayDiagnostics !< User-activated detailed disgnostics are displayed in std.out when compiling with debug settings
+#endif /*USE_DEBUG*/
 #endif /*USE_PETSC*/
 #endif /*USE_HDG*/
 END MODULE MOD_HDG_Vars_PETSc

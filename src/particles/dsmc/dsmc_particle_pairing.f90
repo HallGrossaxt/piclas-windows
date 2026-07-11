@@ -502,11 +502,11 @@ SUBROUTINE PerformPairingAndCollision(iPartIndx_Node, PartNum, iElem, NodeVolume
 USE MOD_Globals
 USE MOD_DSMC_CollisionProb      ,ONLY: DSMC_prob_calc
 USE MOD_DSMC_Collis             ,ONLY: DSMC_perform_collision
-USE MOD_DSMC_Vars               ,ONLY: Coll_pData,CollInf,CollisMode,PartStateIntEn,ChemReac,DSMC
+USE MOD_DSMC_Vars               ,ONLY: Coll_pData,CollInf,CollisMode,PartIntEn,ChemReac,DSMC
 USE MOD_DSMC_Vars               ,ONLY: ParticleWeighting, DoSpeciesWeighting
 USE MOD_DSMC_Vars               ,ONLY: SelectionProc, useRelaxProbCorrFactor, iPartIndx_NodeNewElecRelax, newElecRelaxParts
 USE MOD_DSMC_Vars               ,ONLY: iPartIndx_NodeElecRelaxChem,nElecRelaxChemParts
-USE MOD_Particle_Vars           ,ONLY: PartSpecies, nSpecies, PartState, UseVarTimeStep, usevMPF
+USE MOD_Particle_Vars           ,ONLY: PartSpecies, nSpecies, PartState, UseVarTimeStep, usevMPF, Species
 USE MOD_DSMC_Analyze            ,ONLY: CalcGammaVib, CalcInstantTransTemp, CalcMeanFreePath, CalcInstantElecTempXi
 USE MOD_part_tools              ,ONLY: GetParticleWeight
 USE MOD_DSMC_Relaxation         ,ONLY: CalcMeanVibQuaDiatomic,SumVibRelaxProb
@@ -581,8 +581,9 @@ IF (CollisMode.EQ.3) THEN
 ! Determination of the mean vibrational energy for the cell
   ChemReac%MeanEVib_PerIter(1:nSpecies) = 0.0
   DO iPart = 1, TotalPartNum
+    IF((Species(PartSpecies(iPartIndx_NodeTotal(iPart)))%InterID.EQ.2).OR.(Species(PartSpecies(iPartIndx_NodeTotal(iPart)))%InterID.EQ.20)) &
     ChemReac%MeanEVib_PerIter(PartSpecies(iPartIndx_NodeTotal(iPart)))=ChemReac%MeanEVib_PerIter(PartSpecies(iPartIndx_NodeTotal(iPart))) &
-      + PartStateIntEn(1,iPartIndx_NodeTotal(iPart)) * GetParticleWeight(iPartIndx_NodeTotal(iPart))
+      + PartIntEn(iPartIndx_NodeTotal(iPart))%EVib(1) * GetParticleWeight(iPartIndx_NodeTotal(iPart))
   END DO
   CALL CalcMeanVibQuaDiatomic()
 END IF
@@ -595,9 +596,11 @@ IF(((CollisMode.GT.1).AND.(SelectionProc.EQ.2)).OR.DSMC%BackwardReacRate.OR.DSMC
   ! 3. Case: Temperature required for the mean free path with the VHS model
   ! 4. Case: Needed to calculate the correction factor
   CALL CalcInstantTransTemp(iPartIndx_NodeTotal,TotalPartNum)
-  IF ((DSMC%ElectronicModel.EQ.2).OR.useRelaxProbCorrFactor) CALL CalcInstantElecTempXi(iPartIndx_NodeTotal,TotalPartNum)
   IF(((SelectionProc.EQ.2).OR.(useRelaxProbCorrFactor)).AND..NOT.(DSMC%VibAHO)) CALL CalcGammaVib()
-  IF (useRelaxProbCorrFactor.AND.(DSMC%ElectronicModel.EQ.1)) CALL CalcProbCorrFactorElec()
+  IF (useRelaxProbCorrFactor.AND.(DSMC%ElectronicModel.EQ.1)) THEN
+    CALL CalcInstantElecTempXi(iPartIndx_NodeTotal,TotalPartNum)
+    CALL CalcProbCorrFactorElec()
+  END IF  
 END IF
 
 IF (CollInf%ProhibitDoubleColl.AND.(nPair.EQ.1)) THEN
@@ -736,10 +739,9 @@ SUBROUTINE DSMC_SplitPartnerForCollision(iPair)
 !===================================================================================================================================
 ! MODULES
 USE MOD_Globals
-USE MOD_Particle_Vars           ,ONLY: PartState, PDM, PEM, PartMPF, PartSpecies, PartPosRef, vMPFSplitLimit, Species
+USE MOD_Particle_Vars           ,ONLY: PartState, PDM, PEM, PartMPF, PartSpecies, PartPosRef, vMPFSplitLimit
 USE MOD_Particle_Vars           ,ONLY: vMPFPairSplitRatio
-USE MOD_DSMC_Vars               ,ONLY: Coll_pData, PartStateIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC, VibQuantsPar
-USE MOD_DSMC_Vars               ,ONLY: ElectronicDistriPart
+USE MOD_DSMC_Vars               ,ONLY: Coll_pData, PartIntEn, CollisMode
 USE MOD_Particle_Tracking_Vars  ,ONLY: TrackingMethod
 USE MOD_part_tools              ,ONLY: GetNextFreePosition
 ! IMPLICIT VARIABLE HANDLING
@@ -780,20 +782,10 @@ PartState(1:6,PositionNbr) = PartState(1:6,iPartHeavy)
 IF(TrackingMethod.EQ.REFMAPPING) PartPosRef(1:3,PositionNbr) = PartPosRef(1:3,iPartHeavy)
 PartSpecies(PositionNbr) = iSpec
 IF(CollisMode.GT.1) THEN
-  PartStateIntEn(1:2,PositionNbr) = PartStateIntEn(1:2,iPartHeavy)
-  IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
-    IF(ALLOCATED(VibQuantsPar(PositionNbr)%Quants)) DEALLOCATE(VibQuantsPar(PositionNbr)%Quants)
-    ALLOCATE(VibQuantsPar(PositionNbr)%Quants(PolyatomMolDSMC(SpecDSMC(iSpec)%SpecToPolyArray)%VibDOF))
-    VibQuantsPar(PositionNbr)%Quants(:) = VibQuantsPar(iPartHeavy)%Quants(:)
-  END IF
-  IF(DSMC%ElectronicModel.GT.0) THEN
-    PartStateIntEn(3,PositionNbr) = PartStateIntEn(3,iPartHeavy)
-    IF((DSMC%ElectronicModel.EQ.2).AND..NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
-      IF(ALLOCATED(ElectronicDistriPart(PositionNbr)%DistriFunc)) DEALLOCATE(ElectronicDistriPart(PositionNbr)%DistriFunc)
-      ALLOCATE(ElectronicDistriPart(PositionNbr)%DistriFunc(1:SpecDSMC(iSpec)%MaxElecQuant))
-      ElectronicDistriPart(PositionNbr)%DistriFunc(:) = ElectronicDistriPart(iPartHeavy)%DistriFunc(:)
-    END IF
-  END IF
+  ! Deep-copy the complete internal-energy state (EVib/ERot/EElec, quantum numbers, distribution function): intrinsic
+  ! derived-type assignment (re)allocates the allocatable components to match the source, covering the polyatomic and
+  ! electronic-model cases; unallocated source components stay unallocated on the clone.
+  PartIntEn(PositionNbr) = PartIntEn(iPartHeavy)
 END IF
 PartMPF(PositionNbr) = WeightHeavy - WeightLight
 PEM%GlobalElemID(PositionNbr) = PEM%GlobalElemID(iPartHeavy)

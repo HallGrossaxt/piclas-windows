@@ -24,13 +24,13 @@ If the piclas repository is located in the home directory, simply run
 
 Change the command to comply with your path if the piclas repository is somewhere else.
 
-## Mesh Generation with HOPR (pre-processing)
+## Mesh Generation with PyHOPE (pre-processing)
 
 Before the actual simulation is conducted, a mesh file in the HDF5 format has to be supplied. The mesh files used by **piclas** are created by supplying an input file *hopr.ini* with the required information for a mesh that has either been created by an external mesh generator or directly from block-structured information in the hopr.ini file itself. Here, a block-structured grid is created directly from the information in the hopr.ini file. To create the .h5 mesh file, simply run
 
-    hopr hopr.ini
+    pyhope hopr.ini
 
-This creates the mesh file *dsmc_reservoir_mesh.h5* in HDF5 format, which is depicted in {numref}`fig:dsmc-reservoir-mesh-corners`. Alternatively, if you do not want to run **hopr** yourself, you can also use the provided mesh. After this step, the mesh needs to be copied in the simulation directories
+This creates the mesh file *dsmc_reservoir_mesh.h5* in HDF5 format, which is depicted in {numref}`fig:dsmc-reservoir-mesh-corners`. Alternatively, if you do not want to run **PyHOPE** yourself, you can also use the provided mesh. After this step, the mesh needs to be copied in the simulation directories
 
     cp dsmc_reservoir_mesh.h5 ./chemistry-off/
     cp dsmc_reservoir_mesh.h5 ./chemistry-on/
@@ -69,7 +69,7 @@ in the parameter.ini). For particle-based methods without electromagnetic fields
       BoundaryName = BC_wall
       BoundaryType = (/4,0,0,0/)
 
-For more information about hopr, visit [https://github.com/hopr-framework/hopr](https://github.com/hopr-framework/hopr).
+For more information about PyHOPE, visit [https://github.com/hopr-framework/PyHOPE](https://github.com/hopr-framework/PyHOPE).
 
 ## Simulation: Chemistry disabled
 
@@ -102,7 +102,7 @@ should look like this
      CMakeLists.txt
      CONTRIBUTORS.md
      docs
-     LICENCE.md
+     LICENSE.md
      README.md
      REFERENCE.md
      REGGIE.md

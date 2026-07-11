@@ -323,6 +323,7 @@ USE MOD_MPI_Shared
 USE MOD_MPI_Shared_Vars
 #endif
 USE MOD_Particle_Mesh_Vars        ,ONLY: ElemMidPoint_Shared
+USE MOD_HDF5_Input                ,ONLY: PyHOPECompatibilityCheck
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -340,6 +341,8 @@ REAL, ALLOCATABLE                 :: SortElemYPos(:)
 
 MacroRadiationInputFile = GETSTR('Radiation-MacroInput-Filename')
 CALL OpenDataFile(MacroRadiationInputFile,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
+! Check PyHOPE versions in restart.h5 file
+CALL PyHOPECompatibilityCheck(File_ID,'macroscopic radiation')
 
 CALL GetDataProps('ElemData',nVar_HDF5,N_HDF5,nElems_HDF5)
 
@@ -366,9 +369,7 @@ END ASSOCIATE
 
 IF(RadiationSwitches%SortCellsY) THEN !Sort cells if manually created input is used
   IF(nProcessors.GT.1) THEN
-    CALL abort(&
-                __STAMP__&
-                ,' ERROR: Radiation - Sort cells in y-direction only possible on one processor!')
+    CALL abort(__STAMP__,' ERROR: Radiation - Sort cells in y-direction only possible on one processor!')
   END IF
   ALLOCATE(SortElemInd(nElems), SortElemYPos(nElems))
   DO iElem = 1, nElems

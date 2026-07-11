@@ -18,6 +18,7 @@ MODULE MOD_TimeDisc
 ! Module for the GTS Temporal discretization
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -138,7 +139,7 @@ REAL            :: tPreviousAnalyze         !> time of previous analyze.
                                             !> Used for Nextfile info written into previous file if greater tAnalyze
 REAL            :: tPreviousAverageAnalyze  !> time of previous Average analyze.
 REAL            :: tZero
-INTEGER(KIND=8) :: iter_PID                 !> iteration counter since last InitPiclas call for PID calculation
+INTEGER(KIND=i8):: iter_PID                 !> iteration counter since last InitPiclas call for PID calculation
 REAL            :: WallTimeStart            !> wall time of simulation start
 REAL            :: WallTimeEnd              !> wall time of simulation end
 LOGICAL         :: finalIter

@@ -59,6 +59,7 @@ USE MOD_Equation_Vars      ,ONLY: B, E
 USE MOD_LoadBalance_Timers ,ONLY: LBStartTime,LBPauseTime,LBSplitTime
 #endif /*USE_LOADBALANCE*/
 #if USE_PETSC
+USE MOD_Globals_Vars       ,ONLY: eps0
 USE PETSc
 USE MOD_Mesh_Vars          ,ONLY: SideToElem,nGlobalMortarSides
 USE MOD_HDG_Vars_PETSc
@@ -71,9 +72,23 @@ USE MOD_FillMortar_HDG     ,ONLY: BigToSmallMortar_HDG
 #if USE_MPI
 USE MOD_MPI_HDG            ,ONLY: Mask_MPIsides
 #endif
-USE MOD_Globals_Vars       ,ONLY: ElementaryCharge,eps0
+USE MOD_Globals_Vars       ,ONLY: ElementaryCharge
 USE MOD_ChangeBasis        ,ONLY: ChangeBasis2D
 USE MOD_HDG_Tools          ,ONLY: CG_solver,DisplayConvergence
+USE MOD_Interpolation_Vars ,ONLY: N_Inter
+#if defined(PARTICLES)
+USE MOD_Globals_Vars       ,ONLY: eps0
+#if USE_MPI
+USE MOD_PICDepo_MPI        ,ONLY: ExchangeSurfNodeSourceMPI
+USE MOD_Particle_Boundary_Vars ,ONLY: Do2DSurfaceCharge
+#endif /*USE_MPI*/
+USE MOD_PICDepo_Vars       ,ONLY: SurfNodeSource,FEMVertexID2DepoSurfNodeID,Vdm_EQ_N,IsDepoSurfSide,pq2iNode,SurfNodeArea
+USE MOD_Mesh_Vars          ,ONLY: NonUniqueGlobalSideIDToNonUniqueGlobalNodeID,NonUniqueGlobalNodeIDToFEMVertexID
+USE MOD_Mesh_Vars          ,ONLY: SideToNonUniqueGlobalSide
+#endif /*defined(PARTICLES)*/
+#if defined(PARTICLES)
+USE MOD_Particle_Boundary_Vars  ,ONLY: PartBound
+#endif /*defined(PARTICLES)*/
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
@@ -87,6 +102,13 @@ INTEGER :: i,j,k,r,p,q,iElem, iVar,NSide,Nloc
 INTEGER :: BCsideID,BCType,BCState,SideID,iLocSide
 REAL    :: RHS_facetmp(nGP_face(NMax))
 REAL    :: rtmp(nGP_vol(NMax))
+#if defined(PARTICLES)
+REAL                 :: src
+INTEGER              :: FEMVertexID
+INTEGER :: iPartBound, iNode, NonUniqueNodeID, NonUniqueGlobalSideID, iDepoSurfNodeID
+REAL    :: SubArea
+REAL,ALLOCATABLE     :: SurfNodeSourceEquiN1(:,:,:),SurfNodeSourceNodeTypeNloc(:,:,:)
+#endif /*defined(PARTICLES)*/
 #if (PP_nVar!=1)
 REAL    :: BTemp(3,3,nGP_vol,PP_nElems)
 #endif /*(PP_nVar!=1)*/
@@ -107,9 +129,9 @@ REAL                 :: timeStartPiclas,timeEndPiclas
 INTEGER              :: jLocSide
 REAL                 :: Smatloc(nGP_face(NMax),nGP_face(NMax))
 INTEGER              :: iUniqueFPCBC
-INTEGER              :: iMortar, iType
+INTEGER              :: iMortar,iType
 #endif /*USE_PETSC*/
-REAL                 :: chitens_face(3,3)
+REAL                 :: chitens_face(3,3),DCBiasVoltage(1:PP_nVar)
 !===================================================================================================================================
 ! Dummy for chitens_face(:,:,p,q,SideID)
 chitens_face=0.0
@@ -210,7 +232,7 @@ DO iVar = 1, PP_nVar
       END DO; END DO !p,q
     END DO !BCsideID=1,nDirichletBCSides
   END IF
-#endif
+#endif /*PP_nVar!=1*/
 
   ! Floating boundary BCs
 #if USE_PETSC
@@ -294,6 +316,86 @@ DO BCsideID=1,nNeumannBCSides
   HDG_Surf_N(SideID)%RHS_face(:,:) = HDG_Surf_N(SideID)%RHS_face(:,:) + HDG_Surf_N(SideID)%qn_face(:,:)
 END DO
 
+#if defined(PARTICLES)
+! Add Distributed Capacitance BC
+#if USE_MPI
+IF(Do2DSurfaceCharge) CALL ExchangeSurfNodeSourceMPI()
+#endif /*USE_MPI*/
+! NOTE: DistriCapBC only includes nBCSides and not the inner BCs
+IF(nDistriCapBCsides.GT.0) ALLOCATE(SurfNodeSourceEquiN1(1:1,0:1,0:1),SurfNodeSourceNodeTypeNloc(1:1,0:Nmax,0:Nmax))
+! Loop over all local BC sides, where the DCBC model is active
+DO BCsideID=1,nDistriCapBCsides
+  SideID     = DistriCapBC(BCsideID)             ! Get side index
+  BCState    = BoundaryType(BC(SideID),BC_STATE)
+  iPartBound = PartBound%MapToPartBC(BC(SideID)) ! Get particle boundary index
+  Nloc       = N_SurfMesh(SideID)%NSide          ! Get polynomial degree of side
+  NonUniqueGlobalSideID = SideToNonUniqueGlobalSide(1,SideID) ! Get global side index
+
+  ! Map surface charge from vertices to SideID surface with N=1
+  ! NOTE: ight not work because the side is not always oriented in the master ordering
+  DO q=0,1; DO p=0,1
+    ! Get local node index
+    ! Use mapping p,q -> iNode
+    iNode = pq2iNode(p,q,SideID)
+    ! IPWRITE(*,*) 'p,q,iNode,2*q + p + 1:', p,q,iNode,2*q + p + 1
+    ! Mapping from non-unique global side index to non-unique global node index
+    NonUniqueNodeID = NonUniqueGlobalSideIDToNonUniqueGlobalNodeID(iNode,NonUniqueGlobalSideID)
+    ! Sanity check
+    IF (NonUniqueNodeID.LE.0) THEN
+      IPWRITE(*,*) 'NonUniqueNodeID,NonUniqueGlobalSideID,IsDepoSurfSide(NonUniqueGlobalSideID),SideID:',&
+                    NonUniqueNodeID,NonUniqueGlobalSideID,IsDepoSurfSide(NonUniqueGlobalSideID),SideID
+      CALL abort(__STAMP__,' NonUniqueNodeID <= 0')
+    END IF ! NonUniqueNodeID.LE.0
+    ! Mapping from NonUniqueNodeID to FEMVertexID
+    FEMVertexID = NonUniqueGlobalNodeIDToFEMVertexID(NonUniqueNodeID)
+    ! Get surface deposition node index
+    iDepoSurfNodeID = FEMVertexID2DepoSurfNodeID(FEMVertexID)
+    ! Sanity check
+    IF (iDepoSurfNodeID.LE.0) THEN
+      IPWRITE(*,*) 'NonUniqueNodeID,FEMVertexID,iDepoSurfNodeID,NonUniqueGlobalSideID,IsDepoSurfSide(NonUniqueGlobalSideID),SideID:',&
+                    NonUniqueNodeID,FEMVertexID,iDepoSurfNodeID,NonUniqueGlobalSideID,IsDepoSurfSide(NonUniqueGlobalSideID),SideID
+      CALL abort(__STAMP__,' iDepoSurfNodeID <= 0')
+    END IF ! iDepoSurfNodeID.LE.0
+    ! Store in 2D temporary array
+    SurfNodeSourceEquiN1(1:1,p,q) = SurfNodeSource(iDepoSurfNodeID)/SurfNodeArea(iDepoSurfNodeID)
+  END DO; END DO ! q=0,1; DO p=0,1
+
+  ! Map from equidistant side nodes (N=1) to side node type p-q system (Nloc)
+  CALL ChangeBasis2D(1, 1, Nloc, Vdm_EQ_N(Nloc)%Vdm, SurfNodeSourceEquiN1(1:1,0:1,0:1), SurfNodeSourceNodeTypeNloc(1:1,0:Nloc,0:Nloc))
+
+  ! Map from N=1 to N=Nloc
+  DO q=0,Nloc; DO p=0,Nloc
+    ! 2D p,q-index to 1D r-index
+    r=q*(Nloc+1) + p+1
+    ! Apply linear or constant electric potential
+    IF (BCState.GT.0) THEN
+      CALL ExactFunc(-3,N_SurfMesh(SideID)%Face_xGP(:,p,q),DCBiasVoltage(:),iLinState=BCState)
+#if (PP_nVar!=1)
+      CALL abort(__STAMP__,' LinPhi model not implemented for PP_nVar!=1', IERROR)
+#endif /*PP_nVar!=1*/
+    ELSE
+      DCBiasVoltage = PartBound%DCBiasVoltage(iPartBound)
+    END IF ! BCState.GT.0
+    ! IPWRITE(*,*) 'SurfElem(p,q),SurfNodeSourceNodeTypeNloc(1,p,q),SurfNodeSourceNodeTypeNloc(1,p,q)/(N_SurfMesh(SideID)%SurfElem(p,q)):', &
+    !               N_SurfMesh(SideID)%SurfElem(p,q),SurfNodeSourceNodeTypeNloc(1,p,q),SurfNodeSourceNodeTypeNloc(1,p,q)/(N_Inter(Nloc)%wGP(p)*N_Inter(Nloc)%wGP(q)*N_SurfMesh(SideID)%SurfElem(p,q))
+    SubArea = N_Inter(Nloc)%wGP(p)*N_Inter(Nloc)%wGP(q)*N_SurfMesh(SideID)%SurfElem(p,q)
+    src = SubArea * ( &
+          PartBound%DCPermittivity(iPartBound) * DCBiasVoltage(1) / PartBound%DCThickness(iPartBound) + & ! DCBC
+          (SurfNodeSourceNodeTypeNloc(1,p,q) +                         & ! Surface charge due to deposited particles
+           PartBound%DCSurfaceChargeDensity(iPartBound) & ! Surface charge due to analytical expression
+          )/eps0 )
+    ! src = ( SubArea*PartBound%DCPermittivity(iPartBound) * PartBound%DCBiasVoltage(iPartBound) / PartBound%DCThickness(iPartBound) + & ! DCBC
+    !       ( SurfNodeSourceNodeTypeNloc(1,p,q)        +                         & ! Surface charge due to deposited particles
+    !         SubArea*PartBound%DCSurfaceChargeDensity(iPartBound) & ! Surface charge due to analytical expression
+    !       )/eps0 )
+    HDG_Surf_N(SideID)%RHS_face(1,r) = HDG_Surf_N(SideID)%RHS_face(1,r) + src
+  END DO; END DO ! p,q
+  ! read*
+END DO
+#else
+IF(nDistriCapBCsides.GT.0) CALL Abort(__STAMP__,'ERROR: Distributed capacitance requires PARTICLES=ON')
+#endif /*defined(PARTICLES)*/
+
 #if USE_PETSC
 ! add Dirichlet contribution
 DO iBCSide=1,nDirichletBCSides
@@ -372,6 +474,8 @@ DO SideID=1,nSides
   PetscCallA(VecSetValues(PETScRHS,nGP_face(Nloc),DOFindices(1:nGP_face(Nloc)),HDG_Surf_N(SideID)%RHS_face(1,:),ADD_VALUES,ierr))
 END DO
 
+! 1st assembly call is required because "Calls to VecSetValues() with the INSERT_VALUES and ADD_VALUES options cannot be mixed
+! without intervening calls to the assembly routines."
 PetscCallA(VecAssemblyBegin(PETScRHS,ierr))
 PetscCallA(VecAssemblyEnd(PETScRHS,ierr))
 
@@ -386,10 +490,12 @@ END IF
 
 ! Reset the RHS of the first DOF if ZeroPotential must be set
 IF(mpiRoot.AND.ZeroPotentialDOF.GE.0) THEN
-  ! Note that sice PETSc 3.24, VecSetValue checks the data type of the arguments. The value 0 is not allowed, but 0.0 is correct
+  ! NOTE: sice PETSc 3.24, VecSetValue checks the data type of the arguments. The value 0 is not allowed, but 0.0 is correct
   PetscCallA(VecSetValue(PETScRHS,ZeroPotentialDOF,0.0,INSERT_VALUES,ierr))
 END IF
 
+! 2nd assembly call is required because "These values may be cached, so VecAssemblyBegin() and VecAssemblyEnd() MUST be called after
+! all calls to VecSetValues() have been completed."
 PetscCallA(VecAssemblyBegin(PETScRHS,ierr))
 PetscCallA(VecAssemblyEnd(PETScRHS,ierr))
 
@@ -435,19 +541,23 @@ IF(.NOT.(reason.EQ.KSP_CONVERGED_RTOL_NORMAL               .OR.&
 IF(reason.LT.0)THEN
 #endif
   ! Output used memory
-  CALL WarningMemusage(Mode=1,Threshold=5.0)
+  CALL WarningMemusage(Mode=1,Threshold=5.0) ! Mode=1: Memory per node (NOT over all nodes), Threshold=5.0% of total node memory
   !  View solver converged reason
   PetscCallA(KSPConvergedReasonView(PETScSolver,PETSC_VIEWER_STDOUT_WORLD,ierr))
   !  View solver info
   PetscCallA(KSPView(PETScSolver,PETSC_VIEWER_STDOUT_WORLD,ierr))
   IPWRITE(*,*) 'PETSc convergence failed with reason:', reason
   CALL Abort(__STAMP__,'ERROR: PETSc not converged')
-END IF
+END IF ! reason.LT.0 (i.e. not converged)
 
+! Only the MPIRoot determines the computation time required for PETSc.
 IF(MPIroot) THEN
+  ! NOTE: this measurement includes the time spent in the MPI routines of PETSc, which is not included in time measurements of
+  ! piclas modules to distinguish between calculation time and MPI time. Only calculation time is relevant for load balancing, but
+  ! PETSc does its own balancing method so this information here is just for comparison with the time required for the particles.
   PETScFieldTime = TimeEndPiclas-TimeStartPiclas
   CALL DisplayConvergence(PETScFieldTime, iterations, petscnorm)
-END IF
+END IF ! MPIroot
 
 ! Fill element local lambda for post processing
 ! Get the local DOF subarray

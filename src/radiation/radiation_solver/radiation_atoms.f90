@@ -101,7 +101,7 @@ SUBROUTINE radiation_atoms(iElem, em_atom)
     rho  = rho + RadiationInput(jSpec)%NumDens * Species(jSpec)%MassIC
     ntot = ntot + RadiationInput(jSpec)%NumDens
   END DO
-  
+
 ! --- calculation of constants
     c_emi  = PlanckConst * c / (4.*Pi)
     c_abs  = 1. / (8.*Pi*c)
@@ -111,7 +111,7 @@ SUBROUTINE radiation_atoms(iElem, em_atom)
   DO iSpec = 1, nSpecies
     IF(.NOT.RadiationInput(iSpec)%DoRadiation) CYCLE
     IF((Species(iSpec)%InterID .NE. 1) .AND. (Species(iSpec)%InterID .NE. 10)) CYCLE
-    IF((RadiationInput(iSpec)%Telec.LT.10.0).OR.(RadiationInput(iSpec)%NumDens.LT.10.0).OR.(RadiationInput(iSpec)%Ttrans(4).LT.10.0)) CYCLE    
+    IF((RadiationInput(iSpec)%Telec.LT.10.0).OR.(RadiationInput(iSpec)%NumDens.LT.10.0).OR.(RadiationInput(iSpec)%Ttrans(4).LT.10.0)) CYCLE
 
     ALLOCATE(lamnu(SpeciesRadiation(iSpec)%nLines))
 
@@ -141,7 +141,7 @@ SUBROUTINE radiation_atoms(iElem, em_atom)
           * SQRT(2*BoltzmannConst * T_mean * (Species(iSpec)%MassIC + Species(jSpec)%MassIC) &
           / (Pi*Species(iSpec)%MassIC*Species(jSpec)%MassIC))
       END DO
-      
+
       nLines_considered = 0
 
   ! --- loop over all transition lines
@@ -271,7 +271,7 @@ SUBROUTINE radiation_atoms(iElem, em_atom)
     END DO
     Radiation_ElemEnergy_Species(iSpec,iElem,1) = TempOut_Em
     Radiation_ElemEnergy_Species(iSpec,iElem,2) = TempOut_Abs
-    
+
     DEALLOCATE(lamnu)
 
   END DO
@@ -357,7 +357,7 @@ SUBROUTINE Radiation_Atomic_Transition_Line_Profile(Radiation_Profile, wavelengt
         iWaveCoarse = INT((iWave-1)/RadiationParameter%WaveLenReductionFactor) + 1
         IF (iWaveCoarse.GT.RadiationParameter%WaveLenDiscrCoarse) iWaveCoarse = RadiationParameter%WaveLenDiscrCoarse
         Radiation_Absorption_spec(iWaveCoarse,GetGlobalElemID(iElem)) &
-          = Radiation_Absorption_spec(iWaveCoarse,GetGlobalElemID(iElem))+MAX(0.0,abstot)*Radiation_Profile(iWave)/RadiationParameter%WaveLenReductionFactor 
+          = Radiation_Absorption_spec(iWaveCoarse,GetGlobalElemID(iElem))+MAX(0.0,abstot)*Radiation_Profile(iWave)/RadiationParameter%WaveLenReductionFactor
       END DO
 
     END IF

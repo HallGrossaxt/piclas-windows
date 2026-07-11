@@ -42,9 +42,9 @@ SUBROUTINE CreateParticle(SpecID,Pos,GlobElemID,LastGlobalElemID,Velocity,RotEne
 USE MOD_Globals
 USE MOD_Particle_Vars           ,ONLY: PDM, PEM, PartState, LastPartPos, PartSpecies,PartPosRef, Species, usevMPF, PartMPF
 USE MOD_Particle_Vars           ,ONLY: UseVarTimeStep, PartTimeStep, PartVeloRotRef, RotRefFrameOmega, UseRotRefFrame, InRotRefFrame
-USE MOD_DSMC_Vars               ,ONLY: useDSMC, CollisMode, DSMC, PartStateIntEn, DoRadialWeighting, DoLinearWeighting, DoCellLocalWeighting
+USE MOD_DSMC_Vars               ,ONLY: useDSMC, CollisMode, DSMC, PartIntEn, DoRadialWeighting, DoLinearWeighting, DoCellLocalWeighting
 USE MOD_DSMC_Vars               ,ONLY: newAmbiParts, iPartIndx_NodeNewAmbi
-USE MOD_DSMC_Vars               ,ONLY: SpecDSMC, PolyatomMolDSMC, VibQuantsPar
+USE MOD_DSMC_Vars               ,ONLY: SpecDSMC, PolyatomMolDSMC
 USE MOD_Particle_Tracking_Vars  ,ONLY: TrackingMethod
 USE MOD_Eval_xyz                ,ONLY: GetPositionInRefElem
 USE MOD_part_tools              ,ONLY: CalcRadWeightMPF, CalcVarWeightMPF
@@ -83,19 +83,25 @@ IF(TrackingMethod.EQ.REFMAPPING)THEN
 END IF ! TrackingMethod.EQ.REFMAPPING
 
 IF (useDSMC.AND.(CollisMode.GT.1)) THEN
-  PartStateIntEn(1,newParticleID) = VibEnergy
-  IF(DSMC%NumPolyatomMolecs.GT.0) THEN
-    IF(SpecDSMC(SpecID)%PolyatomicMol) THEN
-      iPolyatMole = SpecDSMC(SpecID)%SpecToPolyArray
-      IF(ALLOCATED(VibQuantsPar(newParticleID)%Quants)) DEALLOCATE(VibQuantsPar(newParticleID)%Quants)
-      ALLOCATE(VibQuantsPar(newParticleID)%Quants(1:PolyatomMolDSMC(iPolyatMole)%VibDOF))
-      ! TODO: Initialize quants to actually correspond to the vibrational energy
-      VibQuantsPar(newParticleID)%Quants = 0
-    END IF
+  IF((Species(SpecID)%InterID.EQ.2).OR.(Species(SpecID)%InterID.EQ.20)) THEN
+    ALLOCATE(PartIntEn(newParticleID)%EVib(1), PartIntEn(newParticleID)%ERot(1))
+    PartIntEn(newParticleID)%EVib = VibEnergy
+    PartIntEn(newParticleID)%ERot = RotEnergy
+    IF(DSMC%NumPolyatomMolecs.GT.0) THEN
+        IF(SpecDSMC(SpecID)%PolyatomicMol) THEN
+          iPolyatMole = SpecDSMC(SpecID)%SpecToPolyArray
+          IF(ALLOCATED(PartIntEn(newParticleID)%QVib)) DEALLOCATE(PartIntEn(newParticleID)%QVib)
+          ALLOCATE(PartIntEn(newParticleID)%QVib(1:PolyatomMolDSMC(iPolyatMole)%VibDOF))
+          ! TODO: Initialize quants to actually correspond to the vibrational energy
+          PartIntEn(newParticleID)%QVib = 0
+        END IF
+      END IF
   END IF
-  PartStateIntEn(2,newParticleID) = RotEnergy
   IF (DSMC%ElectronicModel.GT.0) THEN
-    PartStateIntEn(3,newParticleID) = ElecEnergy
+    IF((Species(SpecID)%InterID.NE.4).AND.(.NOT.SpecDSMC(SpecID)%FullyIonized)) THEN
+      ALLOCATE(PartIntEn(newParticleID)%EElec(1))
+      PartIntEn(newParticleID)%EElec = ElecEnergy
+    END IF
   ENDIF
   IF (DSMC%DoAmbipolarDiff) THEN
     newAmbiParts = newAmbiParts + 1
@@ -177,7 +183,7 @@ USE MOD_Particle_Vars             ,ONLY: Pt_temp
 #endif
 USE MOD_Particle_Analyze_Pure     ,ONLY: CalcEkinPart
 USE MOD_part_tools                ,ONLY: GetParticleWeight
-USE MOD_DSMC_Vars                 ,ONLY: CollInf, AmbipolElecVelo, ElectronicDistriPart, VibQuantsPar
+USE MOD_DSMC_Vars                 ,ONLY: CollInf, PartIntEn
 USE MOD_Mesh_Vars                 ,ONLY: BoundaryName
 #if USE_HDG
 USE MOD_Globals                   ,ONLY: abort
@@ -185,6 +191,7 @@ USE MOD_HDG_Vars                  ,ONLY: UseFPC,FPC,UseEPC,EPC
 USE MOD_Mesh_Vars                 ,ONLY: BoundaryType
 #endif /*USE_HDG*/
 USE MOD_Particle_Vars             ,ONLY: PartState
+USE MOD_StringTools               ,ONLY: STRICMP
 !----------------------------------------------------------------------------------------------------------------------------------!
 IMPLICIT NONE
 ! INPUT / OUTPUT VARIABLES
@@ -195,7 +202,7 @@ LOGICAL, INTENT(OUT),OPTIONAL :: crossedBC               !< optional flag is nee
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! LOCAL VARIABLES
 INTEGER                       :: iSpec, iSF
-REAL                          :: MPF!,RandVal(2)
+REAL                          :: MPF
 #if USE_HDG
 INTEGER                       :: iBC,iUniqueFPCBC,iUniqueEPCBC,BCState
 #endif /*USE_HDG*/
@@ -226,14 +233,15 @@ IF(TrackingMethod.EQ.REFMAPPING) PartPosRef(1:3,PartID) = -888.
 PartSpecies(PartID)        = 0
 Pt(1:3,PartID)             = 0.
 
-IF(ALLOCATED(AmbipolElecVelo)) THEN
-  SDEALLOCATE(AmbipolElecVelo(PartID)%ElecVelo)
-END IF
-IF(ALLOCATED(ElectronicDistriPart)) THEN
-  SDEALLOCATE(ElectronicDistriPart(PartID)%DistriFunc)
-END IF
-IF(ALLOCATED(VibQuantsPar)) THEN
-  SDEALLOCATE(VibQuantsPar(PartID)%Quants)
+IF (ALLOCATED(PartIntEn)) THEN
+  SDEALLOCATE(PartIntEn(PartID)%ERot)
+  SDEALLOCATE(PartIntEn(PartID)%EVib)
+  SDEALLOCATE(PartIntEn(PartID)%EElec)
+  SDEALLOCATE(PartIntEn(PartID)%QVib)
+  SDEALLOCATE(PartIntEn(PartID)%QElec)
+  SDEALLOCATE(PartIntEn(PartID)%TSolid)
+  SDEALLOCATE(PartIntEn(PartID)%DistriFunc)
+  SDEALLOCATE(PartIntEn(PartID)%ElecVelo)
 END IF
 
 #if defined(LSERK)
@@ -265,11 +273,12 @@ IF(PRESENT(BCID)) THEN
   ! Ion thruster simulations: Landmark and Liu2010 (SPT-100) if neutralization current is determined from the particle flux over the
   ! neutralization boundary condition instead of looking into the first row of elements along that BC
   IF(UseNeutralization.AND.(nNeutralizationElems.EQ.-1))THEN
-    IF(TRIM(BoundaryName(PartBound%MapToFieldBC(BCID))).EQ.TRIM(NeutralizationSource))THEN
+    ! Check if neutralization BC is present. Compare strings ignoring the capitalization
+    IF(STRICMP(BoundaryName(PartBound%MapToFieldBC(BCID)), NeutralizationSource))THEN
       ! Add +1 for electrons and -X for ions: This is opposite to the summation in CountNeutralizationParticles() where the surplus
       ! of ions is calculated and compensated with an equal amount of electrons to force quasi-neutrality in the neutralization
       ! elements.
-      NeutralizationBalance = NeutralizationBalance - NINT(Species(iSpec)%ChargeIC/ElementaryCharge)
+      NeutralizationBalance = NeutralizationBalance - Species(iSpec)%ChargeIC/ElementaryCharge*MPF
     END IF
   END IF ! UseNeutralization
 

@@ -35,17 +35,17 @@ IMPLICIT NONE
 #if defined(MEASURE_MPI_WAIT)
 MPIW8TimeSim  = 0.
 MPIW8TimeBaS  = 0.
-MPIW8CountBaS = 0_8
+MPIW8CountBaS = 0_i8
 MPIW8TimeMM  = 0.
-MPIW8CountMM = 0_8
+MPIW8CountMM = 0_i8
 #if defined(PARTICLES)
 MPIW8TimePart   = 0.
-MPIW8CountPart  = 0_8
+MPIW8CountPart  = 0_i8
 #endif /*defined(PARTICLES)*/
 MPIW8TimeField  = 0.
-MPIW8CountField = 0_8
+MPIW8CountField = 0_i8
 MPIW8Time       = 0.
-MPIW8Count      = 0_8
+MPIW8Count      = 0_i8
 #endif /*defined(MEASURE_MPI_WAIT)*/
 
 ! Initialize

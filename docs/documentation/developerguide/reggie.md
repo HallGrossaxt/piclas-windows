@@ -68,12 +68,9 @@ developed code, the [reggie2.0](https://github.com/piclas-framework/reggie2.0) t
 
    Note that `-DLIBS_USE_PETSC=ON` has been adjusted in the above command.
    This will compile the *piclas* executable and it will be placed in the current directory under *bin*.
-   Important note: Some regression tests build the hopr meshes "on-the-fly", hence, the *hopr* executable is required additionally.
-   There are different possibilities to supply the *hopr* executable that is required:
-
-   1. Set the compile flag `LIBS_DOWNLOAD_HOPR=ON`, which automatically downloads the *hopr* executable and places a link under
-      *./bin* in the current build directory. This can be used if the *piclas* executable is compiled by hand.
-   1. Set the environment variable via `export HOPR_PATH=/path/to/hopr` to point to the *hopr* executable on the current system
+   Important note: Some regression tests build the **PyHOPE** meshes "on-the-fly", hence, the *pyhope* tool is required additionally.
+   **pyhope** needs to be pre-installed on the system and an installation guide can be found on
+   [GitHub - PyHOPE](https://github.com/hopr-framework/PyHOPE).
 
 1. Run the [reggie2.0](https://github.com/piclas-framework/reggie2.0) tool either a) automatic mode or b) pre-compiled mode:
 
@@ -126,6 +123,52 @@ developed code, the [reggie2.0](https://github.com/piclas-framework/reggie2.0) t
    An example is given under [regressioncheck/WEK_DSMC/ChannelFlow_SurfChem_AdsorpDesorp_CO_O2](https://github.com/piclas-framework/piclas/blob/master/regressioncheck/WEK_DSMC/ChannelFlow_SurfChem_AdsorpDesorp_CO_O2/analyze.ini)
    where *.h5* files are compared.
 
+## Compression of HDF5 reference files
+When creating .h5 reference files that are used for comparison in regression tests, it is very beneficial to compress these to a minimum
+before committing and pushing them to the git repository.
+Consider the following example with an `analysis.ini` file containing
+
+    ! hdf5 diff
+    h5diff_file            = TestRotatingWall_DSMCSurfState_000.00100000000000000.h5
+    h5diff_reference_file  = TestRotatingWall_DSMCSurfState_000.00100000000000000_reference.h5
+    h5diff_data_set        = SurfaceData
+    h5diff_tolerance_value = 40E-2
+    h5diff_tolerance_type  = relative
+    h5diff_var_attribute   = VarNamesSurface
+    h5diff_var_name        = Total_TorqueZ
+    h5diff_max_differences = 15
+
+where the only field in the .h5 file that is used for comparison in the regression test is `Total_TorqueZ`.
+Everything else in the file in not required for the reggie.
+As described in the previous section, most reggie analysis functions can be run with the argument `-z, --rc`, which copies a file
+resulting from a piclas simulation as reference file directly into the regression test directory to be used in future runs without
+the need for copying the file and renaming it by hand
+
+    reggie -iz ../regressioncheck/WEK_DSMC/Torque_Output
+
+which creates the file `TestRotatingWall_DSMCSurfState_000.00100000000000000_reference.h5` in the directory
+`/WEK_DSMC/Torque_Output`.
+The argument `-i` is only used to create the reference file from a single-core execution as the test later uses more processes, but
+the same result is obviously required.
+Additionally, unnecessary parts of the .h5 file can be removed if these are not required for the reggie analysis.
+This can be achieved by modifying the .h5 file directly with, e.g., [hdfview](https://www.hdfgroup.org/download-hdfview/).
+Open the reference file with [hdfview](https://www.hdfgroup.org/download-hdfview/), remove all datasets that are not needed and
+resize the dataset `SurfaceData` so that it only contains one single property, name `Total_TorqueZ`. If most of the options,
+when right-clicking on the dataset are not available, make sure to `Reload File As` -> `Read/Write` first.
+After saving the file to the disk, it is necessary to remove the occupied disk space of the deleted datasets via
+
+    h5repack -i original.h5 -o compressed.h5
+
+and
+
+    h5repack -v -f SHUF -f GZIP=9 original.h5 compressed-shuffled-GZIP9.h5
+    h5repack -v -f GZIP=9 original.h5 compressed-GZIP9.h5
+
+by trying both commands and using the smaller resulting .h5 file.
+[Note that shuffle by itself will do nothing to compress. It simply re-orders bytes in memory in hopes of making the resulting
+byte-stream easier to compress for something like GZIP than it would be able to do otherwise. This is because GZIP is a byte-level
+compressor. It doesn’t know about things like shorts or ints or doubles.](https://forum.hdfgroup.org/t/h5repack-gzip-1-slow/4283/5)
+
 ## Running GitLab *.gitlab-ci.yml* Tests
 
 The GitLab CI/CD tests can either be run *locally* or *remotely* and both methods are explained in the following.
@@ -135,22 +178,22 @@ The tests are defined in the file *.gitlab-ci.yml* in the top-level directory of
 
 Open a browser and go to the [piclas gitlab pipelines website](https://piclas.boltzplatz.eu/piclas/piclas/-/pipelines), where the
 latest pipeline jobs are displayed. To start a new pipeline, click the button *Run pipeline* and select the required branch name or
-tag, which should be tested. Then, define the necessary *Variables*, which are summarized in {numref}`tab:pipeline_vars`.
+tag, which should be tested. Then, activate the necessary *inputs* by selecting `true`, which are summarized in {numref}`tab:pipeline_inputs`.
 
-```{table} Gitlab pipeline variables
+```{table} Gitlab pipeline inputs
 ---
-name: tab:pipeline_vars
+name: tab:pipeline_inputs
 ---
-| Property                      | Description                                                                                                                              |  Value  |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | :-----: |
-| DO_CHECKIN                    | short tests that are also run, when new commits are pushed                                                                               |    T    |
-| DO_NIGHTLY                    | longer tests, executed every day                                                                                                         |    T    |
-| DO_WEEKLY                     | very long tests, executed once a week                                                                                                    |    T    |
-| DO_CODE_COVERAGE              | Generate coverage data of piclas for all jobs in current pipeline                                                                        |    T    |
-| DO_REGGIE_COVERAGE            | Generate coverage data of reggie2.0 itself for all jobs in current pipeline                                                              |    T    |
-| DO_NODE_SPLIT                 | MPI: virtual CPU splitting for multi-node testing, where a specific number of cores/threads are grouped in separate nodes (default is 2) |    T    |
-| DO_CORE_SPLIT                 | MPI: virtual CPU splitting for multi-node testing, where each core/thread resembles a separate node                                      |    T    |
-| DO_MPICH                      | MPI: Force compilation using MPICH instead of OpenMPI                                                                                    |    T    |
+| Property                      | Description                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| DO_CHECKIN                    | short tests that are also run, when new commits are pushed                                                                               |
+| DO_NIGHTLY                    | longer tests, executed every day                                                                                                         |
+| DO_WEEKLY                     | very long tests, executed once a week                                                                                                    |
+| DO_CODE_COVERAGE              | Generate coverage data of piclas for all jobs in current pipeline                                                                        |
+| DO_REGGIE_COVERAGE            | Generate coverage data of reggie2.0 itself for all jobs in current pipeline                                                              |
+| DO_NODE_SPLIT                 | MPI: virtual CPU splitting for multi-node testing, where a specific number of cores/threads are grouped in separate nodes (default is 2) |
+| DO_CORE_SPLIT                 | MPI: virtual CPU splitting for multi-node testing, where each core/thread resembles a separate node                                      |
+| DO_MPICH                      | MPI: Force compilation using MPICH instead of OpenMPI                                                                                    |
 ```
 
 Per default, `DO_CHECKIN`, `DO_NIGHTLY`, `DO_WEEKLY`, `DO_NODE_SPLIT` and `DO_CORE_SPLIT` are tested automatically for the branch
@@ -162,16 +205,16 @@ Code coverage information can be inspected in multiple ways: on GitLab, by downl
 
 ### Coverage on GitLab
 
-For regression testing on GitLab with code coverage, a separate flag `DO_CODE_COVERAGE` is required. This creates a separate stage, which is executed after all other stages. This way the code coverage stage is able to collect the coverage data from all (previous) jobs/runs of the current pipeline. This is done in the following way.
+To enable code coverage when running regression tests on GitLab, set the pipeline input `DO_CODE_COVERAGE` to `true`. This creates a separate stage, which is executed after all other stages. This way the code coverage stage is able to collect the coverage data from all (previous) jobs/runs of the current pipeline. This is done in the following way.
 
-For each job (e.g., CHE_DSMC), the coverage data is collected and stored in a `.json` report file per build. These reports are named after the build and stored in the `Coverage` directory. If the build is reused for another job (e.g., same DSMC build for both CHE_DSMC and NIG_DSMC), the report file is updated. After all jobs in the other stages are finished, the coverage stage starts. The report files from all builds are combined into a single report containing the coverage data from all previously triggered runs/builds of the current pipeline. For example, if only `DO_CODE_COVERAGE` and `DO_CHECKIN` are set, the report will show coverage data from all builds with corresponding runs in the `DO_CHECKIN` case. The output of the coverage stage will also display which `.json` report files are found and therefore used to check whether the correct files and builds are considered.
+For each job (e.g., CHE_DSMC), the coverage data is collected and stored in a `.json` report file per build. These reports are named after the build and stored in the `Coverage` directory. If the build is reused for another job (e.g., same DSMC build for both CHE_DSMC and NIG_DSMC), the report file is updated. After all jobs in the other stages are finished, the coverage stage starts. The report files from all builds are combined into a single report containing the coverage data from all previously triggered runs/builds of the current pipeline. For example, if only the inputs `DO_CODE_COVERAGE` and `DO_CHECKIN` are set, the report will show coverage data from all builds with corresponding runs in the `DO_CHECKIN` case. The output of the coverage stage will also display which `.json` report files are found and therefore used to check whether the correct files and builds are considered.
 
 #### Inspecting data on GitLab
 
-The coverage stage will create a [GitLab report artifact](https://docs.gitlab.com/ci/yaml/artifacts_reports/#artifactsreportscoverage_report), which is used for the visualization. GitLab uses the last created report file of the current branch (if not expired yet) to display the coverage. Keep in mind that new pipelines might change the coverage data if a different set of tests is run. The coverage report is shown in the merge request difference view/changes. A line that was tested is indicated by a green bar to its left, otherwise a red bar appears. This allows inspection of regression tests for new features directly on GitLab. For smaller features/tests, it is recommended to check the coverage locally first to avoid triggering unnecessary tests.
+The coverage stage will create a [GitLab report artifact](https://docs.gitlab.com/ci/yaml/artifacts_reports/#artifactsreportscoverage_report), which is used for the visualization. GitLab currently uses the coverage report of the latest pipeline of the current branch (if not expired yet) to display the coverage. Note that if the latest pipeline did not create coverage data, nothing will be displayed in the merge request difference view. This is done to prevent a false representation for new code evaluated with older coverage information. Moreover, displaying older coverage data would not be possible if the source code has changed. Keep in mind that new pipelines might change the coverage data if a different set of tests is run. The coverage report is shown in the merge request difference view/changes. A line that was tested is indicated by a green bar to its left, otherwise a red bar appears. This allows inspection of regression tests for new features directly on GitLab. For smaller features/tests, it is recommended to check the coverage locally first to avoid triggering unnecessary tests.
 
 To generate a full coverage report for all available regression tests of PICLas, either:
-* Execute all tests in the same pipeline with `DO_CODE_COVERAGE`, or
+* Execute all tests in the same pipeline with `DO_CODE_COVERAGE` set to `true`, or
 * Combine separate reports manually
 
 On GitLab the coverage is shown as a single number either in the output of the coverage job, on the right side when inspecting the job, or even in the merge request view. The displayed number is the line coverage (different coverage types in "Inspecting data locally"), which is set in `.gitlab-ci.yml`.
@@ -224,7 +267,7 @@ For more information on gcovr and coverage report formats, see the [gcovr docume
 
 ### Reggie coverage
 
-Besides generating code coverage reports of PICLas, it is also possible to generate a report of the reggie tool itself. To do this, set `DO_REGGIE_COVERAGE`, which wraps each reggie call with the [Python coverage tool](https://coverage.readthedocs.io/). This generates a coverage report of all used lines in the reggie module, which is stored as a GitLab artifact. The report can be inspected using the `Coverage/reggie/index.html` file.
+Besides generating code coverage reports of PICLas, it is also possible to generate a report of the reggie tool itself. To do this, set the pipeline input `DO_REGGIE_COVERAGE` to `true`, which wraps each reggie call with the [Python coverage tool](https://coverage.readthedocs.io/). This generates a coverage report of all used lines in the reggie module, which is stored as a GitLab artifact. The report can be inspected using the `Coverage/reggie/index.html` file.
 
 ## Local Testing using *gitlab-ci-local*
 
@@ -265,32 +308,32 @@ which gives the expanded version of utilized `extends:` and `<<:` templates.
 
 When running `gitlab-ci-local` on a system with a module environment, it is neccessary to pass the local modules that are used for compiling
 ```
-DO_RUN_LOCAL="cmake/3.30.3   gcc/14.2.0   mpich/4.1.2/gcc/14.2.0    hdf5/1.14.0/gcc/14.2.0/mpich/4.1.2    hopr/master/gcc/14.2.0/mpich/4.1.2/hdf5/1.14.0    petsc/3.21.6/gcc/14.2.0/mpich/4.1.2"
-gitlab-ci-local --variable DO_RUN_LOCAL=$DO_RUN_LOCAL
+DO_RUN_LOCAL="cmake/3.30.3   gcc/14.2.0   mpich/4.1.2/gcc/14.2.0    hdf5/1.14.0/gcc/14.2.0/mpich/4.1.2    petsc/3.21.6/gcc/14.2.0/mpich/4.1.2"
+gitlab-ci-local --input DO_RUN_LOCAL=$DO_RUN_LOCAL
 ```
-If multiple variables are required add them to the command
+If multiple inputs are required add them to the command
 ```
-gitlab-ci-local --variable DO_RUN_LOCAL=$DO_RUN_LOCAL --variable CHECK_WARNINGS=True
+gitlab-ci-local --input DO_RUN_LOCAL=$DO_RUN_LOCAL --input CHECK_WARNINGS=true
 ```
 to envoke additional options of the pipeline.
 
 ### Example
 To run a specific reggie job, in this case a *weekly* reggie that depends on another job, the following parameters are passed
 ```
-DO_RUN_LOCAL="cmake/3.30.3   gcc/14.2.0   mpich/4.1.2/gcc/14.2.0    hdf5/1.14.0/gcc/14.2.0/mpich/4.1.2    hopr/master/gcc/14.2.0/mpich/4.1.2/hdf5/1.14.0    petsc/3.21.6/gcc/14.2.0/mpich/4.1.2"
-gitlab-ci-local --shell-isolation --needs WEK_Radiation --variable DO_RUN_LOCAL=$DO_RUN_LOCAL --variable DO_WEEKLY=T
+DO_RUN_LOCAL="cmake/3.30.3   gcc/14.2.0   mpich/4.1.2/gcc/14.2.0    hdf5/1.14.0/gcc/14.2.0/mpich/4.1.2    petsc/3.21.6/gcc/14.2.0/mpich/4.1.2"
+gitlab-ci-local --shell-isolation --needs WEK_Radiation --input DO_RUN_LOCAL=$DO_RUN_LOCAL --input DO_WEEKLY=true
 ```
-where the arguments are listed and explained in the following table
-```{table} gitlab-ci-local variables example
+where the arguments are listed and explained in {numref}`tab:gitlab_ci_local_inputs`
+```{table} gitlab-ci-local inputs example
 ---
-name: tab:gitlab_ci_local_vars
+name: tab:gitlab_ci_local_inputs
 ---
   | Parameter                             | Description                                                                         |
   | ------------------------------------- | ----------------------------------------------------------------------------------- |
   | --shell-isolation                     | Avoid errors due to parallel writing of the ctags.txt file                          |
   | --needs WEK_Radiation                 | Run WEK_Radiation, which also requires WEK_DSMC_Radiation                           |
-  | --variable DO_RUN_LOCAL=$DO_RUN_LOCAL | Pass the locally installed and used modules                                         |
-  | --variable DO_WEEKLY=T                | WEK_Radiation is a weekly reggie that requires the DO_WEEKLY to be passed           |
+  | --input DO_RUN_LOCAL=$DO_RUN_LOCAL    | Pass the locally installed and used modules                                         |
+  | --input DO_WEEKLY=true                | WEK_Radiation is a weekly reggie that requires the DO_WEEKLY to be passed           |
 ```
 
 ## Regression Test *Gitlab Runner* Setup for self-hosted Servers
@@ -562,7 +605,7 @@ check_interval = 0
       tags:
         - withmodules-concurrent
       script:
-        - if [ -z "${DO_DEPLOY}" ]; then exit ; fi
+        - if [ "$[[ inputs.DO_DEPLOY ]]" == "false" ]; then exit ; fi
         - rm -rf piclas_github || true ;
         - git clone -b master --single-branch git@piclas.boltzplatz.eu:piclas/piclas.git piclas_github ;
         - cd piclas_github ;

@@ -375,8 +375,7 @@ END IF
 opt%multiple   = .FALSE.
 IF (PRESENT(multiple)) opt%multiple = multiple
 IF (opt%multiple.AND.opt%hasDefault) THEN
-  CALL Abort(__STAMP__, &
-      "A default value can not be given, when multiple=.TRUE. in creation of option: '"//TRIM(name)//"'")
+  CALL Abort(__STAMP__, "A default value can not be given, when multiple=.TRUE. in creation of option: '"//TRIM(name)//"'")
 END IF
 
 opt%numberedmulti = .FALSE.
@@ -391,8 +390,7 @@ IF(opt%numberedmulti)THEN
   CALL LowCase(TRIM(CHAR(aStr)),opt%namelowercase)
   opt%ind = INDEX(TRIM(opt%namelowercase),"$")
   IF(opt%ind.LE.0)THEN
-    CALL abort(__STAMP__&
-    ,'[numberedmulti] parameter does not contain "$" symbol, which is required for these kinds of variables for ['//TRIM(name)//']')
+    CALL abort(__STAMP__,'[numberedmulti] parameter does not contain "$" symbol, which is required for these kinds of variables for ['//TRIM(name)//']')
   END IF ! opt%ind.LE.0
 END IF ! opt%numberedmulti
 
@@ -788,15 +786,13 @@ IF(MPIROOT)THEN
   ! Get name of ini file
   WRITE(UNIT_StdOut,*)'| Reading from file "',TRIM(filename),'":'
   IF (.NOT.FILEEXISTS(filename)) THEN
-    CALL Abort(__STAMP__,&
-        "Ini file does not exist.")
+    CALL Abort(__STAMP__,"Ini file does not exist.")
   END IF
   ! Check if first argument is the ini-file
   IF(.NOT.(STRICMP(GetFileExtension(filename),'ini'))) THEN
     SWRITE(*,*) "Usage: piclas parameter.ini [DSMC.ini] [restart.h5] [keyword arguments]"
     !SWRITE(*,*) "   or: piclas restart.h5 [keyword arguments]"
-    CALL CollectiveStop(__STAMP__,&
-      'ERROR - Not an parameter file (file-extension must be .ini) or restart file (*.h5): '//TRIM(filename))
+    CALL CollectiveStop(__STAMP__,'ERROR - Not an parameter file (file-extension must be .ini) or restart file (*.h5): '//TRIM(filename))
   END IF
 
   OPEN(NEWUNIT= iniUnit,        &
@@ -806,8 +802,7 @@ IF(MPIROOT)THEN
        ACCESS = 'SEQUENTIAL',   &
        IOSTAT = stat)
   IF(stat.NE.0)THEN
-    CALL abort(__STAMP__,&
-      "Could not open ini file.")
+    CALL abort(__STAMP__,"Could not open ini file.")
   END IF
 
   ! parallel IO: ROOT reads file and sends it to all other procs
@@ -1249,8 +1244,7 @@ DO WHILE (associated(current))
       ELSE
         ! no proposal, no default and also not set in parameter file => abort
         IF ((.NOT.opt%hasDefault).AND.(.NOT.opt%isSet)) THEN
-          CALL ABORT(__STAMP__, &
-              "Required option '"//TRIM(name)//"' not set in parameter file and has no default value.")
+          CALL ABORT(__STAMP__, "Required option '"//TRIM(name)//"' not set in parameter file and has no default value.")
           RETURN
         END IF
       END IF
@@ -1609,8 +1603,7 @@ DO WHILE (associated(current))
       ELSE
         ! no proposal, no default and also not set in parameter file => abort
         IF ((.NOT.newopt%hasDefault).AND.(.NOT.newopt%isSet)) THEN
-          CALL ABORT(__STAMP__, &
-              "[numberedmulti] Required option '"//TRIM(name)//"' not set in parameter file and has no default value.")
+          CALL ABORT(__STAMP__, "[numberedmulti] Required option '"//TRIM(name)//"' not set in parameter file and has no default value.")
           RETURN
         END IF
       END IF
@@ -1648,9 +1641,7 @@ DO WHILE (associated(current))
     current => current%next
   END IF
 END DO
-CALL ABORT(__STAMP__, &
-    'Option "'//TRIM(name)//'" is not defined in any DefineParameters... routine '//&
-    'or already read (use GET... routine only for multiple options more than once).')
+CALL ABORT(__STAMP__, 'Option "'//TRIM(name)//'" is not defined in any DefineParameters... routine or already read (use GET... routine only for multiple options more than once).')
 END SUBROUTINE GetGeneralOption
 
 !==================================================================================================================================
@@ -1696,9 +1687,7 @@ DO WHILE (associated(current))
     ELSE
       ! no proposal, no default and also not set in parameter file => abort
       IF ((.NOT.opt%hasDefault).AND.(.NOT.opt%isSet)) THEN
-        CALL ABORT(__STAMP__, &
-            "\n\n Required option '"//TRIM(name)//"' not set in parameter file and has no default value.\n"//&
-            " Try 'piclas --help "//TRIM(name)//"' for more information on this variable\n")
+        CALL ABORT(__STAMP__,"\n\n Required option '"//TRIM(name)//"' not set in parameter file and has no default value.\n Try 'piclas --help "//TRIM(name)//"' for more information on this variable\n")
         RETURN
       END IF
     END IF
@@ -1843,8 +1832,7 @@ DO WHILE (associated(current))
       ELSE
         ! no proposal, no default and also not set in parameter file => abort
         IF ((.NOT.newopt%hasDefault).AND.(.NOT.newopt%isSet)) THEN
-          CALL ABORT(__STAMP__, &
-              "Required option '"//TRIM(name)//"' not set in parameter file and has no default value.")
+          CALL ABORT(__STAMP__,"Required option '"//TRIM(name)//"' not set in parameter file and has no default value.")
           RETURN
         END IF
       END IF
@@ -1880,9 +1868,7 @@ DO WHILE (associated(current))
     current => current%next
   END IF
 END DO
-CALL ABORT(__STAMP__, &
-    'Option "'//TRIM(name)//'" is not defined in any DefineParameters... routine '//&
-    'or already read (use GET... routine only for multiple options more than once).')
+CALL ABORT(__STAMP__, 'Option "'//TRIM(name)//'" is not defined in any DefineParameters... routine or already read (use GET... routine only for multiple options more than once).')
 END SUBROUTINE GetGeneralArrayOption
 
 !==================================================================================================================================
@@ -2228,8 +2214,7 @@ DO WHILE (associated(current))
   END IF
 END DO
 
-CALL Abort(__STAMP__,&
-    "Unknown option: "//TRIM(name)//" or already read (use GET... routine only for multiple options more than once).")
+CALL Abort(__STAMP__,"Unknown option: "//TRIM(name)//" or already read (use GET... routine only for multiple options more than once).")
 END FUNCTION GETINTFROMSTR
 
 !===================================================================================================================================
@@ -2294,14 +2279,12 @@ DO WHILE (associated(current))
       END IF
       RETURN
     CLASS DEFAULT
-      CALL Abort(__STAMP__,&
-        "Option is not of type IntFromString: "//TRIM(name))
+      CALL Abort(__STAMP__,"Option is not of type IntFromString: "//TRIM(name))
     END SELECT
   END IF
   current => current%next
 END DO
-CALL Abort(__STAMP__,&
-    "Option not yet set: "//TRIM(name))
+CALL Abort(__STAMP__,"Option not yet set: "//TRIM(name))
 
 END SUBROUTINE addStrListEntry
 
@@ -2327,8 +2310,7 @@ LOGICAL               :: iniFound
 
 IF (MPIRoot) THEN
   IF (.NOT.FILEEXISTS(filename)) THEN
-    CALL CollectiveStop(__STAMP__,&
-        "File '"//TRIM(filename)//"' does not exist.")
+    CALL CollectiveStop(__STAMP__,"File '"//TRIM(filename)//"' does not exist.")
   END IF
 
   SWRITE(UNIT_StdOut,*)'| Extract parameter file from "',TRIM(filename),'" to "',TRIM(prmfile),'"'
@@ -2342,8 +2324,7 @@ IF (MPIRoot) THEN
 
   OPEN(NEWUNIT=iniUnit,FILE=TRIM(prmfile),STATUS='UNKNOWN',ACTION='WRITE',ACCESS='SEQUENTIAL',IOSTAT=stat)
   IF(stat.NE.0) THEN
-    CALL Abort(__STAMP__,&
-        "Could not open '"//TRIM(prmfile)//"'")
+    CALL Abort(__STAMP__,"Could not open '"//TRIM(prmfile)//"'")
   END IF
 
   iniFound = .FALSE.
@@ -2355,8 +2336,7 @@ IF (MPIRoot) THEN
     ! exit loop if EOF
     IF(IS_IOSTAT_END(stat)) EXIT
     IF(.NOT.IS_IOSTAT_EOR(stat)) THEN
-      CALL Abort(__STAMP__,&
-          'Error during ini file read')
+      CALL Abort(__STAMP__,'Error during ini file read')
     END IF
     ! check if file starts "{[(" and therewith has a userblock
     IF (.NOT.userblockFound) THEN
@@ -2426,7 +2406,7 @@ END SUBROUTINE FinalizeParameters
 !==================================================================================================================================
 SUBROUTINE PrintOption(NameOpt,InfoOpt,IntOpt,IntArrayOpt,RealOpt,LogOpt,LogArrayOpt,StrOpt)
 ! MODULES
-USE MOD_Globals               ,ONLY: abort,mpiroot
+USE MOD_Globals          ,ONLY: abort,mpiroot
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
@@ -2498,13 +2478,9 @@ IF(PRESENT(StrOpt))THEN
 END IF
 
 IF(Counter.EQ.0)THEN
-  CALL abort(&
-      __STAMP__&
-      ,'PrintOption: format type not known')
+  CALL abort(__STAMP__,'PrintOption: format type not known')
 ELSEIF(Counter.GT.1)THEN
-  CALL abort(&
-      __STAMP__&
-      ,'PrintOption: only one option is allowed: [IntOpt,RealOpt,LogOpt]')
+  CALL abort(__STAMP__,'PrintOption: only one option is allowed: [IntOpt,RealOpt,LogOpt]')
 END IF
 
 IF(PRESENT(IntArrayOpt)) THEN

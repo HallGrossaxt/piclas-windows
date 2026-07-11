@@ -24,10 +24,6 @@ For some external libraries and programs that **PICLas** uses, the following opt
 * `PICLAS_CTAGS`: Enables the generation of `ctags.txt` file to be used by your IDE to jump between tags in the source file.
   * ``CTAGS_PATH``: Specifies the Ctags install directory, hidden by default in the advanced options
 
-* `LIBS_BUILD_HOPR`: Enable the compilation of the mesh pre-processor HOPR during the PICLas compilation. The executable `hopr` will be placed in the build/bin/ folder next to the other executables. For more details, on the utilization of HOPR, see {ref}`sec:mesh-generation`.
-
-* `LIBS_DOWNLOAD_HOPR`: Enable downloading the mesh pre-processor HOPR during the PICLas compilation from GitHub. The executable `hopr` will be linked in the build/bin/ folder next to the other executables. For more details, on the utilization of HOPR, see {ref}`sec:mesh-generation`.
-
 * ``LIBS_BUILD_HDF5``: This will be set to ON if no pre-built HDF5 installation was found on your machine. In this case a HDF5 version
 will be built and used instead. For a detailed description of the installation of HDF5, please refer to Section {ref}`sec:hdf5-installation`.
 
@@ -84,7 +80,7 @@ Before setting up a simulation, the code must be compiled with the desired param
     * DSMC: Direct Simulation Monte Carlo, Section {ref}`sec:DSMC`
     * FP-Flow: Fokker-Planck-based collision operator, Section {ref}`sec:FP-Flow`
     * BGK-Flow: Bhatnagar-Gross-Krook collision operator, Section {ref}`sec:BGK-Flow`
-    * Radiation: Radiation and radiation transport solver, Section {ref}`sec:Radiation`
+    * Radiation: Radiation and radiation transport solver, Section {ref}`sec:radiation`
 * ``PICLAS_EQNSYSNAME``: Equation system to be solved
     * maxwell: Solution of the full Maxwell's equations for an electromagnetic simulation
     * poisson: Solution of the Poisson's equation for an electrostatic simulation
@@ -138,7 +134,7 @@ parameter file (e.g. *parameter.ini*) is sufficient, while the DSMC method requi
 
     piclas --help
 
-General parameters such the name of project (used for filenames), the mesh file (as produced by HOPR), end time of the simulation (in seconds) and the time step, at which the particle data is written out (in seconds), are:
+General parameters such the name of project (used for filenames), the mesh file (as produced by PyHOPE), end time of the simulation (in seconds) and the time step, at which the particle data is written out (in seconds), are:
 
     ProjectName    = TestCase
     MeshFile       = test_mesh.h5

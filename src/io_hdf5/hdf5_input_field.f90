@@ -34,7 +34,7 @@ CONTAINS
 
 #if defined(PARTICLES)
 SUBROUTINE ReadExternalFieldFromHDF5( DataSet, ExternalField, DeltaExternalField, FileNameExternalField, ExternalFieldDim, &
-          ExternalFieldAxisSym, ExternalFieldRadInd, ExternalFieldAxisDir, ExternalFieldMin, ExternalFieldMax, ExternalFieldN)
+          ExternalFieldAxisSym, ExternalFieldMin, ExternalFieldMax, ExternalFieldN)
 !===================================================================================================================================
 !> Read-in of spatially variable external magnetic field or macroscopic species data (n, T, vx, vy and vz) from .h5 file
 !> Check for different fields in the file: x,y,z or x,r or y,r or z,r to determine a possible axial symmetry
@@ -62,8 +62,6 @@ REAL,ALLOCATABLE,INTENT(OUT)    :: ExternalField(:,:)    !< array to be read
 REAL,INTENT(OUT)                :: DeltaExternalField(3) !< dx, dy, dz
 INTEGER,INTENT(OUT)             :: ExternalFieldDim      !< Dimension of the data (1D, 2D or 3D)
 LOGICAL,INTENT(OUT)             :: ExternalFieldAxisSym  !< Flag for setting axisymmetric data
-INTEGER,INTENT(OUT)             :: ExternalFieldRadInd   !< Index of radial r-coordinate when using 2D data and axis symmetric
-INTEGER,INTENT(OUT)             :: ExternalFieldAxisDir  !< Direction that is used for the axial symmetric direction (1,2 or 3)
 REAL,INTENT(OUT)                :: ExternalFieldMin(1:3) !< Minimum values in x,y,z
 REAL,INTENT(OUT)                :: ExternalFieldMax(1:3) !< Maximum values in x,y,z
 INTEGER,INTENT(OUT)             :: ExternalFieldN(1:3)   !< Number of points in x, y and z-direction
@@ -78,7 +76,7 @@ INTEGER(HID_T)                  :: dset_id_loc                       ! Dataset i
 INTEGER(HID_T)                  :: filespace                         ! filespace identifier
 LOGICAL                         :: DatasetFound,AttributeFound,NaNDetected
 REAL                            :: delta,deltaOld,epsComp
-INTEGER                         :: iDirMax
+INTEGER                         :: iDirMax, index
 !===================================================================================================================================
 ! Defaults
 ExternalFieldDim     = 1 ! default is 1D
@@ -110,16 +108,15 @@ IF(DatasetFound) THEN
   ! read data
   CALL H5DREAD_F(dset_id_loc, H5T_NATIVE_DOUBLE, ExternalField(1:NbrOfRows,1:NbrOfColumns), dims, err)
 ELSE
-  CALL abort(__STAMP__,'Dataset "'//TRIM(dsetname)//'" not found in '//TRIM(FileNameExternalField))
+  CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Dataset "'//TRIM(dsetname)//'" not found in '//TRIM(FileNameExternalField))
 END IF
 
 ! Check for radial component
-ExternalFieldRadInd  = -1
-ExternalFieldAxisSym = .FALSE.
+index = -1
 AttributeName = 'r'
 CALL H5AEXISTS_F(file_id_loc, TRIM(AttributeName), AttributeFound, iError)
-IF(AttributeFound) CALL ReadAttribute(file_id_loc,AttributeName,1,IntScalar=ExternalFieldRadInd)
-IF(ExternalFieldRadInd.GT.0) ExternalFieldAxisSym=.TRUE.
+IF(AttributeFound) CALL ReadAttribute(file_id_loc,AttributeName,1,IntScalar=index)
+IF(index.GT.0) ExternalFieldAxisSym=.TRUE.
 
 ! Set spatial dimension
 IF(ExternalFieldAxisSym)THEN
@@ -130,7 +127,7 @@ END IF ! ExternalFieldAxisSym
 
 ! Check if axial symmetric and 2D
 IF(ExternalFieldDim.EQ.2)THEN
-  IF(.NOT.ExternalFieldAxisSym) CALL abort(__STAMP__,'Only 2D axis symmetric external field implemented.')
+  IF(.NOT.ExternalFieldAxisSym) CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Only 2D axis symmetric external field implemented.')
 ELSE
   ! 3D and symmetric is not possible
   ExternalFieldAxisSym = .FALSE.
@@ -138,14 +135,13 @@ END IF ! ExternalFieldDim.EQ.2
 
 ! Check for axial direction when using axis symmetric external field
 IF(ExternalFieldAxisSym)THEN
-  ExternalFieldAxisDir=-1
+  index = -1
   ! Check z-dir
   AttributeName = 'z'
   CALL H5AEXISTS_F(file_id_loc, TRIM(AttributeName), AttributeFound, iError)
-  IF(AttributeFound) CALL ReadAttribute(file_id_loc,AttributeName,1,IntScalar=ExternalFieldAxisDir)
-  IF(ExternalFieldAxisDir.GT.0) ExternalFieldAxisDir=3
-  ! Check if not axial symmetric with z-direction
-  IF(ExternalFieldAxisDir.NE.3) CALL abort(__STAMP__,'Only z-axis symmetric external field implemented currently.')
+  IF(AttributeFound) CALL ReadAttribute(file_id_loc,AttributeName,1,IntScalar=index)
+  ! Check if the radial axis variable is available within the file
+  IF(index.LE.0) CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Only z-axis symmetric external field implemented currently.')
 END IF ! ExternalFieldAxisSym
 
 ! Calculate the deltas and make sure that they are equidistant
@@ -187,7 +183,7 @@ DO iDir = 1, iDirMax
       IF(.NOT.ALMOSTEQUALRELATIVE(delta,deltaOld,1e-5)) THEN
         SWRITE (*,*) "ExternalField(iDir,j+1),ExternalField(iDir,j)", ExternalField(iDir,j+1),ExternalField(iDir,j)
         SWRITE (*,*) "iDir,j,delta,deltaOld =", iDir,j,delta,deltaOld
-        CALL abort(__STAMP__,'ERROR in external magnetic field: provided input is not equidistant.')
+        CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: provided input is not equidistant.')
       END IF
     END IF ! deltaOld.GT.0.
     ! Backup old value
@@ -223,15 +219,15 @@ END IF
 ! Sanity check
 ASSOCIATE( x => ExternalFieldN(1:3) )
   IF(ExternalFieldDim.EQ.2)THEN
-    IF(MINVAL(DeltaExternalField(1:2)).LT.0.) CALL abort(__STAMP__,'Failed to calculate the deltas for external field.')
+    IF(MINVAL(DeltaExternalField(1:2)).LT.0.) CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Failed to calculate the deltas for external field.')
     ! z-dir: x(1)
     ! r-dir: x(2)
-    LBWRITE (UNIT_stdOut,'(A,2(I0,A))') " Read external field with ",x(1)," x ",x(2)," data points"
-    IF(NbrOfColumns.NE.x(1)*x(2)) CALL abort(__STAMP__,'Wrong number of points in 2D')
+    LBWRITE (UNIT_stdOut,'(A,2(I0,A))') " | Read external field with ",x(1)," x ",x(2)," data points"
+    IF(NbrOfColumns.NE.x(1)*x(2)) CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Wrong number of points in 2D')
   ELSE
-    LBWRITE (UNIT_stdOut,'(A,3(I0,A))') " Read external field with ",x(1)," x ",x(2)," x ",x(3)," data points"
-    IF(MINVAL(DeltaExternalField).LT.0.) CALL abort(__STAMP__,'Failed to calculate the deltas for external field.')
-    IF(NbrOfColumns.NE.x(1)*x(2)*x(3)) CALL abort(__STAMP__,'Wrong number of points in 3D')
+    LBWRITE (UNIT_stdOut,'(A,3(I0,A))') " | Read external field with ",x(1)," x ",x(2)," x ",x(3)," data points"
+    IF(MINVAL(DeltaExternalField).LT.0.) CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Failed to calculate the deltas for external field.')
+    IF(NbrOfColumns.NE.x(1)*x(2)*x(3)) CALL abort(__STAMP__,'ERROR in ReadExternalFieldFromHDF5: Wrong number of points in 3D')
   END IF ! ExternalFieldDim.EQ.2
 END ASSOCIATE
 

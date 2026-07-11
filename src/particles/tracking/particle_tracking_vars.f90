@@ -62,7 +62,7 @@ TYPE tTrackingInfo
   REAL              :: LengthPartTrajectory   ! Length of the particle trajectory
   INTEGER           :: p=1
   INTEGER           :: q=1
-END TYPE
+END TYPE tTrackingInfo
 
 TYPE(tTrackingInfo) :: TrackInfo
 

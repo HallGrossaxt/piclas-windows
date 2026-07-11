@@ -60,6 +60,7 @@ fi
 # DOWNLOAD and INSTALL Linaro (example linaro-24.0.6)
 # For current releases, see: https://www.linaroforge.com/download-documentation
 LINAROVERSION='24.0.6'
+LINAROVERSION='25.1.1'
 
 LINAROINSTALLDIR=${INSTALLDIR}/linaro/forge/${LINAROVERSION}
 MODULEFILE=${INSTALLDIR}/modules/modulefiles/utilities/linaro/${LINAROVERSION}

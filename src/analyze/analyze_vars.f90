@@ -10,6 +10,8 @@
 !
 ! You should have received a copy of the GNU General Public License along with PICLas. If not, see <http://www.gnu.org/licenses/>.
 !==================================================================================================================================
+#include "piclas.h"
+
 !===================================================================================================================================
 !> Contains global variables used by the Analyze modules.
 !===================================================================================================================================
@@ -18,6 +20,7 @@ MODULE MOD_Analyze_Vars
 #if USE_MPI
 USE MOD_Globals
 #endif /*USE_MPI*/
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -26,12 +29,12 @@ SAVE
 ! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 REAL              :: Analyze_dt                  !< time difference to trigger analyze output
-INTEGER(KIND=8)   :: nSkipAnalyze                !< Skip Analyze_dt
+INTEGER(KIND=i8) :: nSkipAnalyze                !< Skip Analyze_dt
 REAL              :: SkipAnalyzeWindow           !< Reoccurring time frame when switching between nSkipAnalyze and SkipAnalyzeWindow
 REAL              :: SkipAnalyzeSwitchTime       !< Time within the reoccurring time frame, when using nSkipAnalyzeSwitch instead of
                                                  !< nSkipAnalyze
-INTEGER(KIND=8)   :: nSkipAnalyzeSwitch          !< Skip Analyze_dt with a different values as nSkipAnalyze
-INTEGER(KIND=8)   :: iAnalyze                    !< count number of next analyze
+INTEGER(KIND=i8) :: nSkipAnalyzeSwitch          !< Skip Analyze_dt with a different values as nSkipAnalyze
+INTEGER(KIND=i8) :: iAnalyze                    !< count number of next analyze
 REAL              :: OutputTimeFixed             !< fixed time for writing state to .h5
 LOGICAL           :: CalcMeshInfo                !< Output myrank, ElemID and tracking info to ElemData
 LOGICAL           :: CalcHaloInfo                !< Output halo element information to ElemData
@@ -40,7 +43,7 @@ REAL              :: AnalyzeTime                 !< Accumulated wall time of ana
 LOGICAL           :: DoFieldAnalyze              !< perform analyze
 LOGICAL           :: DoMeasureAnalyzeTime        !< measure time that is spent in analyze routines and count the number of analysis
                                                  !< calls (to std out stream)
-INTEGER(KIND=8)   :: FieldAnalyzeStep            !< Analyze is performed each Nth time step
+INTEGER(KIND=i8) :: FieldAnalyzeStep            !< Analyze is performed each Nth time step
 LOGICAL           :: DoCalcErrorNorms            !< perform L2, LInf error calculation
 LOGICAL           :: OutputErrorNormsToH5        !< Set true to write the analytical solution, the L2 and LInf error norms at analyze step to .h5 state file. Default = F
 LOGICAL           :: DoSurfModelAnalyze          !< perform analyze for SurfaceModel
@@ -91,6 +94,7 @@ REAL                :: AverageElectricPotentialCoordErr !< tolerance in plane se
 REAL                :: PosAverageElectricPotential      !< x-coordinate of plane
 INTEGER             :: AverageElectricPotentialFaces    !< global number of faces
 LOGICAL             :: CalcElectricTimeDerivative       !< Calculate the time derivative of E and output to h5
+LOGICAL             :: CalcElectricPotentialExtrema     !< Calculate the electric potential extrema on all BCs execpt periodic and Neumann BCs
 #endif /*USE_HDG*/
 !===================================================================================================================================
 ! --- BoundaryFieldOutput = BFO
@@ -99,21 +103,22 @@ LOGICAL                       :: CalcBoundaryFieldOutput !< Flag for activating 
 TYPE tBoundaryFieldOutput
   INTEGER                       :: NFieldBoundaries   !< Total number of boundaries where the field BC is stored to .csv
   INTEGER,ALLOCATABLE           :: FieldBoundaries(:) !< Field-boundary number (iBC)
-END TYPE
+END TYPE tBoundaryFieldOutput
 
 TYPE(tBoundaryFieldOutput)   :: BFO
 !===================================================================================================================================
-!-- Electric displacement current
 
+!-- MPI group for EDC and EPE
 #if USE_MPI
 TYPE tMPIGROUP
   INTEGER                     :: ID                     !< MPI communicator ID
   TYPE(mpi_comm)              :: UNICATOR=MPI_COMM_NULL !< MPI communicator for electric displacement current
   INTEGER                     :: nProcs                 !< number of MPI processes for particles
   INTEGER                     :: MyRank                 !< MyRank within communicator
-END TYPE
+END TYPE tMPIGROUP
 #endif /*USE_MPI*/
 
+!-- Electric displacement current
 TYPE tEDC
   REAL,ALLOCATABLE            :: Current(:)          !< Electric displacement current for each (required) BC index
 #if USE_MPI
@@ -122,9 +127,23 @@ TYPE tEDC
   INTEGER                     :: NBoundaries         !< Total number of boundaries where the electric displacement current is evaluated
   INTEGER,ALLOCATABLE         :: FieldBoundaries(:)  !< Field-boundary number on which the particles are counted
   INTEGER,ALLOCATABLE         :: BCIDToEDCBCID(:)    !< Mapping BCID to EDC BCID (1:nPartBound)
-END TYPE
+END TYPE tEDC
 
-TYPE(tEDC)   :: EDC
+TYPE(tEDC) :: EDC
+
+!-- Electric potential extema (EPE): min/max of the electric potential
+TYPE tEPE
+  REAL,ALLOCATABLE            :: Minimum(:)          !< Electric potential minimum for each (required) BC index
+  REAL,ALLOCATABLE            :: Maximum(:)          !< Electric potential maximum for each (required) BC index
+#if USE_MPI
+  TYPE(tMPIGROUP),ALLOCATABLE :: COMM(:)             !< communicator and ID for parallel execution
+#endif /*USE_MPI*/
+  INTEGER                     :: NBoundaries         !< Total number of boundaries where the electric displacement current is evaluated
+  INTEGER,ALLOCATABLE         :: FieldBoundaries(:)  !< Field-boundary number on which the particles are counted
+  INTEGER,ALLOCATABLE         :: BCIDToEPEBCID(:)    !< Mapping BCID to EPE BCID (1:nPartBound)
+END TYPE tEPE
+
+TYPE(tEPE) :: EPE
 !===================================================================================================================================
 LOGICAL           :: AnalyzeInitIsDone = .FALSE.
 END MODULE MOD_Analyze_Vars

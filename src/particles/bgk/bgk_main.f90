@@ -129,8 +129,14 @@ DO iElem = 1, nElems
     END DO
 
     IF(DSMC%CalcQualityFactors) THEN
-      BGK_MeanRelaxFactorCounter = 0; BGK_MeanRelaxFactor = 0.; BGK_MaxRelaxFactor = 0.; BGK_MaxRotRelaxFactor = 0.
-      BGK_PrandtlNumber=0.; BGK_ExpectedPrandtlNumber=0.; BGK_Viscosity=0.; BGK_ThermalConductivity=0.
+      BGK_MeanRelaxFactorCounter = 0
+      BGK_MeanRelaxFactor = 0.
+      BGK_MaxRelaxFactor = 0.
+      BGK_MaxRotRelaxFactor = 0.
+      BGK_PrandtlNumber=0.
+      BGK_ExpectedPrandtlNumber=0.
+      BGK_Viscosity=0.
+      BGK_ThermalConductivity=0.
     END IF
     IF (BGKMovingAverage) THEN
       CALL BGK_CollisionOperator(iPartIndx_Node, nPart, ElemVolume_Shared(CNElemID), ElemNodeAveraging(iElem)%Root%AverageValues(:))
@@ -271,8 +277,14 @@ ELSE ! No octree cell refinement
     END IF
 
     IF(DSMC%CalcQualityFactors) THEN
-      BGK_MeanRelaxFactorCounter = 0; BGK_MeanRelaxFactor = 0.; BGK_MaxRelaxFactor = 0.; BGK_MaxRotRelaxFactor = 0.
-      BGK_PrandtlNumber=0.; BGK_ExpectedPrandtlNumber=0.; BGK_Viscosity=0.; BGK_ThermalConductivity=0.
+      BGK_MeanRelaxFactorCounter = 0
+      BGK_MeanRelaxFactor = 0.
+      BGK_MaxRelaxFactor = 0.
+      BGK_MaxRotRelaxFactor = 0.
+      BGK_PrandtlNumber=0.
+      BGK_ExpectedPrandtlNumber=0.
+      BGK_Viscosity=0.
+      BGK_ThermalConductivity=0.
     END IF
 
     IF (BGKMovingAverage) THEN

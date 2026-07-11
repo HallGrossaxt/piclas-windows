@@ -33,7 +33,7 @@ LOGICAL               :: CoupledFPDSMC
 
 TYPE tSpecFP
   REAL, ALLOCATABLE          ::  CollFreqPreFactor(:)
-END TYPE
+END TYPE tSpecFP
 
 TYPE(tSpecFP), ALLOCATABLE :: SpecFP(:)
 

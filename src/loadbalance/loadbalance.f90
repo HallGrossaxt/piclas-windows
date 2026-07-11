@@ -18,6 +18,7 @@
 MODULE MOD_LoadBalance
 !----------------------------------------------------------------------------------------------------------------------------------
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 IMPLICIT NONE
 PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -201,7 +202,7 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 INTEGER               :: iElem
 #ifdef PARTICLES
-INTEGER(KIND=8)       :: HelpSum
+INTEGER(KIND=i8)      :: HelpSum
 REAL                  :: stotalDepos,stotalParts,sTotalTracks,stotalSurfacefluxes,sTotalBCParts,sTotalSurfaceParts
 REAL                  :: ElemTimePartElem
 #endif /*PARTICLES*/

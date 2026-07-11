@@ -779,8 +779,8 @@ INTEGER, INTENT(IN)             :: n
     PRIME = -1
     write ( *, '(a)' ) ' '
     write ( *, '(a)' ) 'PRIME - Fatal error!'
-    write ( *, '(a,i8)' ) '  Illegal prime index N = ', n
-    write ( *, '(a,i8)' ) '  N should be between 1 and PRIME_MAX =', prime_max
+    write ( *, '(a,I8)' ) '  Illegal prime index N = ', n
+    write ( *, '(a,I8)' ) '  N should be between 1 and PRIME_MAX =', prime_max
     stop 1
   END IF
 

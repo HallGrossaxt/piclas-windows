@@ -146,14 +146,15 @@ END SUBROUTINE SplitAndMerge
 SUBROUTINE MergeParticles(iPartIndx_Node_in, nPart, nPartNew, iElem)
 ! MODULES
 USE MOD_Globals               ,ONLY: ISFINITE
-USE MOD_Particle_Vars         ,ONLY: PartState, PDM, PartMPF, PartSpecies, Species, CellEelec_vMPF, CellEvib_vMPF
+USE MOD_Particle_Vars         ,ONLY: PartState, PartMPF, PartSpecies, Species, CellEelec_vMPF, CellEvib_vMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC, VibQuantsPar
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC
 USE MOD_DSMC_Vars             ,ONLY: DoSpeciesWeighting
 USE MOD_Particle_Analyze_Tools,ONLY: CalcTelec, CalcTVibPoly
 USE MOD_Particle_Analyze_Vars ,ONLY: CalcEnergyScalingRatioVMPF,EnergyScalingRatioVMPF
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
 USE MOD_Globals               ,ONLY: LOG_RAN
+USE MOD_part_operations       ,ONLY: RemoveParticle
 #ifdef CODE_ANALYZE
 #if USE_MPI
 USE MOD_Globals               ,ONLY: myrank
@@ -226,9 +227,12 @@ DO iLoop = 1, nPart
   * DOT_PRODUCT(PartState(4:6,iPart),PartState(4:6,iPart)) * partWeight
   IF(CollisMode.GT.1) THEN
     IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
-      Energy_old = Energy_old + (PartStateIntEn(1,iPart) +  PartStateIntEn(2,iPart)) * partWeight
+      Energy_old = Energy_old + (PartIntEn(iPart)%EVib(1) +  PartIntEn(iPart)%ERot(1)) * partWeight
     END IF
-    IF(DSMC%ElectronicModel.GT.0) Energy_old = Energy_old + PartStateIntEn(3,iPart)*partWeight
+    IF(DSMC%ElectronicModel.GT.0) THEN
+      IF((Species(iSpec)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) &
+        Energy_old = Energy_old + PartIntEn(iPart)%EElec(1)*partWeight
+    END IF
   END IF
   ! Momentum conservation
   Momentum_old(1:3) = Momentum_old(1:3) + Species(iSpec)%MassIC * PartState(4:6,iPart) * partWeight
@@ -248,12 +252,12 @@ DO iLoop = 1, nPart
   IF(CollisMode.GT.1) THEN
     IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
       ! Rotational and vibrational energy
-      E_vib = E_vib + (PartStateIntEn(1,iPart) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
-      E_rot = E_rot + partWeight * PartStateIntEn(2,iPart)
+      E_vib = E_vib + (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
+      E_rot = E_rot + partWeight * PartIntEn(iPart)%ERot(1)
     END IF
     ! Electronic energy
-    IF((DSMC%ElectronicModel.GT.0).AND.(Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100)) THEN
-      E_elec = E_elec + partWeight * PartStateIntEn(3,iPart)
+    IF((DSMC%ElectronicModel.GT.0).AND.(Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) THEN
+      E_elec = E_elec + partWeight * PartIntEn(iPart)%EElec(1)
     END IF
   END IF
 END DO
@@ -310,7 +314,7 @@ DO iLoop = 1, nDelete
   iPart = INT(iRan*nTemp) + 1
   partWeight = GetParticleWeight(iPartIndx_Node(iPart))
   lostWeight = lostWeight + partWeight
-  PDM%ParticleInside(iPartIndx_Node(iPart)) = .FALSE.
+  CALL RemoveParticle(iPartIndx_Node(iPart))
   iPartIndx_Node(iPart) = iPartIndx_Node(nTemp)
   nTemp = nTemp - 1
 END DO
@@ -342,12 +346,12 @@ DO iLoop = 1, nPartNew
   IF(CollisMode.GT.1) THEN
     IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
       ! Rotational and vibrational energy
-      E_vib_new = E_vib_new + (PartStateIntEn(1,iPart) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
-      E_rot_new = E_rot_new + partWeight * PartStateIntEn(2,iPart)
+      E_vib_new = E_vib_new + (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
+      E_rot_new = E_rot_new + partWeight * PartIntEn(iPart)%ERot(1)
     END IF
     ! Electronic energy
-    IF((DSMC%ElectronicModel.GT.0).AND.(Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100)) THEN
-      E_elec_new = E_elec_new + partWeight * PartStateIntEn(3,iPart)
+    IF((DSMC%ElectronicModel.GT.0).AND.(Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) THEN
+      E_elec_new = E_elec_new + partWeight * PartIntEn(iPart)%EElec(1)
     END IF
   END IF
 END DO
@@ -355,7 +359,7 @@ END DO
 ! 6.) ensuring momentum and energy conservation
 ! 6.1) ensuring electronic excitation
 IF(CollisMode.GT.1) THEN
-  IF((DSMC%ElectronicModel.GT.0).AND.(Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100)) THEN
+  IF((DSMC%ElectronicModel.GT.0).AND.(Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) THEN
     Energy_Sum = E_elec
     IF (E_elec.GT.0.0) THEN
       IF (E_elec_new.EQ.0.0) THEN
@@ -363,34 +367,34 @@ IF(CollisMode.GT.1) THEN
         DO iLoop = 1, nPartNew  ! temporal continuous energy distribution
           iPart = iPartIndx_Node(iLoop)
           CALL RANDOM_NUMBER(iRan)
-          PartStateIntEn(3,iPart) = -LOG_RAN()*DOF_elec*0.5*T_elec*BoltzmannConst
-!          PartStateIntEn(3,iPart) = -LOG_RAN() * (E_elec/totalWeight)
+          PartIntEn(iPart)%EElec = -LOG_RAN()*DOF_elec*0.5*T_elec*BoltzmannConst
+!          PartIntEn(iPart)%EElec = -LOG_RAN() * (E_elec/totalWeight)
           partWeight = GetParticleWeight(iPart)
-          E_elec_new = E_elec_new + partWeight * PartStateIntEn(3,iPart)
+          E_elec_new = E_elec_new + partWeight * PartIntEn(iPart)%EElec(1)
         END DO
       END IF
       alpha = E_elec/E_elec_new
       DO iLoop = 1, nPartNew
 !        alpha = E_elec/E_elec_new
-!        Test_E = PartStateIntEn(3,iPart)
+!        Test_E = PartIntEn(iPart)%EElec
         iPart = iPartIndx_Node(iLoop)
-        PartStateIntEn(3,iPart) = alpha * PartStateIntEn(3,iPart)
+        PartIntEn(iPart)%EElec = alpha * PartIntEn(iPart)%EElec
         iQuaCount = 0
         DO iQua = 1, SpecDSMC(iSpec)%MaxElecQuant - 1
           iQuaCount = iQuaCount + 1
-          IF(BoltzmannConst*SpecDSMC(iSpec)%ElectronicState(2,iQua).GT.PartStateIntEn(3,iPart)) EXIT ! iQuant increased if EXIT?
+          IF(BoltzmannConst*SpecDSMC(iSpec)%ElectronicState(2,iQua).GT.PartIntEn(iPart)%EElec(1)) EXIT ! iQuant increased if EXIT?
         END DO
         E_elec_upper = SpecDSMC(iSpec)%ElectronicState(2,iQuaCount) * BoltzmannConst
         E_elec_lower = SpecDSMC(iSpec)%ElectronicState(2,iQuaCount-1) * BoltzmannConst
         CALL RANDOM_NUMBER(iRan)
-        IF((PartStateIntEn(3,iPart)-E_elec_lower)/(E_elec_upper-E_elec_lower).LE.iRan) THEN
-          PartStateIntEn(3,iPart) = E_elec_lower
+        IF((PartIntEn(iPart)%EElec(1)-E_elec_lower)/(E_elec_upper-E_elec_lower).LE.iRan) THEN
+          PartIntEn(iPart)%EElec = E_elec_lower
         ELSE
-          PartStateIntEn(3,iPart) = E_elec_upper
+          PartIntEn(iPart)%EElec = E_elec_upper
         END IF
         partWeight = GetParticleWeight(iPart)
-        Energy_Sum = Energy_Sum - PartStateIntEn(3,iPart) * partWeight
-!        IF(PartStateIntEn(3,iPart).EQ.0.0) then
+        Energy_Sum = Energy_Sum - PartIntEn(iPart)%EElec(1) * partWeight
+!        IF(PartIntEn(iPart)%EElec.EQ.0.0) then
 !          E_elec_new = E_elec_new - Test_E * partWeight
 !        END IF
       END DO
@@ -409,22 +413,22 @@ IF(CollisMode.GT.1) THEN
         IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
           DO iLoop = 1, nPartNew  ! temporal continuous energy distribution
             iPart = iPartIndx_Node(iLoop)
-            PartStateIntEn(1,iPart) = 0.0
+            PartIntEn(iPart)%EVib = 0.0
             DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
               CALL RANDOM_NUMBER(iRan)
               EnergyTemp_vibPoly(iDOF,iLoop) = -LOG_RAN()*DOF_vib_poly(iDOF)*0.5*T_vib*BoltzmannConst
-              PartStateIntEn(1,iPart) = PartStateIntEn(1,iPart) + EnergyTemp_vibPoly(iDOF,iLoop)
+              PartIntEn(iPart)%EVib = PartIntEn(iPart)%EVib + EnergyTemp_vibPoly(iDOF,iLoop)
             END DO
             partWeight = GetParticleWeight(iPart)
-            E_vib_new = E_vib_new + partWeight * PartStateIntEn(1,iPart)
+            E_vib_new = E_vib_new + partWeight * PartIntEn(iPart)%EVib(1)
           END DO
         ELSE
           DO iLoop = 1, nPartNew  ! temporal continuous energy distribution
             iPart = iPartIndx_Node(iLoop)
             CALL RANDOM_NUMBER(iRan)
-            PartStateIntEn(1,iPart) = -LOG_RAN()*DOF_vib*0.5*T_vib*BoltzmannConst
+            PartIntEn(iPart)%EVib = -LOG_RAN()*DOF_vib*0.5*T_vib*BoltzmannConst
             partWeight = GetParticleWeight(iPart)
-            E_vib_new = E_vib_new + partWeight * PartStateIntEn(1,iPart)
+            E_vib_new = E_vib_new + partWeight * PartIntEn(iPart)%EVib(1)
           END DO
         END IF
       ELSE
@@ -432,7 +436,7 @@ IF(CollisMode.GT.1) THEN
           DO iLoop = 1, nPartNew  ! temporal continuous energy distribution
             iPart = iPartIndx_Node(iLoop)
             DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
-              EnergyTemp_vibPoly(iDOF,iLoop) = VibQuantsPar(iPart)%Quants(iDOF) * BoltzmannConst &
+              EnergyTemp_vibPoly(iDOF,iLoop) = PartIntEn(iPart)%QVib(iDOF) * BoltzmannConst &
                                              * PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)
             END DO
           END DO
@@ -443,7 +447,7 @@ IF(CollisMode.GT.1) THEN
         iPart = iPartIndx_Node(iLoop)
         partWeight = GetParticleWeight(iPart)
         IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
-          PartStateIntEn(1,iPart) = 0.0
+         PartIntEn(iPart)%EVib = 0.0
           iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
           DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
             betaV = alpha*EnergyTemp_vibPoly(iDOF,iLoop)/(PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst)
@@ -452,15 +456,14 @@ IF(CollisMode.GT.1) THEN
             ! iQua = INT(betaV+iRan)
             iQua = INT(betaV)
             IF(iQua.GT.PolyatomMolDSMC(iPolyatMole)%MaxVibQuantDOF(iDOF)) iQua=PolyatomMolDSMC(iPolyatMole)%MaxVibQuantDOF(iDOF)
-            PartStateIntEn( 1,iPart)  = PartStateIntEn( 1,iPart) &
+            PartIntEn(iPart)%EVib  = PartIntEn(iPart)%EVib &
                + iQua*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
-            VibQuantsPar(iPart)%Quants(iDOF) = iQua
+            PartIntEn(iPart)%QVib(iDOF) = iQua
             Energy_Sum = Energy_Sum - iQua*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst*partWeight
           END DO
-          PartStateIntEn( 1,iPart)  = PartStateIntEn( 1,iPart) &
-               + SpecDSMC(iSpec)%EZeroPoint
+          PartIntEn(iPart)%EVib  = PartIntEn(iPart)%EVib + SpecDSMC(iSpec)%EZeroPoint
         ELSE  ! Diatomic molecules
-          betaV = alpha*PartStateIntEn(1,iPart)/(SpecDSMC(iSpec)%CharaTVib*BoltzmannConst)
+          betaV = alpha*PartIntEn(iPart)%EVib(1)/(SpecDSMC(iSpec)%CharaTVib*BoltzmannConst)
           !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
           ! CALL RANDOM_NUMBER(iRan)
           ! iQua = INT(betaV+iRan)
@@ -471,8 +474,8 @@ IF(CollisMode.GT.1) THEN
           ! END IF
           iQua = INT(betaV)
           IF (iQua.GT.SpecDSMC(iSpec)%MaxVibQuant) iQua = SpecDSMC(iSpec)%MaxVibQuant
-          PartStateIntEn(1,iPart)  = (iQua + DSMC%GammaQuant)*SpecDSMC(iSpec)%CharaTVib*BoltzmannConst
-          Energy_Sum = Energy_Sum - (PartStateIntEn(1,iPart) - SpecDSMC(iSpec)%EZeroPoint)*partWeight
+          PartIntEn(iPart)%EVib  = (iQua + DSMC%GammaQuant)*SpecDSMC(iSpec)%CharaTVib*BoltzmannConst
+          Energy_Sum = Energy_Sum - (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint)*partWeight
         END IF ! SpecDSMC(1)%PolyatomicMol
       END DO
     END IF
@@ -484,7 +487,7 @@ IF(CollisMode.GT.1) THEN
     DO iLoop = 1, nPartNew
       iPart = iPartIndx_Node(iLoop)
       partWeight = GetParticleWeight(iPart)
-      PartStateIntEn(2,iPart)  = alpha * PartStateIntEn(2,iPart)
+      PartIntEn(iPart)%ERot  = alpha * PartIntEn(iPart)%ERot
     END DO
   END IF
 END IF
@@ -514,9 +517,12 @@ DO iLoop = 1, nPartNew
   Energy_new = Energy_new + 0.5*Species(iSpec)%MassIC * DOT_PRODUCT(PartState(4:6,iPart),PartState(4:6,iPart)) * partWeight
   IF(CollisMode.GT.1) THEN
     IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
-      Energy_new = Energy_new + (PartStateIntEn(1,iPart) + PartStateIntEn(2,iPart)) * partWeight
+      Energy_new = Energy_new + (PartIntEn(iPart)%EVib(1) + PartIntEn(iPart)%ERot(1)) * partWeight
     END IF
-    IF(DSMC%ElectronicModel.GT.0) Energy_new = Energy_new + PartStateIntEn(3,iPart)*partWeight
+    IF(DSMC%ElectronicModel.GT.0) THEN
+      IF((Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) &
+        Energy_new = Energy_new + PartIntEn(iPart)%EElec(1)*partWeight
+    END IF
   END IF
   ! Momentum conservation
   Momentum_new(1:3) = Momentum_new(1:3) + Species(iSpec)%MassIC * PartState(4:6,iPart) * partWeight
@@ -598,8 +604,8 @@ SUBROUTINE SplitParticles(iPartIndx_Node, nPartIn, nPartNew)
 ! MODULES
 USE MOD_Globals
 USE MOD_Particle_Vars         ,ONLY: PartState, PDM, PartMPF, PartSpecies, PEM, PartPosRef, vMPFSplitLimit
-USE MOD_Particle_Vars         ,ONLY: UseVarTimeStep, PartTimeStep
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC, VibQuantsPar
+USE MOD_Particle_Vars         ,ONLY: UseVarTimeStep, PartTimeStep, Species
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC
 USE MOD_Particle_Tracking_Vars,ONLY: TrackingMethod
 USE MOD_Part_Tools            ,ONLY: GetNextFreePosition
 !#ifdef CODE_ANALYZE
@@ -617,7 +623,7 @@ INTEGER, INTENT(INOUT)               :: iPartIndx_Node(:)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 REAL                  :: iRan
-INTEGER               :: nSplit, iPart, iNewPart, PartIndx, PositionNbr, LocalElemID, nPart
+INTEGER               :: nSplit, iPart, iNewPart, PartIndx, PositionNbr, LocalElemID, nPart, iSpec
 !===================================================================================================================================
 ! split particles randomly (until nPartNew is reached)
 iNewPart = 0
@@ -646,14 +652,24 @@ DO iNewPart=1,nSplit
   PartState(1:6,PositionNbr) = PartState(1:6,PartIndx)
   IF(TrackingMethod.EQ.REFMAPPING) PartPosRef(1:3,PositionNbr)=PartPosRef(1:3,PartIndx)
   PartSpecies(PositionNbr) = PartSpecies(PartIndx)
+  iSpec = PartSpecies(PartIndx)
   IF(CollisMode.GT.1) THEN
-    PartStateIntEn(1:2,PositionNbr) = PartStateIntEn(1:2,PartIndx)
-    IF(SpecDSMC(PartSpecies(PositionNbr))%PolyatomicMol) THEN
-      IF(ALLOCATED(VibQuantsPar(PositionNbr)%Quants)) DEALLOCATE(VibQuantsPar(PositionNbr)%Quants)
-      ALLOCATE(VibQuantsPar(PositionNbr)%Quants(PolyatomMolDSMC(SpecDSMC(PartSpecies(PositionNbr))%SpecToPolyArray)%VibDOF))
-      VibQuantsPar(PositionNbr)%Quants(:) = VibQuantsPar(PartIndx)%Quants(:)
+    IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
+      ALLOCATE(PartIntEn(PositionNbr)%EVib(1), PartIntEn(PositionNbr)%ERot(1))
+      PartIntEn(PositionNbr)%EVib = PartIntEn(PartIndx)%EVib
+      PartIntEn(PositionNbr)%ERot = PartIntEn(PartIndx)%ERot
     END IF
-    IF(DSMC%ElectronicModel.GT.0) PartStateIntEn(3,PositionNbr) = PartStateIntEn(3,PartIndx)
+    IF(SpecDSMC(PartSpecies(PositionNbr))%PolyatomicMol) THEN
+      IF(ALLOCATED(PartIntEn(PositionNbr)%QVib)) DEALLOCATE(PartIntEn(PositionNbr)%QVib)
+      ALLOCATE(PartIntEn(PositionNbr)%QVib(PolyatomMolDSMC(SpecDSMC(PartSpecies(PositionNbr))%SpecToPolyArray)%VibDOF))
+      PartIntEn(PositionNbr)%QVib(:) = PartIntEn(PartIndx)%QVib(:)
+    END IF
+    IF(DSMC%ElectronicModel.GT.0) THEN
+      IF((Species(iSpec)%InterID.NE.4).AND.(Species(iSpec)%InterID.NE.100).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized)) THEN
+        ALLOCATE(PartIntEn(PositionNbr)%EElec(1))
+        PartIntEn(PositionNbr)%EElec = PartIntEn(PartIndx)%EElec
+      END IF
+    END IF
   END IF
   PartMPF(PositionNbr) = PartMPF(PartIndx)
   IF(UseVarTimeStep) PartTimeStep(PositionNbr) = PartTimeStep(PartIndx)

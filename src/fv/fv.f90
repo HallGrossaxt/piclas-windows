@@ -142,7 +142,6 @@ SUBROUTINE FV_main(t,tStage,doSource)
 ! MODULES
 USE MOD_Globals
 USE MOD_Preproc
-USE MOD_Vector
 USE MOD_FV_Vars
 USE MOD_SurfInt           ,ONLY: SurfInt
 USE MOD_Prolong_FV        ,ONLY: ProlongToFace_FV

@@ -47,8 +47,8 @@ Element information is read-in and built in `ReadMeshElems`
     ElemInfo_Shared(1:ELEMINFOSIZE,1:nGlobalElems)
     ! Possible preprocessor variables for first entry
     ! ElemInfo from mesh file
-    ELEM_TYPE         1    ! HOPR classification of element (currently not used)
-    ELEM_ZONE         2    ! Zone as defined in HOPR (currently not used)
+    ELEM_TYPE         1    ! PyHOPE classification of element (currently not used)
+    ELEM_ZONE         2    ! Zone as defined in PyHOPE (currently not used)
     ELEM_FIRSTSIDEIND 3    ! Index of the first side belonging to the element
     ELEM_LASTSIDEIND  4    ! Index of the last side belonging to the element
     ELEM_FIRSTNODEIND 5    ! Index of the first node belonging to the element
@@ -65,7 +65,7 @@ Side information is read-in and built in `ReadMeshSides`
 
     SideInfo_Shared(1:SIDEINFOSIZE+1,1:nNonUniqueGlobalSides)
     ! Possible preprocessor variables for first entry
-    SIDE_TYPE         1    ! HOPR classification of side
+    SIDE_TYPE         1    ! PyHOPE classification of side
     SIDE_ID           2    ! tbd
     SIDE_NBELEMID     3    ! Neighbouring element ID
     SIDE_FLIP         4    ! tbd

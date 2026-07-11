@@ -25,23 +25,15 @@ MODULE MOD_Restart_Field
 IMPLICIT NONE
 PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
-
-!#if USE_LOADBALANCE
 #if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
-INTERFACE FieldRestart
-  MODULE PROCEDURE FieldRestart
-END INTERFACE
-
 PUBLIC :: FieldRestart
 #endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))*/
-!#endif /*USE_LOADBALANCE*/
 !===================================================================================================================================
 
 CONTAINS
 
 
 #if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
-!#if USE_LOADBALANCE
 SUBROUTINE FieldRestart()
 !===================================================================================================================================
 ! routine performing the field restart
@@ -51,7 +43,6 @@ USE MOD_Globals
 USE MOD_PreProc
 #if USE_FV
 USE MOD_FV_Vars                ,ONLY: U_FV
-USE MOD_Restart_Vars           ,ONLY: N_Restart_FV
 #endif /*USE_FV*/
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars       ,ONLY: PerformLoadBalance,UseH5IOLoadBalance
@@ -125,10 +116,12 @@ USE MOD_LoadBalance_Vars       ,ONLY: MPInElemSend,MPInElemRecv,MPIoffsetElemSen
 #endif /*#if (defined(PARTICLES) && (USE_HDG)) || !(USE_HDG) || USE_FV*/
 #endif /*USE_LOADBALANCE*/
 #ifdef discrete_velocity /*DVM*/
+USE MOD_Restart_Vars           ,ONLY: N_Restart_FV
 USE MOD_DistFunc               ,ONLY: GradDistribution
 USE MOD_Equation_Vars_FV       ,ONLY: DVMSpecData, DVMnSpecies, DVMnMacro, DVMnSpecTot
 #endif /*DVM*/
 USE MOD_Mesh_Vars              ,ONLY: nElems,OffsetElem
+USE MOD_HDF5_Input             ,ONLY: PyHOPECompatibilityCheck
 ! IMPLICIT VARIABLE HANDLING
  IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -141,10 +134,8 @@ INTEGER(KIND=IK)                   :: OffsetElemTmp,PP_nElemsTmp
 LOGICAL                            :: DG_SolutionExists
 #ifdef discrete_velocity
 REAL                               :: Udvm(DVMnMacro)
-#endif /*discrete_velocity*/
-#if (USE_FV)
 REAL,ALLOCATABLE                   :: Ureco_FV(:,:,:,:,:)
-#endif /*USE_FV*/
+#endif /*discrete_velocity*/
 #if USE_HDG
 LOGICAL                            :: DG_SolutionLambdaExists,DG_SolutionPhiFExists
 INTEGER                            :: SideID,iSide,MinGlobalSideID,MaxGlobalSideID,NSideMin,iVar
@@ -570,10 +561,9 @@ ELSE ! Normal restart
   ELSE ! Use the solution in the restart file
     SWRITE(UNIT_stdOut,*)'Restarting from File: ',TRIM(RestartFile)
     CALL OpenDataFile(RestartFile,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
-    ! Read in time from restart file
-    !CALL ReadAttribute(File_ID,'Time',1,RealScalar=RestartTime)
+    ! Check PyHOPE versions in restart.h5 file
+    CALL PyHOPECompatibilityCheck(File_ID,'field restart')
     ! Read in state
-
 #if !(PP_TimeDiscMethod==700)
     ! TODO: Do we need this for the HDG solver? It seems so .... For the iterative solver to start with the optimal solution?
     CALL DatasetExists(File_ID,'DG_Solution',DG_SolutionExists)
@@ -700,7 +690,7 @@ ELSE ! Normal restart
               IF(MortarType(1,iSide).EQ.0)THEN
                 ! check all my big mortar sides and find the one to which the small virtual is connected
                 ! check all yellow (big mortar) sides
-                Check1: DO MortarSideID=firstMortarInnerSide,lastMortarInnerSide
+                Check2: DO MortarSideID=firstMortarInnerSide,lastMortarInnerSide
                   nMortars=MERGE(4,2,MortarType(1,MortarSideID).EQ.1)
                   ! loop over all blue sides (small mortar master)
                   DO iMortar=1,nMortars
@@ -713,10 +703,10 @@ ELSE ! Normal restart
                       IF(iLocSide_master.EQ.-1)THEN
                         CALL abort(__STAMP__,'This big mortar side must be master')
                       END IF !iLocSide.NE.-1
-                      EXIT Check1
+                      EXIT Check2
                     END IF ! iSide.EQ.SideID
                   END DO !iMortar
-                END DO Check1 !MortarSideID
+                END DO Check2 !MortarSideID
               END IF ! MortarType(1,iSide).EQ.0
 
               ! Read lambda from h5 on Nres
@@ -1057,7 +1047,6 @@ DEALLOCATE(ElemData)
 
 END SUBROUTINE GetNlocFromElemDataFromHDF5
 #endif /*!(PP_TimeDiscMethod==700)*/
-!#endif /*USE_LOADBALANCE*/
 #endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))*/
 
 END MODULE MOD_Restart_Field

@@ -341,6 +341,7 @@ USE MOD_Mesh_Vars               ,ONLY: XCL_NGeo
 USE MOD_LoadBalance_Vars        ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
 USE MOD_Photon_TrackingVars     ,ONLY: UsePhotonTriaTracking
+USE MOD_Particle_Boundary_Vars  ,ONLY: Do2DSurfaceCharge
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------!
@@ -361,31 +362,31 @@ LBWRITE(UNIT_StdOut,'(A)') ' TriaTracking: Identifying side types and whether el
 
 ! elements
 #if USE_MPI
-IF(UsePhotonTriaTracking)THEN
+IF(UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.))THEN
   CALL Allocate_Shared((/nComputeNodeTotalElems/),ElemCurved_Shared_Win,ElemCurved_Shared)
   CALL MPI_WIN_LOCK_ALL(0,ElemCurved_Shared_Win,IERROR)
-END IF ! UsePhotonTriaTracking
+END IF ! UseUsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.)
 CALL Allocate_Shared((/3,6,nComputeNodeTotalElems/),XiEtaZetaBasis_Shared_Win,XiEtaZetaBasis_Shared)
 CALL MPI_WIN_LOCK_ALL(0,XiEtaZetaBasis_Shared_Win,IERROR)
 CALL Allocate_Shared((/6,nComputeNodeTotalElems/),slenXiEtaZetaBasis_Shared_Win,slenXiEtaZetaBasis_Shared)
 CALL MPI_WIN_LOCK_ALL(0,slenXiEtaZetaBasis_Shared_Win,IERROR)
-IF(UsePhotonTriaTracking)THEN
+IF(UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.))THEN
   ElemCurved         => ElemCurved_Shared
-END IF ! UsePhotonTriaTracking
+END IF ! UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.)
 XiEtaZetaBasis     => XiEtaZetaBasis_Shared
 slenXiEtaZetaBasis => slenXiEtaZetaBasis_Shared
 
 ASSOCIATE(XCL_NGeo     => XCL_NGeo_Shared)
 
 #else
-IF(UsePhotonTriaTracking)THEN
+IF(UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.))THEN
   ALLOCATE(ElemCurved(            1:nElems))
-END IF ! UsePhotonTriaTracking
+END IF ! UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.)
 ALLOCATE(XiEtaZetaBasis(1:3,1:6,1:nElems))
 ALLOCATE(slenXiEtaZetaBasis(1:6,1:nElems))
 #endif /*USE_MPI*/
 
-IF(UsePhotonTriaTracking)THEN
+IF(UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.))THEN
   ! only CN root nullifies
 #if USE_MPI
   IF (myComputeNodeRank.EQ.0) THEN
@@ -394,7 +395,7 @@ IF(UsePhotonTriaTracking)THEN
 #if USE_MPI
   END IF
 #endif /*USE_MPI*/
-END IF ! UsePhotonTriaTracking
+END IF ! UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.)
 
 #if USE_MPI
 firstElem = INT(REAL( myComputeNodeRank   )*REAL(nComputeNodeTotalElems)/REAL(nComputeNodeProcessors))+1
@@ -434,9 +435,9 @@ END DO
 
 #if USE_MPI
 END ASSOCIATE
-IF(UsePhotonTriaTracking)THEN
+IF(UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.))THEN
   CALL BARRIER_AND_SYNC(ElemCurved_Shared_Win      ,MPI_COMM_SHARED)
-END IF ! UsePhotonTriaTracking
+END IF ! UsePhotonTriaTracking.AND.(Do2DSurfaceCharge.EQV..FALSE.)
 CALL BARRIER_AND_SYNC(XiEtaZetaBasis_Shared_Win    ,MPI_COMM_SHARED)
 CALL BARRIER_AND_SYNC(slenXiEtaZetaBasis_Shared_Win,MPI_COMM_SHARED)
 #endif /*USE_MPI*/

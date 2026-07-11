@@ -71,13 +71,15 @@ REAL,ALLOCATABLE    :: Tau(:)                 !< Stabilization parameter, per el
 REAL,ALLOCATABLE    :: lambdaLB(:,:,:)        !< lambda, ((PP_N+1)^2,nSides)
 INTEGER,ALLOCATABLE :: iLocSides(:,:)         !< iLocSides, ((PP_N+1)^2,nSides) - used for I/O and ALLGATHERV of lambda
 REAL,ALLOCATABLE    :: qn_face_MagStat(:,:,:) !< for Neumann BC
-INTEGER             :: nDirichletBCsides
+INTEGER             :: nDirichletBCSides
 INTEGER             :: nNeumannBCsides
 INTEGER             :: nConductorBCsides      !< Number of processor-local sides that are conductors (FPC) in [1:nBCSides]
+INTEGER             :: nDistriCapBCsides      !< Number of processor-local sides that are distributed capacitance (DC) in [1:nBCSides]
 INTEGER             :: ZeroPotentialSide      !< (local) SideID of the side where the potential of one DOF is set to zero
 INTEGER,ALLOCATABLE :: ConductorBC(:)
 INTEGER,ALLOCATABLE :: DirichletBC(:)
 INTEGER,ALLOCATABLE :: NeumannBC(:)
+INTEGER,ALLOCATABLE :: DistriCapBC(:)
 LOGICAL             :: HDGnonlinear           !< Use non-linear sources for HDG? (e.g. Boltzmann electrons)
 LOGICAL             :: NewtonExactSourceDeriv
 LOGICAL             :: NewtonAdaptStartValue
@@ -152,7 +154,7 @@ TYPE tMPIGROUP
   INTEGER                     :: nProcs                 !< number of MPI processes part of the FPC group
   INTEGER                     :: nProcsWithSides        !< number of MPI processes part of the FPC group and actual FPC sides
   INTEGER                     :: MyRank                 !< MyRank within communicator
-END TYPE
+END TYPE tMPIGROUP
 #endif /*USE_MPI*/
 
 !===================================================================================================================================
@@ -182,7 +184,7 @@ TYPE tFPC
                                                     !<   3: number of BCSides for each FPC group
   INTEGER,ALLOCATABLE         :: GroupGlobal(:)     !< Sum of nSides associated with each i-th FPC boundary
   LOGICAL,ALLOCATABLE         :: BConProc(:)        !< True, if iUniqueFPCBC is on current process
-END TYPE
+END TYPE tFPC
 
 TYPE(tFPC)   :: FPC
 !===================================================================================================================================
@@ -212,7 +214,7 @@ TYPE tEPC
                                                     !<   2: iUniqueEPC (i-th EPC group ID)
                                                     !<   3: number of BCSides for each EPC group
   INTEGER,ALLOCATABLE         :: GroupGlobal(:)     !< Sum of nSides associated with each i-th EPC boundary
-END TYPE
+END TYPE tEPC
 
 TYPE(tEPC)   :: EPC
 #if defined(PARTICLES)
@@ -252,12 +254,11 @@ TYPE tBV
   REAL                :: BVData(BVDataLength) !< 1: bias voltage
 !                                             !< 2: Ion excess
 !                                             !< 3: sim. time when next adjustment happens
-END TYPE
+END TYPE tBV
 
 TYPE(tBV)   :: BiasVoltage
 #endif /*defined(PARTICLES)*/
 !===================================================================================================================================
-
 
 #endif /*USE_HDG*/
 END MODULE MOD_HDG_Vars

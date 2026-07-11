@@ -37,7 +37,7 @@ IF (nArgs.GT.0) CALL abort(__STAMP__,'ERROR - Unknown command line argument.')
 #if PP_N == N
 DO i = 1, MaxPolDeg
   PP_N = i
-#endif
+#endif /*PP_N == N*/
   WRITE(*,'(A,I0,A,I0)') " Testing MortarInit for N = ",PP_N," and NAnalyze = ",2*(PP_N+1)
   CALL InitInterpolation(          &
       NIn_opt        = PP_N,       &
@@ -48,12 +48,12 @@ DO i = 1, MaxPolDeg
   CALL FinalizeInterpolation(.FALSE.)
 #if PP_N == N
 END DO ! i = 1, MaxPolDeg
-#endif
+#endif /*PP_N == N*/
 
 #if USE_MPI
 ! we also have to finalize MPI itself here
 CALL MPI_FINALIZE(iError)
 IF(iError.NE.0) CALL abort(__STAMP__,'MPI finalize error')
-#endif
+#endif /*USE_MPI*/
 
 END PROGRAM MortarBasisUnitTest

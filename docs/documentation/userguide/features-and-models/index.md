@@ -20,7 +20,8 @@ SpeciesDatabase.md
 Fokker-Planck.md
 Bhatnagar-Gross-Krook.md
 features-particle-solver.md
-radiation.md
+radiation-transport.md
+raytracing-photoionization.md
 discrete-velocity-method.md
 ```
 

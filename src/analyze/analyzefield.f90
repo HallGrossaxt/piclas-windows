@@ -55,8 +55,10 @@ USE MOD_Restart_Vars          ,ONLY: DoRestart
 USE MOD_Dielectric_Vars       ,ONLY: DoDielectric
 #if USE_HDG
 USE MOD_AnalyzeField_HDG      ,ONLY: CalculateAverageElectricPotential,CalculateElectricDisplacementCurrentSurface
+USE MOD_AnalyzeField_HDG      ,ONLY: CalculateElectricPotentialExtrema
 USE MOD_HDG_Vars              ,ONLY: HDGNorm,iterationTotal,RunTimeTotal,UseFPC,FPC,UseEPC,EPC
 USE MOD_Analyze_Vars          ,ONLY: AverageElectricPotential,CalcAverageElectricPotential,EDC,CalcElectricTimeDerivative
+USE MOD_Analyze_Vars          ,ONLY: EPE,CalcElectricPotentialExtrema
 USE MOD_TimeDisc_Vars         ,ONLY: dt
 #endif /*USE_HDG*/
 #ifdef PARTICLES
@@ -90,7 +92,7 @@ INTEGER,PARAMETER  :: helpInt=0
 #endif /*PP_nVar=8*/
 #if USE_HDG
 INTEGER,PARAMETER  :: helpInt2=4
-INTEGER            :: iEDCBC,iUniqueFPCBC,iUniqueEPCBC
+INTEGER            :: iEDCBC,iEPEBC,iUniqueFPCBC,iUniqueEPCBC
 #else
 INTEGER,PARAMETER  :: helpInt2=0
 #endif /*USE_HDG*/
@@ -149,6 +151,8 @@ IF(MPIROOT)THEN
       IF(CalcAverageElectricPotential) nOutputVarTotal = nOutputVarTotal + 1
       !-- Electric displacement current
       IF(CalcElectricTimeDerivative) nOutputVarTotal = nOutputVarTotal + EDC%NBoundaries
+      !-- Electric potential extrema (EPE)
+      IF(CalcElectricPotentialExtrema) nOutputVarTotal = nOutputVarTotal + 2*EPE%NBoundaries
       !-- Floating boundary condition
       IF(UseFPC) nOutputVarTotal = nOutputVarTotal + 2*FPC%nUniqueFPCBounds ! Charge and Voltage on each FPC
       !-- Electric potential condition
@@ -200,6 +204,18 @@ IF(MPIROOT)THEN
           WRITE(StrVarNameTmp,'(A,I0.3,A)') 'ElecDisplCurrent-',iEDCBC,'-'//TRIM(BoundaryName(EDC%FieldBoundaries(iEDCBC)))
           WRITE(tmpStr(nOutputVarTotal),'(A,I0.3,A)')delimiter//'"',nOutputVarTotal,'-'//TRIM(StrVarNameTmp)//'"'
         END DO ! iEDCBC = 1, EDC%NBoundaries
+      END IF
+
+      !-- Electric potential extrema (EPE)
+      IF(CalcElectricPotentialExtrema)THEN
+        DO iEPEBC = 1, EPE%NBoundaries
+          nOutputVarTotal = nOutputVarTotal + 1
+          WRITE(StrVarNameTmp,'(A,I0.3,A)') 'ElecPotMin-',iEPEBC,'-'//TRIM(BoundaryName(EPE%FieldBoundaries(iEPEBC)))
+          WRITE(tmpStr(nOutputVarTotal),'(A,I0.3,A)')delimiter//'"',nOutputVarTotal,'-'//TRIM(StrVarNameTmp)//'"'
+          nOutputVarTotal = nOutputVarTotal + 1
+          WRITE(StrVarNameTmp,'(A,I0.3,A)') 'ElecPotMax-',iEPEBC,'-'//TRIM(BoundaryName(EPE%FieldBoundaries(iEPEBC)))
+          WRITE(tmpStr(nOutputVarTotal),'(A,I0.3,A)')delimiter//'"',nOutputVarTotal,'-'//TRIM(StrVarNameTmp)//'"'
+        END DO ! iEPEBC = 1, EPE%NBoundaries
       END IF
 
       !-- Floating boundary condition
@@ -292,6 +308,7 @@ END IF ! .NOT.DoInterpolation
 #endif /*PARTICLES*/
 #if USE_HDG
 IF(CalcElectricTimeDerivative) CALL CalculateElectricDisplacementCurrentSurface()
+IF(CalcElectricPotentialExtrema) CALL CalculateElectricPotentialExtrema()
 #endif /*USE_HDG*/
 
 IF(MPIROOT)THEN
@@ -334,6 +351,14 @@ IF(MPIROOT)THEN
     DO iEDCBC = 1, EDC%NBoundaries
       WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',',EDC%Current(iEDCBC)
     END DO ! iEDCBC = 1, EDC%NBoundaries
+  END IF
+
+  !-- Electric potential extrema
+  IF(CalcElectricPotentialExtrema)THEN
+    DO iEPEBC = 1, EPE%NBoundaries
+      WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',',EPE%Minimum(iEPEBC)
+      WRITE(unit_index,CSVFORMAT,ADVANCE='NO') ',',EPE%Maximum(iEPEBC)
+    END DO ! iEPEBC = 1, EPE%NBoundaries
   END IF
 
   !-- Floating boundary condition

@@ -26,7 +26,7 @@ INTERFACE radiation_exportspectrum
 END INTERFACE
 
 !-----------------------------------------------------------------------------------------------------------------------------------
-! GLOBAL VARIABLES 
+! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
@@ -39,9 +39,9 @@ CONTAINS
 SUBROUTINE radiation_exportspectrum(iElement, output_format)
 !===================================================================================================================================
 ! exports spectral emission and absorption to *.dat-files
-! 
+!
 ! Radiation_Emission_Absorption_xx_iGlobalElement(:,3) -> wavelength, emission (W/m3/str/m), absorption (1/m))
-! 
+!
 ! further formats can be added to output_format, currently available:
 ! 1: gnuplot
 ! 2: tikz
@@ -61,7 +61,7 @@ SUBROUTINE radiation_exportspectrum(iElement, output_format)
   INTEGER           :: w, io_error, iGlobalElement
   CHARACTER(32)     :: hilf
 !===================================================================================================================================
-  
+
   iGlobalElement = iElement + offsetElem
   WRITE(UNIT=hilf,FMT='(I0)') iGlobalElement
 

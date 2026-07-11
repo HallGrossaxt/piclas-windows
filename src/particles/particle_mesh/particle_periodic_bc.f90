@@ -141,7 +141,7 @@ DO iPV = 1,GEO%nPeriodicVectors
   LOGWRITE(*,*)'PeriodicVectors(1:3),',iPV,')=',GEO%PeriodicVectors(1:3,iPV)
   IF (GEO%PeriodicVectors(1,iPV).NE.0) THEN
     IF ((GEO%PeriodicVectors(2,iPV).NE.0).OR.(GEO%PeriodicVectors(3,iPV).NE.0)) &
-      CALL abort(__STAMP__,'Periodic Vector not in Cartesian direction!',iPV)
+      CALL abort(__STAMP__,'Periodic Vector not in Cartesian direction. Periodic i-dir = ',IntInfoOpt=iPV)
 
     GEO%DirPeriodicVectors(iPV) = 1
     IF (.NOT.GEO%directions(1)) THEN
@@ -151,7 +151,7 @@ DO iPV = 1,GEO%nPeriodicVectors
     END IF
   ELSE IF (GEO%PeriodicVectors(2,iPV).NE.0) THEN
     IF ((GEO%PeriodicVectors(1,iPV).NE.0).OR.(GEO%PeriodicVectors(3,iPV).NE.0)) &
-      CALL abort(__STAMP__,'Periodic Vector not in Cartesian direction!',iPV)
+      CALL abort(__STAMP__,'Periodic Vector not in Cartesian direction. Periodic i-dir = ',IntInfoOpt=iPV)
 
     GEO%DirPeriodicVectors(iPV) = 2
     IF (.NOT.GEO%directions(2)) THEN
@@ -161,7 +161,7 @@ DO iPV = 1,GEO%nPeriodicVectors
     END IF
   ELSE IF (GEO%PeriodicVectors(3,iPV).NE.0) THEN
     IF ((GEO%PeriodicVectors(1,iPV).NE.0).OR.(GEO%PeriodicVectors(2,iPV).NE.0)) &
-      CALL abort(__STAMP__,'Periodic Vector not in Cartesian direction!',iPV)
+      CALL abort(__STAMP__,'Periodic Vector not in Cartesian direction. Periodic i-dir = ',IntInfoOpt=iPV)
 
     GEO%DirPeriodicVectors(iPV) = 3
     IF (.NOT.GEO%directions(3)) THEN

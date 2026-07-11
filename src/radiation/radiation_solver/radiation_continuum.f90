@@ -26,7 +26,7 @@ INTERFACE radiation_continuum
 END INTERFACE
 
 !-----------------------------------------------------------------------------------------------------------------------------------
-! GLOBAL VARIABLES 
+! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
@@ -60,7 +60,7 @@ SUBROUTINE radiation_continuum(iElem, em_cont)
   REAL, ALLOCATABLE :: epsilon_cont(:)
 
 !===================================================================================================================================
-  
+
   ALLOCATE(epsilon_cont(RadiationParameter%WaveLenDiscr))
 
   n_atom = 0.0
@@ -138,7 +138,7 @@ SUBROUTINE Radiation_continuum_ff(n, z, iElem)
   REAL               :: B_lambda                               ! Planck's function formulated for per wavelength
   INTEGER            :: i
 !===================================================================================================================================
-  
+
   kbTe = BoltzmannConst * RadiationInput(1)%Telec
   em_brems_const = 5.443e-52*(z-1)**2*RadiationInput(1)%NumDens*n/sqrt(RadiationInput(1)%Telec)
 
@@ -148,7 +148,7 @@ SUBROUTINE Radiation_continuum_ff(n, z, iElem)
 
 !    B_lambda = 2.*PlanckConst*(c/RadiationParameter%WaveLen(i))**3/(c**2)/(RadiationParameter%WaveLen(i)**2/c)/(EXP(expon)-1.)
     B_lambda = 2.*PlanckConst*c**2/(RadiationParameter%WaveLen(i)**5)/(EXP(expon)-1.)
-    
+
     Radiation_Emission_spec(i,iElem)   = Radiation_Emission_spec(i,iElem)   + em_brems
     Radiation_Absorption_spec(i,iElem) = Radiation_Absorption_spec(i,iElem) + em_brems/B_lambda
   END DO
@@ -229,7 +229,7 @@ SUBROUTINE Radiation_continuum_bf(iElem)
         EXIT
       END IF
     END DO
-    
+
 
     IF (iIon .NE. iAtom) THEN
       geIon      = SpeciesRadiation(iIon)%Level(1,1) ! values for ion in ground state
@@ -247,25 +247,25 @@ SUBROUTINE Radiation_continuum_bf(iElem)
         ! TRIM(RadiationInput(iAtom)%RadiationSpectraFileName)
     END IF
 
-    
+
 ! --- emission coefficient formula is valid for photorecombination from the ion ground state only!
     epsilonBFFactor = 1.719236e-46 * NumDensElectrons * NumDensIon * RadiationInput(iAtom)%NuclCharge**4. / geIon &
       / c * ( Species(iAtom)%MassIC/((Species(iAtom)%MassIC-ElectronMass) * MAX(250., RadiationInput(iAtom)%Telec) ))**1.5
     kappaBFFactor   = 2.815401e25 * RadiationInput(iAtom)%NuclCharge**4.
-    
+
     DO iWave = 1, RadiationParameter%WaveLenDiscr
 
       nue = c / RadiationParameter%WaveLen(iWave)
-      
+
       epsilonBF = 0.
       kappaBF   = 0.
-      
+
       DO iLevel = 1, LevelsConsidered
         IF(PlanckConst*nue .GE. ActualIonizationEn-SpeciesRadiation(iAtom)%Level(iLevel,2)) THEN
           ! gaunt factors using L.G. D'yachkov - Simple formula for the average Gaunt factor Eq. 9
           IF((SpeciesRadiation(iAtom)%Level(iLevel,5) .LT. 0.0) .OR. (SpeciesRadiation(iAtom)%Level(iLevel,5) .GT. 1.0)) THEN
             tau    = kbTe/(RadiationInput(iAtom)%NuclCharge**2.*Ryd)
-            s      = 0.5+0.5*tau**(0.5) 
+            s      = 0.5+0.5*tau**(0.5)
             sigmaN = 2.*MIN(SpeciesRadiation(iAtom)%Level(iLevel,2), RadiationInput(iAtom)%IonizationEn) &
               / (RadiationInput(iAtom)%NuclCharge**2.*Ryd)
             sigma  = SpeciesRadiation(iAtom)%Level(iLevel,2)/(RadiationInput(iAtom)%NuclCharge**2.*Ryd)
@@ -289,7 +289,7 @@ SUBROUTINE Radiation_continuum_bf(iElem)
 
       Radiation_Emission_spec(iWave,iElem)   = Radiation_Emission_spec(iWave,iElem)   + epsilonBF
       Radiation_Absorption_spec(iWave,iElem) = Radiation_Absorption_spec(iWave,iElem) + kappaBF
-      
+
     END DO
 
     ! PRINT*, 'calculated ', LevelsConsidered, 'bound-free levels of ', TRIM(RadiationInput(iAtom)%RadiationSpectraFileName)
@@ -328,10 +328,13 @@ SUBROUTINE Radiation_continuum_total(epsilon_cont, em_cont)
   INTEGER            :: i
 
 !===================================================================================================================================
-  !!!!!!!!!TODO!!!!!!!!       
-  dr_l2=0.0; y0=0.0; y1=0.0; x0=0.0
+  !!!!!!!!!TODO!!!!!!!!
+  dr_l2=0.0
+  y0=0.0
+  y1=0.0
+  x0=0.0
   DO i=1, RadiationParameter%WaveLenDiscr-2
- 
+
     x1 = RadiationParameter%WaveLen(i)
     x2 = RadiationParameter%WaveLen(i+1)
     x3 = RadiationParameter%WaveLen(i+2)
@@ -377,7 +380,7 @@ SUBROUTINE Radiation_continuum_total(epsilon_cont, em_cont)
   dr_t = 0.5 * (epsilon_cont(i)+epsilon_cont(i+1)) * (RadiationParameter%WaveLen(i+1)-RadiationParameter%WaveLen(i))
 
   em_cont = em_cont + dr_t
- 
+
 
 END SUBROUTINE Radiation_continuum_total
 

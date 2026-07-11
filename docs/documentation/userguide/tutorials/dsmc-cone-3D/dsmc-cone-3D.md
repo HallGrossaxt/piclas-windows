@@ -59,7 +59,8 @@ The following commands are required to save all elements even if they are not pa
     Mesh.MshFileVersion = 4.1;
     Save "70degCone_3D.msh";
 
-The mesh file in the file format `.h5` used by **piclas** has to be converted using HOPR by supplying an input file `hopr.ini` using the corresponding mode:
+The mesh file in the file format `.h5` used by **piclas** has to be converted using PyHOPE by supplying
+an input file `hopr.ini` using the corresponding mode:
 
     Mode = 5
 

@@ -64,6 +64,9 @@ USE MOD_Particle_Mesh_Vars    ,ONLY: ElemNodeID_Shared_Win
 USE MOD_MPI_Shared_vars       ,ONLY: MPI_COMM_SHARED
 USE MOD_MPI_Shared
 #endif /*USE_MPI*/
+#if defined(PARTICLES) && !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))
+USE MOD_PICDepo_Vars          ,ONLY: InitDepoSurfNodesIsDone
+#endif /*defined(PARTICLES) && !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))*/
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
@@ -75,7 +78,7 @@ LOGICAL                        :: CmdLineMode, NVisuDefault         ! In command
 CHARACTER(LEN=2)               :: NVisuString                       ! String containing NVisu from command line option
 CHARACTER(LEN=20)              :: fmtString                         ! String containing options for formatted write
 LOGICAL                        :: DGSolutionExists, ElemDataExists, SurfaceDataExists, VisuParticles, PartDataExists, DMDDataExists
-LOGICAL                        :: BGFieldExists, ExcitationDataExists, DVMSolutionExists
+LOGICAL                        :: BGFieldExists, ExcitationDataExists, DVMSolutionExists, SurfNodeSourceDataExists
 LOGICAL                        :: VisuAdaptiveInfo, AdaptiveInfoExists
 LOGICAL                        :: ReadMeshFinished, ElemMeshInit, SurfMeshInit
 LOGICAL                        :: ConvertPointToCellData
@@ -117,8 +120,7 @@ END IF
 
 IF (nArgs.LT.1) THEN
   ! If not, print out error message containing valid syntax
-  CALL CollectiveStop(__STAMP__,&
-  'ERROR - Please supply at least one .h5 files or a parameter file (or simply --NVisu=INTEGER) followed by h5 files!')
+  CALL CollectiveStop(__STAMP__,'ERROR - Please supply at least one .h5 files or a parameter file (or simply --NVisu=INTEGER) followed by h5 files!')
 END IF
 
 ! Measure init duration
@@ -146,8 +148,7 @@ ELSE
     CmdLineMode = .TRUE.
   ELSE
   ! Neither parameter file nor NVisu have been specified
-  CALL CollectiveStop(__STAMP__,&
-    'ERROR - First argument must be a parameter file or NVisu must be specified per --NVisu=INTEGER.')
+  CALL CollectiveStop(__STAMP__,'ERROR - First argument must be a parameter file or NVisu must be specified per --NVisu=INTEGER.')
   END IF
 END IF
 
@@ -221,8 +222,7 @@ END IF
 CALL InitIOHDF5()
 ! Get length of the floating number time stamp
 TimeStampLength = GETINT('TimeStampLength')
-IF((TimeStampLength.LT.4).OR.(TimeStampLength.GT.30)) CALL abort(__STAMP__&
-    ,'TimeStampLength cannot be smaller than 4 and not larger than 30')
+IF((TimeStampLength.LT.4).OR.(TimeStampLength.GT.30)) CALL abort(__STAMP__,'TimeStampLength cannot be smaller than 4 and not larger than 30')
 WRITE(UNIT=TimeStampLenStr ,FMT='(I0)') TimeStampLength
 WRITE(UNIT=TimeStampLenStr2,FMT='(I0)') TimeStampLength-4
 #ifdef PARTICLES
@@ -247,6 +247,9 @@ END IF
 ReadMeshFinished = .FALSE.
 ElemMeshInit = .FALSE.
 SurfMeshInit = .FALSE.
+#if defined(PARTICLES) && !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))
+InitDepoSurfNodesIsDone = .FALSE.
+#endif /*defined(PARTICLES) && !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))*/
 
 #if USE_MPI
   CALL InitMPIShared()
@@ -264,11 +267,12 @@ DO iArgs = iArgsStart,nArgs
   SWRITE(UNIT_stdOut,'(A,I3,A,I3,A)') 'Processing state ',iArgs-iArgsStart+1,' of ',nArgs-iArgsStart+1,'...'
 
   ! Open .h5 file
-  DGSolutionExists   = .FALSE.
-  ElemDataExists     = .FALSE.
-  SurfaceDataExists  = .FALSE.
-  PartDataExists     = .FALSE.
-  AdaptiveInfoExists = .FALSE.
+  DGSolutionExists         = .FALSE.
+  ElemDataExists           = .FALSE.
+  SurfaceDataExists        = .FALSE.
+  SurfNodeSourceDataExists = .FALSE.
+  PartDataExists           = .FALSE.
+  AdaptiveInfoExists       = .FALSE.
   CALL OpenDataFile(InputStateFile,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
   ! Get the type of the .h5 file
   CALL ReadAttribute(File_ID,'File_Type',1,StrScalar=File_Type)
@@ -279,14 +283,15 @@ DO iArgs = iArgsStart,nArgs
     DGSolutionExists = .FALSE.
     VisuParticles = .TRUE.
   END IF
-  CALL DatasetExists(File_ID , 'ElemData'     , ElemDataExists)
-  CALL DatasetExists(File_ID , 'ExcitationData', ExcitationDataExists)
-  CALL DatasetExists(File_ID , 'AdaptiveInfo' , AdaptiveInfoExists)
-  CALL DatasetExists(File_ID , 'SurfaceData'  , SurfaceDataExists)
-  CALL DatasetExists(File_ID , 'PartData'     , PartDataExists)
-  CALL DatasetExists(File_ID , 'BGField'      , BGFieldExists) ! deprecated , but allow for backward compatibility
-  CALL DatasetExists(File_ID , 'DVM_Solution'  , DVMSolutionExists)
-  CALL DatasetExists(File_ID , 'Mode_001_ElectricFieldX_Img'     , DMDDataExists)
+  CALL DatasetExists(File_ID , 'ElemData'                    , ElemDataExists)
+  CALL DatasetExists(File_ID , 'ExcitationData'              , ExcitationDataExists)
+  CALL DatasetExists(File_ID , 'AdaptiveInfo'                , AdaptiveInfoExists)
+  CALL DatasetExists(File_ID , 'SurfaceData'                 , SurfaceDataExists)
+  CALL DatasetExists(File_ID , 'SurfNodeSource'              , SurfNodeSourceDataExists)
+  CALL DatasetExists(File_ID , 'PartData'                    , PartDataExists)
+  CALL DatasetExists(File_ID , 'BGField'                     , BGFieldExists) ! deprecated , but allow for backward compatibility
+  CALL DatasetExists(File_ID , 'DVM_Solution'                , DVMSolutionExists)
+  CALL DatasetExists(File_ID , 'Mode_001_ElectricFieldX_Img' , DMDDataExists)
   IF(BGFieldExists)THEN
     DGSolutionExists  = .TRUE.
     DGSolutionDataset = 'BGField'
@@ -331,7 +336,7 @@ DO iArgs = iArgsStart,nArgs
     END DO
     IF(Ngeo.GT.NVisu) THEN
       CALL abort(__STAMP__,'ERROR: Ngeo as read-in from mesh is greater than the chosen NVisu! Ngeo: ',Ngeo)
-    END IF
+    ENDIF
     ElemMeshInit = .TRUE.
   END IF
   ! Build connectivity for surface output
@@ -375,6 +380,18 @@ DO iArgs = iArgsStart,nArgs
   ! === SurfaceData ================================================================================================================
   IF(SurfaceDataExists) THEN
     CALL ConvertSurfaceData(InputStateFile)
+  END IF
+  ! === SurfaceData ================================================================================================================
+  IF(SurfNodeSourceDataExists) THEN
+#if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))
+#if defined(PARTICLES)
+    CALL ConvertSurfNodeSourceData(InputStateFile)
+#else
+    CALL abort(__STAMP__,'ERROR: ConvertSurfNodeSourceData() is not implemented for PARTICLES=OFF')
+#endif /*defined(PARTICLES)*/
+#else
+    CALL abort(__STAMP__,'ERROR: ConvertSurfNodeSourceData() is not implemented for PP_TimeDiscMethod=4,300,400,700')
+#endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))*/
   END IF
   ! === PartData ===================================================================================================================
   IF(VisuParticles) THEN
@@ -426,6 +443,9 @@ END IF ! ReadMeshFinished
 
 SDEALLOCATE(NodeCoords_Connect)
 SDEALLOCATE(ElemUniqueNodeID)
+#if defined(PARTICLES) && !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))
+IF(InitDepoSurfNodesIsDone) CALL FinalizeDepoSurfNodes()
+#endif /*defined(PARTICLES) && !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))*/
 
 ! Measure processing duration
 GETTIME(Time)
@@ -446,6 +466,7 @@ END PROGRAM piclas2vtk
 SUBROUTINE WriteDataToVTK_PICLas(dim,data_size,FileString,nVar,VarNameVisu,nNodes,Coords,nElems,Array,ConnectInfo)
 ! MODULES
 USE MOD_Globals
+USE MOD_Globals_Vars              , ONLY: i4
 USE MOD_Particle_Boundary_Vars    ,ONLY: nSurfSample
 USE MOD_VTK                       ,ONLY: CreateConnectivity
 ! IMPLICIT VARIABLE HANDLING
@@ -468,7 +489,7 @@ INTEGER                       :: iLen, str_len, NVisu, NVisuCoords,NPlot_p1_2,NV
 CHARACTER(LEN=35)             :: StrOffset,TempStr1,TempStr2
 CHARACTER(LEN=200)            :: Buffer, tmp, tmp2, VarNameString
 CHARACTER(LEN=1)              :: lf, components_string
-REAL(KIND=4)                  :: float
+REAL(KIND=i4)                 :: float
 INTEGER,ALLOCATABLE           :: VarNameCombine(:), VarNameCombineLen(:), Vertex(:,:)
 REAL                          :: StartT,EndT ! Timer
 INTEGER,ALLOCATABLE,TARGET    :: nodeids(:)
@@ -795,6 +816,7 @@ USE MOD_VTK                   ,ONLY: WriteDataToVTK
 USE MOD_IO_HDF5               ,ONLY: HSize
 USE MOD_piclas2vtk_Vars       ,ONLY: ElemLocal, Nloc_Visu, PointToCellSwitch, NVisuAdd
 USE MOD_ReadInTools           ,ONLY: PrintOption
+USE MOD_StringTools           ,ONLY: Basename
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -829,7 +851,7 @@ INTEGER,ALLOCATABLE             :: Nloc_HDF5(:)                      !< Array fo
 LOGICAL                         :: DGSourceExists,DGTimeDerivativeExists,TimeExists,DGSourceExtExists,DMDMode,DGSolutionDatasetExists
 LOGICAL                         :: ElemDataExists, NlocFound
 CHARACTER(LEN=16)               :: hilf
-CHARACTER(LEN=255)              :: DMDFields(1:16), Dataset, NodeType
+CHARACTER(LEN=255)              :: DMDFields(1:16), Dataset, NodeType, OutputNameLoc
 CHARACTER(LEN=255),ALLOCATABLE  :: VarNamesAdd(:)
 ! p-Adaption
 TYPE tNGeo
@@ -842,6 +864,7 @@ END TYPE tNVisu
 
 TYPE(tNGeo),ALLOCATABLE         :: NVisuGeo(:)                  !< Container for polynomial degree specific variables [1:NlocMax]
 TYPE(tNVisu),ALLOCATABLE        :: NVisuLocal(:,:)              !< Container for polynomial degree specific variables [1:NlocMax,1:NlocMaxVisu]
+CHARACTER(LEN=100)              :: InputStateFileName
 !===================================================================================================================================
 ! 1.) Open given file to get the number of elements, the order and the name of the mesh file
 CALL OpenDataFile(InputStateFile,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
@@ -1101,7 +1124,7 @@ ASSOCIATE (&
       ! Check whether old (nDims=5) or new p-adaption data shape (nDim=2) is used
       IF(nDims.EQ.2) THEN
         IF(offsetElem.NE.0) CALL abort(__STAMP__,'offsetElem must be zero for the following to work (it should also be offsetDOF)')
-        ! TODO: Implement offsetDOF
+        ! OPTIMIZE: Implement offsetDOF as variable name to prevent confusion
         CALL ReadArray(TRIM(DGSolutionDataset),2,(/nVar_Solution,nDOF/),offsetElem,2, RealArray=U_N_2D(1:nVar_Solution,1:nDOF))
         ! Read nVar_Solution+1:nVar_Source
         IF(DGSourceExists) &
@@ -1131,7 +1154,7 @@ ASSOCIATE (&
       ! Check whether old (nDims=5) or new p-adaption data shape (nDim=3, 2 + 1 for nFields) is used
       IF(nDims.EQ.3) THEN
         IF(offsetElem.NE.0) CALL abort(__STAMP__,'offsetElem must be zero for the following to work (it should also be offsetDOF)')
-        ! TODO: Implement offsetDOF
+        ! OPTIMIZE: Implement offsetDOF as variable name to prevent confusion
         CALL ReadArray(TRIM(DGSolutionDataset),3,(/nVar_Solution,nDOF,nFields/),offsetElem,2,&
                       RealArray=U_N_3D(1:nVar_Solution,1:nDOF,1:nFields))
       ELSEIF(nDims.EQ.6) THEN
@@ -1241,10 +1264,18 @@ DO iField = 1, nFields
   ELSEIF(OutputName.EQ.'State')THEN
     FileString_DG=TRIM(TIMESTAMP(TRIM(ProjectName)//'_Solution',OutputTime))//'.vtu'
   ELSE
-    IF(TimeExists)THEN
-      FileString_DG=TRIM(TIMESTAMP(TRIM(ProjectName)//'_'//TRIM(OutputName),OutputTime))//'.vtu'
+    ! Adjust OutputName when converting ErrorNorms
+    CALL Basename(TRIM(InputStateFile), '/', InputStateFileName)
+    IF (StringBeginsWith(InputStateFileName,TRIM(ProjectName)//'_ErrorNorms')) THEN
+      OutputNameLoc = TRIM(OutputName)//'_ErrorNorms'
     ELSE
-      FileString_DG=TRIM(ProjectName)//'_'//TRIM(OutputName)//'.vtu'
+      OutputNameLoc = TRIM(OutputName)
+    END IF ! StringBeginsWith(InputStateFileName,TRIM(ProjectName)//'_ErrorNorms')
+    ! Check if a time stamp is present
+    IF(TimeExists)THEN
+      FileString_DG=TRIM(TIMESTAMP(TRIM(ProjectName)//'_'//TRIM(OutputNameLoc),OutputTime))//'.vtu'
+    ELSE
+      FileString_DG=TRIM(ProjectName)//'_'//TRIM(OutputNameLoc)//'.vtu'
     END IF ! TimeExists
   END IF
 
@@ -1557,7 +1588,7 @@ IF (nVarAdd.GT.0) THEN
       WRITE(File_Num, "(I3.3)") iArgs
       FileString=TRIM(TRIM(ProjectName)//'_RadVisu_'//TRIM(File_Num))//'.vtu'
   END SELECT
-  ! TODO: This is probably borked for NGeo>1 because then NodeCoords are not the corner nodes
+  ! INFO: This is probably borked for NGeo>1 because then NodeCoords are not the corner nodes
   ! For the case of high-order output, utilize the CreateConnectivity routine analogous to the ConvertSurfaceData
   CALL WriteDataToVTK_PICLas(3,8,FileString,nVarAdd,VarNamesAdd(1:nVarAdd),nUniqueNodes,NodeCoords_Connect(1:3,1:nUniqueNodes),nElems,&
                               ElemData(1:nVarAdd,1:nElems),ElemUniqueNodeID(1:8,1:nElems))
@@ -1715,6 +1746,205 @@ CALL CloseDataFile()
 
 END SUBROUTINE ConvertSurfaceData
 
+
+#if defined(PARTICLES)
+#if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))
+!===================================================================================================================================
+!> Convert surface charge (SurfNodeSource) results to a VTK format
+!===================================================================================================================================
+SUBROUTINE ConvertSurfNodeSourceData(InputStateFile)
+! MODULES
+USE MOD_Preproc
+USE MOD_Globals
+USE MOD_Globals_Vars            ,ONLY: ProjectName
+USE MOD_IO_HDF5                 ,ONLY: HSize
+USE MOD_HDF5_Input              ,ONLY: OpenDataFile,CloseDataFile,ReadAttribute,GetDataSize,File_ID,ReadArray,GetVarnames
+USE MOD_Interpolation           ,ONLY: GetVandermonde
+USE MOD_ChangeBasis             ,ONLY: ChangeBasis2D
+! USE MOD_Interpolation_Vars      ,ONLY: NodeTypeVISU,N_Inter
+USE MOD_Mesh_Vars               ,ONLY: NonUniqueGlobalNodeIDToFEMVertexID,NonUniqueGlobalSideIDToNonUniqueGlobalNodeID!,nSides
+! USE MOD_Mesh_Vars               ,ONLY: SideToNonUniqueGlobalSide,N_SurfMesh
+USE MOD_Particle_Mesh_Vars      ,ONLY: nNonUniqueGlobalSides
+USE MOD_ReadInTools             ,ONLY: PrintOption
+USE MOD_PICDepo                 ,ONLY: InitDepoSurfNodes
+USE MOD_PICDepo_Vars            ,ONLY: FEMVertexID2DepoSurfNodeID
+USE MOD_PICDepo_Vars            ,ONLY: InitDepoSurfNodesIsDone
+#if !(PP_TimeDiscMethod==700)
+USE MOD_PICDepo_Vars            ,ONLY: nDepoSurfNodes,nDepoSurfSides
+USE MOD_Particle_Mesh_Vars      ,ONLY: NodeCoords_Shared
+#endif /*!(PP_TimeDiscMethod==700)*/
+USE MOD_VTK                     ,ONLY: WriteDataToVTK
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+CHARACTER(LEN=255),INTENT(IN)   :: InputStateFile
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+CHARACTER(LEN=255)              :: FileString, File_Type
+CHARACTER(LEN=255),ALLOCATABLE  :: VarNamesSurf_HDF5(:),VarNamesSurf_HDF52(:)
+INTEGER                         :: nDims, nVarSurf, nSurfaceNodes, NonUniqueGlobalSideID, iVisuSide
+INTEGER                         :: NonUniqueNodeID,FEMVertexID,iNode
+REAL                            :: OutputTime
+REAL,ALLOCATABLE                :: NodeCoords_visu(:,:,:,:,:)     !< Coordinates of visualization nodes
+REAL,ALLOCATABLE                :: SurfOutputData(:,:,:,:,:)      !< Surface data mapped to the corner nodes of the faces
+! REAL,ALLOCATABLE                :: SideArea(:)                    !< Area for each non-unique global side ID
+REAL,ALLOCATABLE                :: SurfNodeSourceH5(:,:)
+INTEGER,ALLOCATABLE             :: ConnectInfo(:,:)
+INTEGER,PARAMETER               :: data_size=4
+INTEGER                         :: NodeSwitch(4),iDepoSurfNodeID,offsetNode,iSurfNode!,iSide,Nloc,p,q
+CHARACTER(LEN=255),PARAMETER    :: SurfNodeSourceDataset='SurfNodeSource'
+LOGICAL                         :: VarNamesSurfNodeSourceExists
+!===================================================================================================================================
+! Build vertex mappings
+IF(.NOT.InitDepoSurfNodesIsDone) CALL InitDepoSurfNodes() ! Get nDepoSurfNodes
+
+! Read in solution
+CALL OpenDataFile(InputStateFile,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
+CALL ReadAttribute(File_ID , 'Project_Name'     , 1 , StrScalar  = ProjectName)
+CALL ReadAttribute(File_ID , 'File_Type'        , 1 , StrScalar  = File_Type)
+CALL ReadAttribute(File_ID , 'Time'             , 1 , RealScalar = OutputTime)
+
+CALL GetDataSize(File_ID,TRIM(SurfNodeSourceDataset),nDims,HSize)
+DEALLOCATE(HSize)
+! nDepoSurfNodes = INT(HSize(1),2)
+CALL GetVarnames('VarNamesSurfNodeSource',VarNamesSurf_HDF52,VarNamesSurfNodeSourceExists,nVarSurf)
+IF(.NOT.VarNamesSurfNodeSourceExists) CALL abort(__STAMP__,' VarNamesSurfNodeSource not found in .h5 file')
+IF(nVarSurf.GT.1) nVarSurf = 1 ! FEATURE: Remove this when conversion of all properties is implemented
+ALLOCATE(VarNamesSurf_HDF5(nVarSurf))
+VarNamesSurf_HDF5 = VarNamesSurf_HDF52(1)
+! Read the surface charge data on the FEM vertices
+ALLOCATE(SurfNodeSourceH5(2,nDepoSurfNodes))
+CALL ReadArray(TRIM(SurfNodeSourceDataset),2,(/2_IK,INT(nDepoSurfNodes,IK)/),0_IK,2,RealArray=SurfNodeSourceH5)
+  ! print*,"ROOT: ConvertSurfNodeSourceData(), which read SurfNodeArea"
+  ! read*
+
+! Get number of surface nodes
+nSurfaceNodes = 4*nDepoSurfSides
+
+! Get data and coordinates for visualisation
+ALLOCATE(SurfOutputData(1:nVarSurf,1,1,0:0,1:nSurfaceNodes))
+SurfOutputData = 0.
+
+ALLOCATE(NodeCoords_visu(1:3,0:0,0:0,0:0,1:nSurfaceNodes))
+NodeCoords_visu = 0.
+
+! ! Calculate the area of each side
+! ALLOCATE(SideArea(1:nNonUniqueGlobalSides))
+! ! Loop over all local sides
+! DO iSide = 1, nSides
+! ! Get non-unique global side index from local side index
+!   NonUniqueGlobalSideID = SideToNonUniqueGlobalSide(1,iSide)
+!   ! Get polynomial degree of local side
+!   Nloc = N_SurfMesh(iSide)%NSide          ! Get polynomial degree of side
+!   ! Nullify
+!   SideArea(NonUniqueGlobalSideID) = 0
+!   DO q=0,Nloc; DO p=0,Nloc
+!     SideArea(NonUniqueGlobalSideID) = SideArea(NonUniqueGlobalSideID) + &
+!                                       N_Inter(Nloc)%wGP(p)*N_Inter(Nloc)%wGP(q)*N_SurfMesh(iSide)%SurfElem(p,q)
+!   END DO; END DO ! p,q
+! END DO ! iSide = 1, nSides
+
+! WriteDataToVTK_PICLas: Switch the nodes (different ordering between NonUniqueVertexID and NonUniqueNodeID)
+! NodeSwitch=(/1,3,4,2/)
+
+! WriteDataToVTK: switch the last two node IDs
+! INFO: use pq2iNode here or does this work?
+NodeSwitch=(/1,2,4,3/)
+
+ALLOCATE(ConnectInfo(1:data_size,1:nDepoSurfSides))
+! ALLOCATE(ConnectInfo(1:data_size,1:nSurfaceNodes))
+ConnectInfo = 0
+iVisuSide = 0
+offsetNode = 0
+DO NonUniqueGlobalSideID = 1,nNonUniqueGlobalSides
+  ! Check if side is a surface deposition side
+  IF(NonUniqueGlobalSideIDToNonUniqueGlobalNodeID(1,NonUniqueGlobalSideID).EQ.0) CYCLE
+  iVisuSide = iVisuSide + 1
+  DO iNode = 1,4
+    iSurfNode = offsetNode + iNode
+    ConnectInfo(iNode,iVisuSide) = iSurfNode ! ConnectInfo(data_size,nElems) !> Node connection information
+    ! ConnectInfo(iNode,iSurfNode) = iSurfNode ! ConnectInfo(data_size,nElems) !> Node connection information
+    ! Get the non-unique node index
+    NonUniqueNodeID = NonUniqueGlobalSideIDToNonUniqueGlobalNodeID(NodeSwitch(iNode),NonUniqueGlobalSideID)
+    ! Set coordinate
+    NodeCoords_visu(1:3,0,0,0,iSurfNode) = NodeCoords_Shared(1:3,NonUniqueNodeID)
+    ! Get the unique FEM vertex index
+    FEMVertexID = NonUniqueGlobalNodeIDToFEMVertexID(NonUniqueNodeID)
+    ! Get surface deposition node index
+    iDepoSurfNodeID = FEMVertexID2DepoSurfNodeID(FEMVertexID)
+    ! Set surface charge density value
+    SurfOutputData(1,1,1,0,iSurfNode) = SurfNodeSourceH5(1,iDepoSurfNodeID)/SurfNodeSourceH5(2,iDepoSurfNodeID)
+
+    ! Output of surface charge without considering the area for testing
+    ! SurfOutputData(1,1,1,0,iSurfNode) = SurfNodeSourceH5(1,iDepoSurfNodeID)
+
+    ! Output of surface area
+    ! SurfOutputData(1,1,1,0,iSurfNode) = SurfNodeSourceH5(2,iDepoSurfNodeID)
+
+    ! Output of y-component for testing
+    ! SurfOutputData(1,1,1,0,iSurfNode) =  NodeCoords_Shared(2,NonUniqueNodeID)
+
+    ! Output of z-component for testing
+    ! SurfOutputData(1,1,1,0,iSurfNode) =  NodeCoords_Shared(3,NonUniqueNodeID)
+
+  END DO ! iNode = 1,4
+  offsetNode = offsetNode + 4
+END DO ! NonUniqueGlobalSideID =  1,nNonUniqueGlobalSides
+
+FileString=TRIM(TIMESTAMP(TRIM(ProjectName)//'_SurfNodeSource',OutputTime))//'.vtu'
+
+CALL WriteDataToVTK(nVarSurf         ,&
+                    1                ,&
+                    nDepoSurfSides   ,&
+                    VarNamesSurf_HDF5,&
+                    NodeCoords_visu  ,&
+                    SurfOutputData   ,&
+                    FileString       ,&
+                    dim = 2          ,&
+                    DGFV = 0          &
+                    )
+
+CALL CloseDataFile()
+
+SDEALLOCATE(VarNamesSurf_HDF5)
+SDEALLOCATE(SurfOutputData)
+SDEALLOCATE(NodeCoords_visu)
+END SUBROUTINE ConvertSurfNodeSourceData
+
+
+!===================================================================================================================================
+!> Deallocate the surface charge containser used for conversion to vtu
+!===================================================================================================================================
+SUBROUTINE FinalizeDepoSurfNodes()
+! MODULES
+USE MOD_Mesh_Vars               ,ONLY: NonUniqueGlobalNodeIDToFEMVertexID,NonUniqueGlobalSideIDToNonUniqueGlobalNodeID
+USE MOD_PICDepo_Vars            ,ONLY: SurfNodeSource,FEMVertexID2DepoSurfNodeID,DepoSurfNodeID2FEMVertexID,Vdm_EQ_N
+USE MOD_PICDepo_Vars            ,ONLY: SurfNodeSymmetryFactor,Vdm_N_EQ,IsDepoSurfSide,SurfNodeArea,IsDepoSurfNode,pq2iNode
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT/OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+!===================================================================================================================================
+SDEALLOCATE(Vdm_EQ_N)
+SDEALLOCATE(Vdm_N_EQ)
+SDEALLOCATE(SurfNodeSource)
+SDEALLOCATE(SurfNodeSymmetryFactor)
+SDEALLOCATE(DepoSurfNodeID2FEMVertexID)
+SDEALLOCATE(FEMVertexID2DepoSurfNodeID)
+SDEALLOCATE(NonUniqueGlobalNodeIDToFEMVertexID)
+SDEALLOCATE(NonUniqueGlobalSideIDToNonUniqueGlobalNodeID)
+SDEALLOCATE(IsDepoSurfSide)
+SDEALLOCATE(IsDepoSurfNode)
+SDEALLOCATE(SurfNodeArea)
+SDEALLOCATE(pq2iNode)
+END SUBROUTINE FinalizeDepoSurfNodes
+#endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400) || (PP_TimeDiscMethod==700))*/
+#endif /*defined(PARTICLES)*/
 
 !===================================================================================================================================
 !> Create connectivities for matching sides
@@ -1932,7 +2162,7 @@ Buffer='      <Points>'//lf;WRITE(ivtk) TRIM(Buffer)
 Buffer='        <DataArray type="Float32" Name="Coordinates" NumberOfComponents="3" format="appended" '// &
                   'offset="'//TRIM(ADJUSTL(StrOffset))//'"/>'//lf;WRITE(ivtk) TRIM(Buffer)
 ! INTEGER KIND=4 check
-CHECKSAFEINT(INT(Offset,8)+INT(SizeINTdummy,8)+3_8*INT(nVTKPoints,8)*INT(SIZEOF_F(FLOATdummy),8),4)
+CHECKSAFEINT(INT(Offset,8)+INT(SizeINTdummy,8)+INT(3,8)*INT(nVTKPoints,8)*INT(SIZEOF_F(FLOATdummy),8),4)
 Offset=          Offset   +    SizeINTdummy   +3  *    nVTKPoints   *    SIZEOF_F(FLOATdummy)
 WRITE(StrOffset,'(I16)')Offset
 Buffer='      </Points>'//lf;WRITE(ivtk) TRIM(Buffer)

@@ -14,6 +14,7 @@
 
 MODULE MOD_Particle_Analyze_Code
 ! IMPLICIT VARIABLE HANDLING
+USE MOD_Globals_Vars, ONLY: i8,dp
 IMPLICIT NONE
 #if defined(PARTICLES) && defined(CODE_ANALYZE)
 PRIVATE
@@ -469,7 +470,7 @@ USE MOD_Particle_Vars         ,ONLY: PartVeloRotRef, UseRotRefFrame
 IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
-INTEGER(KIND=8),INTENT(IN)    :: iter                     !< simulation iteration counter
+INTEGER(KIND=i8),INTENT(IN)    :: iter                     !< simulation iteration counter
 REAL,INTENT(IN)               :: t                        !< simulation time
 REAL,INTENT(INOUT)            :: PartStateAnalytic(1:AnalyticPartDim)   !< analytic position and velocity
 !----------------------------------------------------------------------------------------------------------------------------------
@@ -579,7 +580,7 @@ IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------------
 ! INPUT VARIABLES
 REAL,INTENT(IN)               :: time                        !< simulation time
-INTEGER(KIND=8),INTENT(IN)    :: iter                        !< iteration
+INTEGER(KIND=i8),INTENT(IN)    :: iter                        !< iteration
 !----------------------------------------------------------------------------------------------------------------------------------
 ! OUTPUT VARIABLES
 !----------------------------------------------------------------------------------------------------------------------------------
@@ -615,8 +616,8 @@ USE MOD_PICInterpolation_Vars ,ONLY: L_2_Error_Part,AnalyticPartDim
 IMPLICIT NONE
 ! INPUT / OUTPUT VARIABLES
 REAL,INTENT(IN)                  :: time
-INTEGER(KIND=8),INTENT(IN)       :: iter
-REAL(KIND=8),INTENT(IN)          :: PartStateAnalytic(1:AnalyticPartDim)
+INTEGER(KIND=i8),INTENT(IN)       :: iter
+REAL(KIND=dp),INTENT(IN)          :: PartStateAnalytic(1:AnalyticPartDim)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 CHARACTER(LEN=28),PARAMETER              :: outfile='ParticlePositionAnalytic.csv'

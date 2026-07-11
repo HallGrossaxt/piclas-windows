@@ -30,18 +30,16 @@ PUBLIC         :: MacroRestart_InsertParticles
 !===================================================================================================================================
 CONTAINS
 
-SUBROUTINE MacroRestart_InsertParticles()
 !===================================================================================================================================
 !> Insertion of simulation particles based on the read-in number density, velocity and temperature from the given DSMCState
 !> Different treatment for 3D, 2D and 1D simulations
-!> Loop over all elements
-!>    Loop over all species
-!>    1) Determine volume of bounding box
-!>    2) Determine number of particles to be inserted
-!>      Loop over the number of particles
-!>        2.1) Generate random position within bounding box and accept only if inside element
-!>        2.2) Initialize particle assuming an equilibrium distribution
+!> 1) 1st loop over all elements and species: Determine volume of bounding box and number of particles to be inserted
+!> 2) Increase particle vector length by the required amount (sum of all elements and species per processor)
+!> 3) 2nd loop over all elements and species: Insert the previously determined number of particles
+!>   3.1) Generate random position within bounding box and accept only if inside element
+!>   3.2) Initialize particle assuming an equilibrium distribution
 !===================================================================================================================================
+SUBROUTINE MacroRestart_InsertParticles()
 ! MODULES
 USE MOD_Globals
 USE MOD_Globals_Vars            ,ONLY: Pi
@@ -68,94 +66,57 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 INTEGER                             :: iElem,iSpec,iPart,nPart,locnPart,iHeight,yPartitions,CNElemID,GlobalElemID
 REAL                                :: iRan, RandomPos(3), PartDens, MaxPosTemp, MinPosTemp
-REAL                                :: TempVol, Volume, PosVar(3)
+REAL                                :: TempVol, PosVar(3), Bounds(1:2,1:3)
 LOGICAL                             :: InsideFlag
 REAL                                :: StartT,EndT ! Timer
+INTEGER, ALLOCATABLE                :: tmpnPartElem(:,:,:)
 !===================================================================================================================================
 GETTIME(StartT)
 SWRITE(UNIT_stdOut,'(A)',ADVANCE='NO') ' PERFORMING MACROSCOPIC RESTART...'
-
+yPartitions = 6
+IF (Symmetry%Axisymmetric.AND.(DoRadialWeighting.OR.DoLinearWeighting.OR.DoCellLocalWeighting)) THEN
+  ALLOCATE(tmpnPartElem(yPartitions, nSpecies, nElems))
+ELSE
+  ALLOCATE(tmpnPartElem(1, nSpecies, nElems))
+END IF
 locnPart = 1
-
+tmpnPartElem = 0
+! 1) The first loop over elems only calculates the number of particles to be inserted per cell.
+! Therefore, IncreaseMaxParticleNumber is only called once, which is significantly faster for a large number of cells and species.
 DO iElem = 1, nElems
   GlobalElemID = iElem + offsetElem
   CNElemID = GetCNElemID(GlobalElemID)
-  ASSOCIATE( Bounds => BoundsOfElem_Shared(1:2,1:3,GlobalElemID) ) ! 1-2: Min, Max value; 1-3: x,y,z
-! #################### 2D ##########################################################################################################
-    IF (Symmetry%Axisymmetric) THEN
-      IF (DoRadialWeighting.OR.DoLinearWeighting.OR.DoCellLocalWeighting) THEN
-        DO iSpec = 1, nSpecies
-          ! Skip background gas species
-          IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
-          ! Skip electron species with ambipolar diffusion
-          IF (DSMC%DoAmbipolarDiff) THEN
-            IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+  Bounds(1:2,1:3) = BoundsOfElem_Shared(1:2,1:3,GlobalElemID) ! 1-2: Min, Max value; 1-3: x,y,z
+  IF (Symmetry%Axisymmetric) THEN
+    ! #################### Axisymmetric with weighting ###########################################################################
+    IF (DoRadialWeighting.OR.DoLinearWeighting.OR.DoCellLocalWeighting) THEN
+      DO iSpec = 1, nSpecies
+        ! Skip background gas species
+        IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+        ! Skip electron species with ambipolar diffusion
+        IF (DSMC%DoAmbipolarDiff) THEN
+          IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+        END IF
+        ! Particle weighting
+        DO iHeight = 1, yPartitions
+          MinPosTemp = Bounds(1,2) + (Bounds(2,2) - Bounds(1,2))/ yPartitions *(iHeight-1.)
+          MaxPosTemp = Bounds(1,2) + (Bounds(2,2) - Bounds(1,2))/ yPartitions *iHeight
+          TempVol =  (MaxPosTemp-MinPosTemp)*(Bounds(2,1)-Bounds(1,1)) * Pi * (MaxPosTemp+MinPosTemp)
+          IF (DoRadialWeighting) THEN
+            PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / CalcRadWeightMPF((MaxPosTemp+MinPosTemp)*0.5,iSpec)
+          ELSE IF (DoLinearWeighting.OR.DoCellLocalWeighting) THEN
+            PosVar = (/(Bounds(2,1)+Bounds(1,1))*0.5,(MaxPosTemp+MinPosTemp)*0.5,0.0/)
+            PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / CalcVarWeightMPF(PosVar,iElem)
           END IF
-          yPartitions = 6
-          ! Particle weighting
-          DO iHeight = 1, yPartitions
-            MinPosTemp = Bounds(1,2) + (Bounds(2,2) - Bounds(1,2))/ yPartitions *(iHeight-1.)
-            MaxPosTemp = Bounds(1,2) + (Bounds(2,2) - Bounds(1,2))/ yPartitions *iHeight
-            TempVol =  (MaxPosTemp-MinPosTemp)*(Bounds(2,1)-Bounds(1,1)) * Pi * (MaxPosTemp+MinPosTemp)
-            IF (DoRadialWeighting) THEN
-              PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / CalcRadWeightMPF((MaxPosTemp+MinPosTemp)*0.5,iSpec)
-            ELSE IF (DoLinearWeighting.OR.DoCellLocalWeighting) THEN
-              PosVar = (/(Bounds(2,1)+Bounds(1,1))*0.5,(MaxPosTemp+MinPosTemp)*0.5,0.0/)
-              PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / CalcVarWeightMPF(PosVar,iElem)
-            END IF
-            IF(UseVarTimeStep) THEN
-              PartDens = PartDens / GetParticleTimeStep((Bounds(2,1)+Bounds(1,1))*0.5, (MaxPosTemp+MinPosTemp)*0.5, iElem)
-            END IF
-            CALL RANDOM_NUMBER(iRan)
-            nPart = INT(PartDens  * TempVol + iRan)
-            DO iPart = 1, nPart
-              InsideFlag=.FALSE.
-              CALL RANDOM_NUMBER(RandomPos)
-              RandomPos(1) = Bounds(1,1) + RandomPos(1)*(Bounds(2,1)-Bounds(1,1))
-              RandomPos(2) = MinPosTemp + RandomPos(2)*(MaxPosTemp-MinPosTemp)
-              RandomPos(3) = 0.0
-              InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
-              IF (InsideFlag) THEN
-                IF (locnPart.GE.PDM%maxParticleNumber) CALL IncreaseMaxParticleNumber()
-                PartState(1:3,locnPart) = RandomPos(1:3)
-                CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
-                locnPart = locnPart + 1
-              END IF
-            END DO ! nPart
-          END DO ! yPartitions
-        END DO ! nSpecies
-      ELSE ! No Weighting
-        DO iSpec = 1, nSpecies
-          ! Skip background gas species
-          IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
-          ! Skip electron species with ambipolar diffusion
-          IF (DSMC%DoAmbipolarDiff) THEN
-            IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
-          END IF
-          PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
-          CALL RANDOM_NUMBER(iRan)
           IF(UseVarTimeStep) THEN
-            PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
+            PartDens = PartDens / GetParticleTimeStep((Bounds(2,1)+Bounds(1,1))*0.5, (MaxPosTemp+MinPosTemp)*0.5, iElem)
           END IF
-          nPart = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
-          CALL IncreaseMaxParticleNumber(nPart)
-          DO iPart = 1, nPart
-            InsideFlag=.FALSE.
-            DO WHILE (.NOT.InsideFlag)
-              CALL RANDOM_NUMBER(RandomPos)
-              RandomPos(1) = Bounds(1,1) + RandomPos(1)*(Bounds(2,1)-Bounds(1,1))
-              RandomPos(2) = SQRT(RandomPos(2)*(Bounds(2,2)**2-Bounds(1,2)**2)+Bounds(1,2)**2)
-              RandomPos(3) = 0.0
-              InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
-            END DO
-            PartState(1:3,locnPart) = RandomPos(1:3)
-            CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
-            locnPart = locnPart + 1
-          END DO ! nPart
-        END DO ! nSpecies
-      END IF ! Weighting: YES/NO
-    ELSE IF(Symmetry%Order.EQ.2) THEN
-      Volume = (Bounds(2,2) - Bounds(1,2))*(Bounds(2,1) - Bounds(1,1))
+          CALL RANDOM_NUMBER(iRan)
+          tmpnPartElem(iHeight,iSpec,iElem) = INT(PartDens  * TempVol + iRan)
+        END DO ! yPartitions
+      END DO ! nSpecies
+    ELSE ! No Weighting
+    ! #################### Axisymmetric without weighting ########################################################################
       DO iSpec = 1, nSpecies
         ! Skip background gas species
         IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
@@ -168,24 +129,80 @@ DO iElem = 1, nElems
         IF(UseVarTimeStep) THEN
           PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
         END IF
-        nPart = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
-        CALL IncreaseMaxParticleNumber(nPart)
+        tmpnPartElem(1, iSpec, iElem) = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
+      END DO ! nSpecies
+    END IF ! Weighting: YES/NO
+  ELSE IF(Symmetry%Order.EQ.2) THEN
+  ! #################### 2D ######################################################################################################
+    DO iSpec = 1, nSpecies
+      ! Skip background gas species
+      IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+      ! Skip electron species with ambipolar diffusion
+      IF (DSMC%DoAmbipolarDiff) THEN
+        IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+      END IF
+      PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
+      CALL RANDOM_NUMBER(iRan)
+      IF(UseVarTimeStep) THEN
+        PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
+      END IF
+      tmpnPartElem(1, iSpec, iElem) = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
+    END DO ! nSpecies
+  ELSE IF(Symmetry%Order.EQ.1) THEN
+  ! #################### 1D ######################################################################################################
+    DO iSpec = 1, nSpecies
+      ! Skip background gas species
+      IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+      ! Skip electron species with ambipolar diffusion
+      IF (DSMC%DoAmbipolarDiff) THEN
+        IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+      END IF
+      PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
+      CALL RANDOM_NUMBER(iRan)
+      IF(UseVarTimeStep) THEN
+        PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
+      END IF
+      tmpnPartElem(1, iSpec, iElem) = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
+      CALL IncreaseMaxParticleNumber(nPart)
+    END DO ! nSpecies
+  ELSE
+  ! #################### 3D ##########################################################################################################
+    DO iSpec = 1, nSpecies
+      ! Skip background gas species
+      IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+      ! Skip electron species with ambipolar diffusion
+      IF (DSMC%DoAmbipolarDiff) THEN
+        IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+      END IF
+      IF (MacroRestartValues(iElem,iSpec,DSMC_NUMDENS).LE.0.) CYCLE
+      CALL RANDOM_NUMBER(iRan)
+      ! Initialize the clones for the variable weighting in 3D
+      IF (DoLinearWeighting.OR.DoCellLocalWeighting) THEN
+        CNElemID = GetCNElemID(GlobalElemID)
+        PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / CalcVarWeightMPF(ElemMidPoint_Shared(:,CNElemID),iElem)
+      ELSE
+        PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
+      END IF ! LinearWeighting
+      IF(UseVarTimeStep) THEN
+        PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
+      END IF
+      nPart = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
+      tmpnPartElem(1, iSpec, iElem) = nPart
+    END DO
+  END IF ! 1D/2D/Axisymmetric/3D
+END DO ! nElems
 
-        DO iPart = 1, nPart
-          InsideFlag=.FALSE.
-          DO WHILE(.NOT.InsideFlag)
-            CALL RANDOM_NUMBER(RandomPos(1:2))
-            RandomPos(1:2) = Bounds(1,1:2) + RandomPos(1:2)*(Bounds(2,1:2)-Bounds(1,1:2))
-            RandomPos(3) = 0.0
-            InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
-          END DO
-          PartState(1:3,locnPart) = RandomPos(1:3)
-          CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
-          locnPart = locnPart + 1
-        END DO ! nPart
-      END DO ! nSpecies
-    ELSE IF(Symmetry%Order.EQ.1) THEN
-      Volume = (Bounds(2,1) - Bounds(1,1))
+! 2) Increase the particle vector length once by the determined number of particles
+CALL IncreaseMaxParticleNumber(SUM(tmpnPartElem))
+
+! 3) Second loop to insert the particles
+DO iElem = 1, nElems
+  GlobalElemID = iElem + offsetElem
+  CNElemID = GetCNElemID(GlobalElemID)
+  Bounds(1:2,1:3) = BoundsOfElem_Shared(1:2,1:3,GlobalElemID) ! 1-2: Min, Max value; 1-3: x,y,z
+  IF (Symmetry%Axisymmetric) THEN
+    ! #################### Axisymmetric with weighting ###########################################################################
+    IF (DoRadialWeighting.OR.DoLinearWeighting.OR.DoCellLocalWeighting) THEN
       DO iSpec = 1, nSpecies
         ! Skip background gas species
         IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
@@ -193,56 +210,41 @@ DO iElem = 1, nElems
         IF (DSMC%DoAmbipolarDiff) THEN
           IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
         END IF
-        PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
-        CALL RANDOM_NUMBER(iRan)
-        IF(UseVarTimeStep) THEN
-          PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
-        END IF
-        nPart = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
-        CALL IncreaseMaxParticleNumber(nPart)
-        DO iPart = 1, nPart
-          InsideFlag=.FALSE.
-          DO WHILE(.NOT.InsideFlag)
-            CALL RANDOM_NUMBER(RandomPos(1))
-            RandomPos(1:2) = Bounds(1,1) + RandomPos(1)*(Bounds(2,1)-Bounds(1,1))
-            RandomPos(2) = 0.0
-            RandomPos(3) = 0.0
-            InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
-          END DO
-          PartState(1:3,locnPart) = RandomPos(1:3)
-          CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
-          locnPart = locnPart + 1
-        END DO ! nPart
-      END DO ! nSpecies
-    ELSE
-! #################### 3D ##########################################################################################################
-      Volume = (Bounds(2,3) - Bounds(1,3))*(Bounds(2,2) - Bounds(1,2))*(Bounds(2,1) - Bounds(1,1))
-      DO iSpec = 1, nSpecies
-        ! Skip background gas species
-        IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
-        ! Skip electron species with ambipolar diffusion
-        IF (DSMC%DoAmbipolarDiff) THEN
-          IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
-        END IF
-        PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
-        CALL RANDOM_NUMBER(iRan)
-        ! Initialize the clones for the variable weighting in 3D
-        IF (DoLinearWeighting.OR.DoCellLocalWeighting) THEN
-          CNElemID = GetCNElemID(GlobalElemID)
-          PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / CalcVarWeightMPF(ElemMidPoint_Shared(:,CNElemID),iElem)
-        ELSE
-          PartDens = MacroRestartValues(iElem,iSpec,DSMC_NUMDENS) / Species(iSpec)%MacroParticleFactor
-        END IF ! LinearWeighting
-        IF(UseVarTimeStep) THEN
-          PartDens = PartDens / GetParticleTimeStep(ElemMidPoint_Shared(1,CNElemID), ElemMidPoint_Shared(2,CNElemID), iElem)
-        END IF
-        nPart = INT(PartDens * ElemVolume_Shared(CNElemID) + iRan)
-        CALL IncreaseMaxParticleNumber(nPart)
-        DO iPart = 1, nPart
-          InsideFlag=.FALSE.
-          DO WHILE(.NOT.InsideFlag)
+        ! Particle weighting
+        DO iHeight = 1, yPartitions
+          MinPosTemp = Bounds(1,2) + (Bounds(2,2) - Bounds(1,2))/ yPartitions *(iHeight-1.)
+          MaxPosTemp = Bounds(1,2) + (Bounds(2,2) - Bounds(1,2))/ yPartitions *iHeight
+          DO iPart = 1, tmpnPartElem(iHeight, iSpec, iElem)
+            InsideFlag=.FALSE.
             CALL RANDOM_NUMBER(RandomPos)
-            RandomPos(1:3) = Bounds(1,1:3) + RandomPos(1:3)*(Bounds(2,1:3)-Bounds(1,1:3))
+            RandomPos(1) = Bounds(1,1) + RandomPos(1)*(Bounds(2,1)-Bounds(1,1))
+            RandomPos(2) = MinPosTemp + RandomPos(2)*(MaxPosTemp-MinPosTemp)
+            RandomPos(3) = 0.0
+            InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
+            IF (InsideFlag) THEN
+              PartState(1:3,locnPart) = RandomPos(1:3)
+              CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
+              locnPart = locnPart + 1
+            END IF
+          END DO ! nPart
+        END DO ! yPartitions
+      END DO ! nSpecies
+    ELSE ! No Weighting
+    ! #################### Axisymmetric without weighting ########################################################################
+      DO iSpec = 1, nSpecies
+        ! Skip background gas species
+        IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+        ! Skip electron species with ambipolar diffusion
+        IF (DSMC%DoAmbipolarDiff) THEN
+          IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+        END IF
+        DO iPart = 1, tmpnPartElem(1, iSpec, iElem)
+          InsideFlag=.FALSE.
+          DO WHILE (.NOT.InsideFlag)
+            CALL RANDOM_NUMBER(RandomPos)
+            RandomPos(1) = Bounds(1,1) + RandomPos(1)*(Bounds(2,1)-Bounds(1,1))
+            RandomPos(2) = SQRT(RandomPos(2)*(Bounds(2,2)**2-Bounds(1,2)**2)+Bounds(1,2)**2)
+            RandomPos(3) = 0.0
             InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
           END DO
           PartState(1:3,locnPart) = RandomPos(1:3)
@@ -250,8 +252,69 @@ DO iElem = 1, nElems
           locnPart = locnPart + 1
         END DO ! nPart
       END DO ! nSpecies
-    END IF ! 1D/2D/Axisymmetric/3D
-  END ASSOCIATE
+    END IF ! Weighting: YES/NO
+  ELSE IF(Symmetry%Order.EQ.2) THEN
+  ! #################### 2D ######################################################################################################
+    DO iSpec = 1, nSpecies
+      ! Skip background gas species
+      IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+      ! Skip electron species with ambipolar diffusion
+      IF (DSMC%DoAmbipolarDiff) THEN
+        IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+      END IF
+      DO iPart = 1, tmpnPartElem(1, iSpec, iElem)
+        InsideFlag=.FALSE.
+        DO WHILE(.NOT.InsideFlag)
+          CALL RANDOM_NUMBER(RandomPos(1:2))
+          RandomPos(1:2) = Bounds(1,1:2) + RandomPos(1:2)*(Bounds(2,1:2)-Bounds(1,1:2))
+          RandomPos(3) = 0.0
+          InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
+        END DO
+        PartState(1:3,locnPart) = RandomPos(1:3)
+        CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
+        locnPart = locnPart + 1
+      END DO ! nPart
+    END DO ! nSpecies
+  ELSE IF(Symmetry%Order.EQ.1) THEN
+  ! #################### 1D ######################################################################################################
+    DO iSpec = 1, nSpecies
+      ! Skip background gas species
+      IF(BGGas%BackgroundSpecies(iSpec)) CYCLE
+      ! Skip electron species with ambipolar diffusion
+      IF (DSMC%DoAmbipolarDiff) THEN
+        IF (iSpec.EQ.DSMC%AmbiDiffElecSpec) CYCLE
+      END IF
+      DO iPart = 1, tmpnPartElem(1, iSpec, iElem)
+        InsideFlag=.FALSE.
+        DO WHILE(.NOT.InsideFlag)
+          CALL RANDOM_NUMBER(RandomPos(1))
+          RandomPos(1:2) = Bounds(1,1) + RandomPos(1)*(Bounds(2,1)-Bounds(1,1))
+          RandomPos(2) = 0.0
+          RandomPos(3) = 0.0
+          InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
+        END DO
+        PartState(1:3,locnPart) = RandomPos(1:3)
+        CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
+        locnPart = locnPart + 1
+      END DO ! nPart
+    END DO ! nSpecies
+  ELSE
+  ! #################### 3D ##########################################################################################################
+    DO iSpec = 1, nSpecies
+      IF (tmpnPartElem(1,iSpec, iElem).EQ.0) CYCLE
+      DO iPart = 1, tmpnPartElem(1, iSpec, iElem)
+        InsideFlag=.FALSE.
+        DO WHILE(.NOT.InsideFlag)
+          CALL RANDOM_NUMBER(RandomPos)
+          RandomPos(1:3) = Bounds(1,1:3) + RandomPos(1:3)*(Bounds(2,1:3)-Bounds(1,1:3))
+          InsideFlag = ParticleInsideCheck(RandomPos,iPart,GlobalElemID)
+        END DO
+        PartState(1:3,locnPart) = RandomPos(1:3)
+        CALL InitializeParticleMaxwell(locnPart,iSpec,iElem,Mode=1)
+        locnPart = locnPart + 1
+      END DO ! nPart
+    END DO ! nSpecies
+  END IF ! 1D/2D/Axisymmetric/3D
 END DO ! nElems
 
 PDM%ParticleVecLength = PDM%ParticleVecLength + locnPart
@@ -269,6 +332,5 @@ GETTIME(EndT)
 CALL DisplayMessageAndTime(EndT-StartT, ' DONE!', DisplayDespiteLB=.TRUE., DisplayLine=.FALSE.)
 
 END SUBROUTINE MacroRestart_InsertParticles
-
 
 END MODULE MOD_Macro_Restart

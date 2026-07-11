@@ -42,19 +42,22 @@ IMPLICIT NONE
 !==================================================================================================================================
 CALL prms%SetSection("SurfaceModel")
 
-CALL prms%CreateIntOption(     'Part-Species[$]-PartBound[$]-ResultSpec'    , 'Resulting recombination species (one of nSpecies)' , '-1' , numberedmulti=.TRUE.)
-CALL prms%CreateStringOption(  'Part-Boundary[$]-SurfModEnergyDistribution' , 'Energy distribution function for surface emission model (only changeable for SurfaceModel=3/4/7/12)' , numberedmulti=.TRUE.)
-CALL prms%CreateRealOption(    'Part-Boundary[$]-SurfModEmissionEnergy'     , 'Energy of emitted particle for surface emission model (only available for SurfaceModel=7)' , numberedmulti=.TRUE.)
-CALL prms%CreateRealOption(    'Part-Boundary[$]-SurfModEmissionYield'      , 'Emission yield factor for surface emission model (only changeable for SurfaceModel=7)' , numberedmulti=.TRUE.)
-CALL prms%CreateLogicalOption( 'Part-Boundary[$]-SurfMod-vMPF'              , 'Enable the variable weighting factor for secondaries, only emitting a single secondary with the corresponding weight (requires Part-vMPF = T)' , '.FALSE.' , numberedmulti=.TRUE.)
-CALL prms%CreateRealOption(    'Part-SurfaceModel-SEE-Te'                   , 'Bulk electron temperature for SEE model by Morozov2004 in Kelvin (default corresponds to 50 eV)' , '5.80226250308285e5')
-CALL prms%CreateLogicalOption( 'Part-SurfaceModel-SEE-Te-automatic'         , 'Automatically set the bulk electron temperature by using the global electron temperature for SEE model by Morozov2004' , '.FALSE.')
+CALL prms%CreateIntOption(     'Part-Species[$]-PartBound[$]-ResultSpec'        , 'Resulting recombination species (one of nSpecies)' , '-1' , numberedmulti=.TRUE.)
+CALL prms%CreateStringOption(  'Part-Boundary[$]-SurfModEnergyDistribution'     , 'Energy distribution function for surface emission model (only changeable for SurfaceModel=3/4/7/12/13)' , numberedmulti=.TRUE.)
+CALL prms%CreateRealOption(    'Part-Boundary[$]-SurfModEmissionEnergy'         , 'Energy of emitted particle for surface emission model (only available for SurfaceModel=7)' , numberedmulti=.TRUE.)
+CALL prms%CreateRealOption(    'Part-Boundary[$]-SurfModEmissionYield'          , 'Emission yield factor for surface emission model (only changeable for SurfaceModel=7)' , numberedmulti=.TRUE.)
+CALL prms%CreateLogicalOption( 'Part-Boundary[$]-SurfMod-vMPF'                  , 'Enable the variable weighting factor for secondaries, only emitting a single secondary with the corresponding weight (requires Part-vMPF = T)' , '.FALSE.' , numberedmulti=.TRUE.)
+CALL prms%CreateLogicalOption( 'Part-Boundary[$]-SurfMod-SubtractWorkFunction'  , 'Subtract material work function from incident energy (only available for SurfaceModel=3/4/12/13)' , '.TRUE.' , numberedmulti=.TRUE.)
+CALL prms%CreateLogicalOption( 'Part-Boundary[$]-SurfMod-ReflectElectron'       , 'Reflect electron with the yield probability instead of absorbing (default) when incident energy is below the work function (only available for SurfaceModel=3/4/12/13)' , '.FALSE.' , numberedmulti=.TRUE.)
+CALL prms%CreateRealOption(    'Part-SurfaceModel-SEE-Te'                       , 'Bulk electron temperature for SEE model by Morozov2004 in Kelvin (default corresponds to 50 eV)' , '5.80226250308285e5')
+CALL prms%CreateLogicalOption( 'Part-SurfaceModel-SEE-Te-automatic'             , 'Automatically set the bulk electron temperature by using the global electron temperature for SEE model by Morozov2004' , '.FALSE.')
 
-CALL prms%CreateRealArrayOption('Part-Boundary[$]-SurfModSEEFitCoeff'       , 'SEE square/power-fit/semi-empirical model (SurfaceModel = 3/4/12):\n'//&
-                                                                              'square fit: a*E(eV) + b*E(eV) + c,\n'//&
-                                                                              'power fit: a*E(eV)^b + c,\n'//&
-                                                                              'semi-empirical: see documentation; input as (a,b,c,W), '//&
-                                                                              'where W is the material work function below which the yield is zero.', numberedmulti=.TRUE.,no=2)
+CALL prms%CreateRealArrayOption('Part-Boundary[$]-SurfModSEEFitCoeff'           , 'SEE square/power-fit/semi-empirical model (SurfaceModel = 3/4/12/13):\n'//&
+                                                                                  'square fit: a*E(eV) + b*E(eV) + c,\n'//&
+                                                                                  'power fit: a*E(eV)^b + c,\n'//&
+                                                                                  'semi-empirical: see documentation; input as (a,b,c,W), '//&
+                                                                                  'where W is the material work function below which the yield is zero.', numberedmulti=.TRUE.,no=2)
+
 END SUBROUTINE DefineParametersSurfModel
 
 
@@ -70,7 +73,7 @@ USE MOD_ReadInTools            ,ONLY: GETINT,GETREAL,GETLOGICAL,GETSTR,GETREALAR
 USE MOD_Particle_Boundary_Vars ,ONLY: nPartBound,PartBound
 USE MOD_SurfaceModel_Vars      ,ONLY: BulkElectronTempSEE,SurfModSEEelectronTempAutomatic
 USE MOD_SurfaceModel_Vars      ,ONLY: SurfModResultSpec,SurfModEnergyDistribution,SurfModEmissionEnergy,SurfModEmissionYield
-USE MOD_SurfaceModel_Vars      ,ONLY: SurfModSEEFitCoeff,SurfModSEEvMPF
+USE MOD_SurfaceModel_Vars      ,ONLY: SurfModSEEFitCoeff,SurfModSEEvMPF,SurfModSEESubWorkFunc,SurfModSEEReflectElectron
 USE MOD_Particle_Vars          ,ONLY: CalcBulkElectronTemp,BulkElectronTemp
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! IMPLICIT VARIABLE HANDLING
@@ -105,6 +108,10 @@ ALLOCATE(SumOfResultSpec(nPartBound))
 SumOfResultSpec = 0
 ALLOCATE(SurfModSEEvMPF(nPartBound))
 SurfModSEEvMPF = .FALSE.
+ALLOCATE(SurfModSEESubWorkFunc(nPartBound))
+SurfModSEESubWorkFunc = .TRUE.
+ALLOCATE(SurfModSEEReflectElectron(nPartBound))
+SurfModSEEReflectElectron = .FALSE.
 
 ALLOCATE(SurfModSEEFitCoeff(1:4, 1:nPartBound))
 SurfModSEEFitCoeff = 0
@@ -170,6 +177,8 @@ DO iPartBound=1,nPartBound
     END DO
     ! vMPF: Enable feature to insert a single secondary and scale its weighting factor by the yield
     IF(usevMPF) SurfModSEEvMPF(iPartBound) = GETLOGICAL('Part-Boundary'//TRIM(hilf2)//'-SurfMod-vMPF')
+    SurfModSEESubWorkFunc(iPartBound) = GETLOGICAL('Part-Boundary'//TRIM(hilf2)//'-SurfMod-SubtractWorkFunction')
+    SurfModSEEReflectElectron(iPartBound) = GETLOGICAL('Part-Boundary'//TRIM(hilf2)//'-SurfMod-ReflectElectron')
   ! 5: SEE by Levko2015
   ! 6: SEE by Pagonakis2016 (originally from Harrower1956)
   ! 7: SEE-I (bombarding electrons are removed, Ar+ on different materials is considered for SEE)
@@ -235,6 +244,8 @@ IMPLICIT NONE
 SDEALLOCATE(SurfModResultSpec)
 SDEALLOCATE(SurfModEnergyDistribution)
 SDEALLOCATE(SurfModSEEvMPF)
+SDEALLOCATE(SurfModSEESubWorkFunc)
+SDEALLOCATE(SurfModSEEReflectElectron)
 SDEALLOCATE(SurfChemReac)
 SDEALLOCATE(SurfChem%BoundIsChemSurf)
 SDEALLOCATE(SurfChem%PSMap)

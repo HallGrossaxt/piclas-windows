@@ -25,7 +25,7 @@ If the piclas repository is located in the home directory, simply run
 
 Change the command to comply with your path if the piclas repository is somewhere else.
 
-## Mesh Generation with HOPR (pre-processing)
+## Mesh Generation with PyHOPE (pre-processing)
 
 Before the actual simulation is conducted, a mesh file in the correct HDF5 format has to be supplied.
 The mesh files used by **piclas** are created by supplying an input file *hopr.ini* with the required information for a mesh that
@@ -33,10 +33,10 @@ has either been created by an external mesh generator or directly from block-str
 Here, a block-structured grid is created directly from the information in the hopr.ini file.
 To create the .h5 mesh file, simply run
 
-    hopr hopr.ini
+    pyhope hopr.ini
 
 This creates the mesh file *plasma_wave_mesh.h5* in HDF5 format and is depicted in {numref}`fig:plasma-wave-mesh`.
-Alternatively, if you do not want to run **hopr** yourself, you can also use the provided mesh.
+Alternatively, if you do not want to run **PyHOPE** yourself, you can also use the provided mesh.
 
 The size of the simulation domain is set to [$2\pi\times0.2\times0.2$] m$^{3}$ and is defined by the single block information
 in the line, where each node of the hexahedral element is defined
@@ -130,7 +130,7 @@ should look like this
      CMakeLists.txt
      CONTRIBUTORS.md
      docs
-     LICENCE.md
+     LICENSE.md
      README.md
      REFERENCE.md
      REGGIE.md

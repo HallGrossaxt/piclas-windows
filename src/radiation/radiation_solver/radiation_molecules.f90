@@ -26,7 +26,7 @@ INTERFACE radiation_molecules
 END INTERFACE
 
 !-----------------------------------------------------------------------------------------------------------------------------------
-! GLOBAL VARIABLES 
+! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
@@ -59,7 +59,7 @@ SUBROUTINE radiation_molecules(iElem, em_mol)
 ! LOCAL VARIABLES
 
   INTEGER           :: iSpec, iWave, iBand, iTrans, i, iWaveCoarse!, hilf
-  REAL              :: rho, ptot                            !in ini !density [kg/m**3], pressure [Pa], number density    
+  REAL              :: rho, ptot                            !in ini !density [kg/m**3], pressure [Pa], number density
   REAL, ALLOCATABLE :: epsilon_mol(:), epsilon_iSpec(:), abs_iSpec(:)
   INTEGER           :: istart, iend
   REAL              :: v_upper, v_lower                     ! vibrational quantum number of upper/lower state
@@ -107,7 +107,7 @@ SUBROUTINE radiation_molecules(iElem, em_mol)
   REAL, ALLOCATABLE :: Radiation_Profile(:)
   REAL              :: TempOut_Em, TempOut_Abs
 !===================================================================================================================================
-  
+
 ! --- loop for ptot and rho over all atoms and molecules, additionally electrons
   rho  = 0.0
   ptot = 0.0
@@ -134,7 +134,7 @@ SUBROUTINE radiation_molecules(iElem, em_mol)
     IF(.NOT.RadiationInput(iSpec)%DoRadiation) CYCLE
     IF((Species(iSpec)%InterID .NE. 2) .AND. (Species(iSpec)%InterID .NE. 20)) CYCLE
     Radiation_Profile   = 0.0
-    IF ((RadiationInput(iSpec)%Telec.LT.10.0).OR.(RadiationInput(iSpec)%Tvib.LT.10.0).OR.(RadiationInput(iSpec)%NumDens.LT.10.0).OR.(RadiationInput(iSpec)%Ttrans(4).LT.10.0))CYCLE 
+    IF ((RadiationInput(iSpec)%Telec.LT.10.0).OR.(RadiationInput(iSpec)%Tvib.LT.10.0).OR.(RadiationInput(iSpec)%NumDens.LT.10.0).OR.(RadiationInput(iSpec)%Ttrans(4).LT.10.0))CYCLE
 
     epsilon_iSpec = 0.0
     abs_iSpec = 0.0
@@ -146,7 +146,7 @@ SUBROUTINE radiation_molecules(iElem, em_mol)
       IF (ptot .GT. 1.0E-16) &
           NumDensForeignGas = MAX(ptot/(RadiationInput(iSpec)%Ttrans(4)*BoltzmannConst) - RadiationInput(iSpec)%NumDens , &
       1.0D-40*ptot/(RadiationInput(iSpec)%Ttrans(4)*BoltzmannConst))
-    
+
       MolWeightForeignGas = 20. * AtomicMassUnit
       IF(rho .GT. 1.0E-16) MolWeightForeignGas = (rho - Species(iSpec)%MassIC*RadiationInput(iSpec)%NumDens) / NumDensForeignGas
       MolWeightForeignGas = MolWeightForeignGas / (AtomicMassUnit * 1.0E-3)
@@ -209,7 +209,7 @@ SUBROUTINE radiation_molecules(iElem, em_mol)
           IF( (2.0/(100.*nubar0)) .LT. RadiationParameter%WaveLen(1) ) CYCLE
           IF( (0.5/(100.*nubar0)) .GT. RadiationParameter%WaveLen(RadiationParameter%WaveLenDiscr) ) CYCLE
 
-  ! --- widths        
+  ! --- widths
           DlamG = 7.16E-7 / (100.*nubar0) * SQRT(RadiationInput(iSpec)%Ttrans(4)/(Species(iSpec)%MassIC/AtomicMassUnit))
 
           DlamL1 = 1.33E-29 * SQRT(2.0/(Species(iSpec)%MassIC/AtomicMassUnit)) &
@@ -994,7 +994,7 @@ SUBROUTINE radiation_molecules(iElem, em_mol)
   !    RadiationInput(iSpec)%RadiationSpectraFileName = RadiationInput(iSpec)%RadiationSpectraFileName(1:hilf-4)
   !    WRITE(*,*) '*** CALCULATED ', TRIM(RadiationInput(iSpec)%RadiationSpectraFileName), ' ***'
     END IF
-    
+
     TempOut_Em  = 0.0
     TempOut_Abs = 0.0
     DO iWave=1, RadiationParameter%WaveLenDiscr
@@ -1046,7 +1046,7 @@ REAL FUNCTION ukovacs(rj, dlam)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 !===================================================================================================================================
-  
+
   ukovacs = 2. * (rj + dlam + .5)
   RETURN
 
@@ -1071,7 +1071,7 @@ REAL FUNCTION ckovacs(rj, dlam)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 !===================================================================================================================================
-  
+
   ckovacs = 4. * (rj + .5) * (rj + dlam + .5)
   RETURN
 

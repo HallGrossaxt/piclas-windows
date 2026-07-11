@@ -45,8 +45,7 @@ USE MOD_Mesh_Vars              ,ONLY: OffsetElem
 ! DSMC
 USE MOD_DSMC_Vars              ,ONLY: UseDSMC,DSMC,PolyatomMolDSMC,SpecDSMC,ParticleWeighting
 ! Particles
-USE MOD_Dielectric_Vars        ,ONLY: DoDielectricSurfaceCharge
-USE MOD_HDF5_Input_Particles   ,ONLY: ReadEmissionVariablesFromHDF5,ReadNodeSourceExtFromHDF5
+USE MOD_HDF5_Input_Particles   ,ONLY: ReadEmissionVariablesFromHDF5
 USE MOD_Particle_Vars          ,ONLY: PartInt,PartData,nSpecies,Species
 ! Restart
 USE MOD_Restart_Vars           ,ONLY: RestartFile,RestartNullifySolution,DoMacroscopicRestart
@@ -79,6 +78,9 @@ USE MOD_Particle_Vars          ,ONLY: VibQuantData,ElecDistriData,AD_Data
 USE MOD_Particle_Vars          ,ONLY: PartDataSize,PartIntSize,PartDataVarNames
 USE MOD_ChangeBasis            ,ONLY: ChangeBasis3D
 #if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
+USE MOD_HDF5_Input_Particles   ,ONLY: ReadNodeSourceExtFromHDF5,ReadSurfNodeSourceFromHDF5
+USE MOD_Dielectric_Vars        ,ONLY: DoDielectricSurfaceCharge
+USE MOD_Particle_Boundary_Vars ,ONLY: Do2DSurfaceCharge
 USE MOD_PICDepo_Vars           ,ONLY: DoDeposition,RelaxDeposition,PS_N
 USE MOD_Restart_Vars           ,ONLY: InterpolateSolution,N_Restart
 USE MOD_DG_Vars                ,ONLY: N_DG_Mapping
@@ -335,7 +337,7 @@ IF (PerformLoadBalance.AND.(.NOT.UseH5IOLoadBalance)) THEN
     IF (DSMC%ElectronicModel.EQ.2) THEN
       MaxElecQuant = 0
       DO iSpec = 1,nSpecies
-        IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
+        IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
           IF (SpecDSMC(iSpec)%MaxElecQuant.GT.MaxElecQuant) MaxElecQuant = SpecDSMC(iSpec)%MaxElecQuant
         END IF
       END DO
@@ -586,17 +588,26 @@ ELSE
   IF (useDSMC.AND.(DSMC%ElectronicModel.EQ.2)) THEN
     MaxElecQuant = 0
     DO iSpec = 1, nSpecies
-      IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
+      IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
         IF (SpecDSMC(iSpec)%MaxElecQuant.GT.MaxElecQuant) MaxElecQuant = SpecDSMC(iSpec)%MaxElecQuant
       END IF
     END DO
   END IF
+#if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
+  ! ------------------------------------------------
+  ! SurfNodeSource (surface charge source terms): Only root opens and reads the data
+  ! ------------------------------------------------
+  IF(Do2DSurfaceCharge) CALL ReadSurfNodeSourceFromHDF5()
+#endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))*/
 
   CALL OpenDataFile(RestartFile,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
+#if !((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))
   ! ------------------------------------------------
   ! NodeSourceExt (external/additional charge source terms)
   ! ------------------------------------------------
   IF(DoDielectricSurfaceCharge) CALL ReadNodeSourceExtFromHDF5()
+#endif /*!((PP_TimeDiscMethod==4) || (PP_TimeDiscMethod==300) || (PP_TimeDiscMethod==400))*/
+
 
   ! ------------------------------------------------
   ! PartInt
@@ -944,7 +955,7 @@ IF(ClonePartNum.GT.0) THEN
   IF (UseDSMC.AND.(DSMC%ElectronicModel.EQ.2)) THEN
     MaxElecQuant = 0
     DO iSpec = 1, nSpecies
-      IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
+      IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
         IF (SpecDSMC(iSpec)%MaxElecQuant.GT.MaxElecQuant) MaxElecQuant = SpecDSMC(iSpec)%MaxElecQuant
       END IF
     END DO
@@ -975,10 +986,17 @@ IF(ClonePartNum.GT.0) THEN
         iPos = 9
         IF(UseDSMC) THEN
           IF(CollisMode.GT.1) THEN
-            ClonedParticles(pcount(iDelay),iDelay)%PartStateIntEn(1:2) = CloneData(1+iPos:2+iPos,iPart)
+            IF ((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
+              ALLOCATE(ClonedParticles(pcount(iDelay),iDelay)%PartIntEn%EVib(1), ClonedParticles(pcount(iDelay),iDelay)%PartIntEn%ERot(1))
+              ClonedParticles(pcount(iDelay),iDelay)%PartIntEn%EVib(1) = CloneData(1+iPos,iPart)
+              ClonedParticles(pcount(iDelay),iDelay)%PartIntEn%ERot(1) = CloneData(2+iPos,iPart)
+            END IF
             iPos = iPos + 2
             IF(DSMC%ElectronicModel.GT.0) THEN
-              ClonedParticles(pcount(iDelay),iDelay)%PartStateIntEn(3)= CloneData(1+iPos,iPart)
+              IF((Species(iSpec)%InterID.NE.4).AND.(.NOT.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
+                ALLOCATE(ClonedParticles(pcount(iDelay),iDelay)%PartIntEn%EElec(1))
+                ClonedParticles(pcount(iDelay),iDelay)%PartIntEn%EElec(1)= CloneData(1+iPos,iPart)
+              END IF
               iPos = iPos + 1
             END IF
           END IF
@@ -996,7 +1014,7 @@ IF(ClonePartNum.GT.0) THEN
           END IF
         END IF
         IF (UseDSMC.AND.(DSMC%ElectronicModel.EQ.2))  THEN
-          IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
+          IF (.NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized).AND.(Species(iSpec)%InterID.NE.100)) THEN
             ALLOCATE(ClonedParticles(pcount(iDelay),iDelay)%DistriFunc(1:SpecDSMC(iSpec)%MaxElecQuant))
             ClonedParticles(pcount(iDelay),iDelay)%DistriFunc(1:SpecDSMC(iSpec)%MaxElecQuant) &
               = ElecDistriData(1:SpecDSMC(iSpec)%MaxElecQuant,iPart)

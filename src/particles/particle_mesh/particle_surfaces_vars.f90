@@ -17,6 +17,7 @@ MODULE MOD_Particle_Surfaces_Vars
 ! Contains global variables provided by the particle surfaces routines
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: qp
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -82,11 +83,11 @@ REAL,ALLOCATABLE,DIMENSION(:,:)         :: XiArray,EtaArray             ! xi and
                                                                         ! only for do-ref-mapping required
 #ifdef CODE_ANALYZE
 REAL                                    :: rBoundingBoxChecks           ! number of bounding box checks
-REAL(KIND=16)                           :: rTotalBBChecks               ! total number of bounding box checks
+REAL(KIND=qp)                           :: rTotalBBChecks               ! total number of bounding box checks
 REAL                                    :: rPerformBezierClip           ! number of performed bezier clips
 REAL                                    :: rPerformBezierNewton         ! number of performed bezier newton intersections
-REAL(KIND=16)                           :: rTotalBezierClips            ! total number of performed bezier clips
-REAL(KIND=16)                           :: rTotalBezierNewton           ! total number of performed bezier newton intersections
+REAL(KIND=qp)                           :: rTotalBezierClips            ! total number of performed bezier clips
+REAL(KIND=qp)                           :: rTotalBezierNewton           ! total number of performed bezier newton intersections
 !REAL,ALLOCATABLE,DIMENSION(:)           :: SideBoundingBoxVolume        ! Bounding Box volume
 #endif /*CODE_ANALYZE*/
 

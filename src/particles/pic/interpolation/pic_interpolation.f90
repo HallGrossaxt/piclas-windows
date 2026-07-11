@@ -69,7 +69,7 @@ CALL prms%CreateLogicalOption(  'PIC-DoInterpolation'         , "Interpolate ele
  "Required flag also for using OPTIONAL external fields, for which 5 methods are available:\n"//&
  "  Method 1: PIC-DoInterpolationAnalytic (convergence tests, CODE_ANALYZE=ON)\n"//&
  "  Method 2: PIC-externalField (const. E/B field)\n"//&
- "  Method 3: PIC-variableExternalField (CSV file for Bz(z) that is interpolated)\n"//&
+ "  Method 3: PIC-variableExternalField (CSV/HDF5 file for Bz(z) that is interpolated)\n"//&
  "  Method 4: PIC-AlgebraicExternalField (E/B pre-defined algebraic expression)\n"//&
  "  Method 5: PIC-BG-Field (read 3D magnetic field from .h5)\n"&
  , '.TRUE.')
@@ -87,6 +87,7 @@ CALL prms%CreateRealOption(     'PIC-scaleexternalField'      , 'Scaling factor 
 ! -- external field 3
 CALL prms%CreateStringOption(   'PIC-variableExternalField'   , 'Method 3 of 5: H5 or CSV file containing the external magnetic field Bz in z-direction '//&
                                                                 'for interpolating the variable field at each particle z-position.', 'none')
+CALL prms%CreateIntOption(      'PIC-variableExternalFieldSymAxis','Definition of the rotational axis in the 3D domain when using an external axisymmetric field')
 
 ! -- external field 4
 CALL prms%CreateIntOption(      'PIC-AlgebraicExternalField'   , &
@@ -376,11 +377,12 @@ SUBROUTINE ReadVariableExternalField()
 !===================================================================================================================================
 ! MODULES
 USE MOD_Globals
+USE MOD_ReadInTools
 USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalField,FileNameVariableExternalField,DeltaExternalField,VariableExternalFieldDim
 USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalFieldDim,VariableExternalFieldAxisSym,VariableExternalFieldMin
 USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalFieldMax,VariableExternalFieldN,VariableExternalFieldAxisDir
-USE MOD_PICInterpolation_Vars ,ONLY: VariableExternalFieldRadInd
 USE MOD_HDF5_Input_Field      ,ONLY: ReadExternalFieldFromHDF5
+USE MOD_Symmetry_Vars         ,ONLY: Symmetry
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars      ,ONLY: PerformLoadBalance
 #endif /*USE_LOADBALANCE*/
@@ -410,8 +412,15 @@ IF(lenstr.LT.lenmin) CALL abort(__STAMP__,"File name too short: "//TRIM(FileName
 IF(TRIM(FileNameVariableExternalField(lenstr-lenmin+2:lenstr)).EQ.'.h5')THEN
   CALL ReadExternalFieldFromHDF5('data',&
       VariableExternalField        , DeltaExternalField          , FileNameVariableExternalField , VariableExternalFieldDim , &
-      VariableExternalFieldAxisSym , VariableExternalFieldRadInd , VariableExternalFieldAxisDir  , VariableExternalFieldMin , &
-      VariableExternalFieldMax     , VariableExternalFieldN)
+      VariableExternalFieldAxisSym , VariableExternalFieldMin    , VariableExternalFieldMax      , VariableExternalFieldN)
+  ! Treatment of axisymmetric input data in a 3D simulation
+  IF(VariableExternalFieldAxisSym) THEN
+    IF(Symmetry%Order.EQ.3) THEN
+      VariableExternalFieldAxisDir = GETINT('PIC-variableExternalFieldSymAxis')
+    ELSE IF(.NOT.Symmetry%Axisymmetric) THEN
+      CALL abort(__STAMP__,"ERROR in ReadVariableExternalField: Axisymmetric external field requires an axisymmetric or 3D simulation!")
+    END IF
+  END IF
 ELSEIF(TRIM(FileNameVariableExternalField(lenstr-lenmin+1:lenstr)).EQ.'.csv')THEN
   CALL ReadVariableExternalFieldFromCSV()
 ELSE
@@ -421,7 +430,7 @@ END IF
 IF(.NOT.ALLOCATED(VariableExternalField)) CALL abort(__STAMP__,"Failed to load data from: "//TRIM(FileNameVariableExternalField))
 
 GETTIME(EndT)
-CALL DisplayMessageAndTime(EndT-StartT, ' INITIALIZATION OF VARIABLE EXTERNAL FIELD FOR PARTICLES ... DONE')
+CALL DisplayMessageAndTime(EndT-StartT, 'INITIALIZATION OF VARIABLE EXTERNAL FIELD FOR PARTICLES ... DONE')
 END SUBROUTINE ReadVariableExternalField
 
 

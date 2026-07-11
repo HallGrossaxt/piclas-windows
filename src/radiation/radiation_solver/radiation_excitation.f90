@@ -26,7 +26,7 @@ INTERFACE radiation_excitation
 END INTERFACE
 
 !-----------------------------------------------------------------------------------------------------------------------------------
-! GLOBAL VARIABLES 
+! GLOBAL VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
@@ -57,7 +57,7 @@ USE MOD_PARTICLE_Vars,     ONLY   : nSpecies, Species
   REAL              :: low_IonizationPot                     !lowering of ionization Potenzial [J]
 !  REAL              :: ElectronicPartFunc                    !Partition function for  Maxwell distribution of excited state
   INTEGER           :: iLevel, iLevel_considered             ! loop indices
-  INTEGER           :: nLevels_considered                    ! actual number of considered levels           
+  INTEGER           :: nLevels_considered                    ! actual number of considered levels
   INTEGER           :: iSpec
   REAL              :: BoltzmannFactor                       ! degeneracy*EXP(-E/kB T)
   REAL              :: RotVibPartFunc                        ! combined rotational-vibrational partition function
@@ -97,10 +97,10 @@ USE MOD_PARTICLE_Vars,     ONLY   : nSpecies, Species
         SpeciesRadiation(iSpec)%NumDensExc(iLevel) = RadiationInput(iSpec)%NumDens*SpeciesRadiation(iSpec)%Level(iLevel,1) &
           * EXP(-SpeciesRadiation(iSpec)%Level(iLevel,2)/(BoltzmannConst*RadiationInput(iSpec)%Telec))&
           /SpeciesRadiation(iSpec)%PartFunc
-      END DO 
-   
+      END DO
+
 ! --- diatomic molecules (2) and diatomic molecular ions (20)
-    ELSEIF((Species(iSpec)%InterID .EQ. 2) .OR. (Species(iSpec)%InterID .EQ. 20)) THEN 
+    ELSEIF((Species(iSpec)%InterID .EQ. 2) .OR. (Species(iSpec)%InterID .EQ. 20)) THEN
 
 !! --- Initialization
       SpeciesRadiation(iSpec)%PartFunc = 0.0
@@ -112,7 +112,7 @@ USE MOD_PARTICLE_Vars,     ONLY   : nSpecies, Species
         RotVibPartFunc = 0.0
 
 ! --- calculation of Boltzmann Factor (ge*EXP(-E/kBT))
-        BoltzmannFactor = SpeciesRadiation(iSpec)%EnergyLevelProperties(iLevel,1) & 
+        BoltzmannFactor = SpeciesRadiation(iSpec)%EnergyLevelProperties(iLevel,1) &
           * EXP(MIN(7.d2, -SpeciesRadiation(iSpec)%EnergyLevelProperties(iLevel,2) / (BoltzmannConst*RadiationInput(iSpec)%Telec)))
 
         DO !WHILE (.TRUE.)
@@ -152,7 +152,7 @@ USE MOD_PARTICLE_Vars,     ONLY   : nSpecies, Species
         END DO
 
         SpeciesRadiation(iSpec)%PartFunc = SpeciesRadiation(iSpec)%PartFunc + BoltzmannFactor * RotVibPartFunc
-        
+
       END DO
 
     ELSE

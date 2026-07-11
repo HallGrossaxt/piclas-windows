@@ -32,7 +32,7 @@ that you modified it, and giving a relevant date"), we note:
   in the commit history of this repository.
 * The complete corresponding source for these modifications is this repository itself.
 * The startup banner of the program identifies the running binary as
-  `piclas-win <version> -- unofficial Windows port, based on PICLas 4.1.0`.
+  `piclas-win <version> -- unofficial Windows port, based on PICLas 4.2.0`.
 
 PICLas is a scientific project. If you use it (including this port) for publications or
 presentations in science, please support the original project by citing the publications listed in
@@ -201,6 +201,7 @@ distributions, mean fluxes) rather than bit-for-bit agreement with Linux-generat
 projects, including:
 
 * [hopr-win](https://github.com/HallGrossaxt/hopr-win) — Windows port of [HOPR (High Order Preprocessor)](https://github.com/hopr-framework/hopr)
+* [PyHOPE](https://github.com/hopr-framework/PyHOPE) — Python High Order Preprocessor (upstream's mesh generator for tutorials/regression tests since PICLas 4.2.0)
 * [reggie2.0-win](https://github.com/HallGrossaxt/reggie2.0-win) — Windows port of the [reggie2.0](https://github.com/piclas-framework/reggie2.0) regression-test runner
 * [cmake](https://www.cmake.org) and [Ninja](https://ninja-build.org/)
 * [LAPACK](http://www.netlib.org/lapack/) / [OpenBLAS](https://www.openblas.net/)

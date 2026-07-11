@@ -52,7 +52,7 @@ SUBROUTINE BGK_CollisionOperator(iPartIndx_Node, nPart, NodeVolume, AveragingVal
 USE MOD_Globals               ,ONLY: DOTPRODUCT, CROSS
 USE MOD_Particle_Vars         ,ONLY: PartState, Species, PartSpecies, nSpecies, usevMPF, UseVarTimeStep
 USE MOD_Particle_Vars         ,ONLY: UseRotRefFrame, InRotRefFrame, RotRefFrameOmega, PartVeloRotRef
-USE MOD_DSMC_Vars             ,ONLY: DSMC, PartStateIntEn, PolyatomMolDSMC, CollInf
+USE MOD_DSMC_Vars             ,ONLY: DSMC, PartIntEn, PolyatomMolDSMC, CollInf
 USE MOD_TimeDisc_Vars         ,ONLY: dt
 USE MOD_BGK_Vars              ,ONLY: SpecBGK, BGKDoVibRelaxation, BGKMovingAverage
 USE MOD_BGK_Vars              ,ONLY: BGK_MeanRelaxFactor, BGK_MeanRelaxFactorCounter, BGK_MaxRelaxFactor, BGK_MaxRotRelaxFactor
@@ -111,7 +111,7 @@ DO iLoop = 1, nPart
   Energy_old = Energy_old + DOTPRODUCT(PartState(4:6,iPart))*0.5*Species(iSpec)%MassIC*partWeight
   IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
     ! Add internal energies (vibration, rotation) for molecules and molecular ions
-    Energy_old = Energy_old + (PartStateIntEn(1,iPart) + PartStateIntEn(2,iPart))*partWeight
+    Energy_old = Energy_old + (PartIntEn(iPart)%ERot(1) + PartIntEn(iPart)%EVib(1))*partWeight
   END IF
 END DO
 #endif
@@ -320,7 +320,7 @@ DO iLoop = 1, nRotRelax
   iPart = iPartIndx_NodeRelaxRot(iLoop)
   iSpec = PartSpecies(iPart)
   ! Scaling of rotational energy with factor alpha
-  PartStateIntEn( 2,iPart) = alphaRot(iSpec)*PartStateIntEn( 2,iPart)
+  PartIntEn(iPart)%ERot= alphaRot(iSpec)*PartIntEn(iPart)%ERot
 END DO
 
 ! CODE ANALYZE: Compare the old momentum and energy of the cell with the new, abort if relative difference is above the limits
@@ -332,7 +332,7 @@ DO iLoop = 1, nPart
   Momentum_new(1:3) = Momentum_new(1:3) + (PartState(4:6,iPart)) * Species(iSpec)%MassIC*partWeight
   Energy_new = Energy_new + DOTPRODUCT((PartState(4:6,iPart)))*0.5*Species(iSpec)%MassIC*partWeight
   IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
-    Energy_new = Energy_new + (PartStateIntEn(1,iPart) + PartStateIntEn(2,iPart))*partWeight
+    Energy_new = Energy_new + (PartIntEn(iPart)%EVib(1) + PartIntEn(iPart)%ERot(1))*partWeight
   END IF
 END DO
 ! Check for energy difference
@@ -386,7 +386,7 @@ SUBROUTINE CalcMoments(nPart, iPartIndx_Node, nSpec, vBulkAll, totalWeight, tota
 !===================================================================================================================================
 ! MODULES
 USE MOD_Particle_Vars         ,ONLY: PartState, Species, PartSpecies, nSpecies, UseVarTimeStep, PartTimeStep
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, SpecDSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, SpecDSMC
 USE MOD_BGK_Vars              ,ONLY: BGKDoVibRelaxation, BGKCollModel
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
@@ -467,9 +467,9 @@ DO iLoop = 1, nPart
   IF((Species(iSpec)%InterID.EQ.2).OR.(Species(iSpec)%InterID.EQ.20)) THEN
     IF(BGKDoVibRelaxation) THEN
       ! EVib without zero-point energy
-      EVibSpec(iSpec) = EVibSpec(iSpec) + (PartStateIntEn(1,iPart) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
+      EVibSpec(iSpec) = EVibSpec(iSpec) + (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
     END IF
-    ERotSpec(iSpec) = ERotSpec(iSpec) + PartStateIntEn(2,iPart) * partWeight
+    ERotSpec(iSpec) = ERotSpec(iSpec) + PartIntEn(iPart)%ERot(1) * partWeight
   END IF
 END DO
 
@@ -1037,7 +1037,7 @@ SUBROUTINE DetermineRelaxPart(nPart, iPartIndx_Node, relaxfreq, dtCell, nRelax, 
 !===================================================================================================================================
 ! MODULES
 USE MOD_Particle_Vars         ,ONLY: Species, PartSpecies, PartState, nSpecies
-USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, PartStateIntEn
+USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, PartIntEn
 USE MOD_BGK_Vars              ,ONLY: BGKDoVibRelaxation
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 ! IMPLICIT VARIABLE HANDLING
@@ -1099,7 +1099,7 @@ DO iLoop = 1, nPart
       RotRelaxWeightSpec(iSpec) = RotRelaxWeightSpec(iSpec) + partWeight
       iPartIndx_NodeRelaxRot(nRotRelax) = iPart
       ! Sum up total rotational energy
-      OldEnRot = OldEnRot + PartStateIntEn(2,iPart) * partWeight
+      OldEnRot = OldEnRot + PartIntEn(iPart)%ERot(1)* partWeight
     END IF
     ! Vibration
     IF(BGKDoVibRelaxation) THEN
@@ -1110,7 +1110,7 @@ DO iLoop = 1, nPart
         VibRelaxWeightSpec(iSpec) = VibRelaxWeightSpec(iSpec) + partWeight
         iPartIndx_NodeRelaxVib(nVibRelax) = iPart
         ! Sum up total vibrational energy of all relaxing particles, considering zero-point energy, and add to translational energy
-        OldEn = OldEn + (PartStateIntEn(1,iPartIndx_NodeRelaxVib(nVibRelax)) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
+        OldEn = OldEn + (PartIntEn(iPartIndx_NodeRelaxVib(nVibRelax))%EVib(1) - SpecDSMC(iSpec)%EZeroPoint) * partWeight
       END IF
     END IF
   END IF
@@ -1126,7 +1126,7 @@ SUBROUTINE RelaxInnerEnergy(nVibRelax, nRotRelax, iPartIndx_NodeRelaxVib, iPartI
 !===================================================================================================================================
 ! MODULES
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, nSpecies
-USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, PartStateIntEn, PolyatomMolDSMC, DSMC
+USE MOD_DSMC_Vars             ,ONLY: SpecDSMC, PartIntEn, PolyatomMolDSMC, DSMC
 USE MOD_BGK_Vars              ,ONLY: BGKDoVibRelaxation
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
@@ -1157,23 +1157,23 @@ IF(BGKDoVibRelaxation) THEN
     ! polyatomic, more than one vibrational DOF
     IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
       iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
-      PartStateIntEn(1,iPart) = 0.0
+      PartIntEn(iPart)%EVib = 0.
       ! Sum up the new vibrational energy over all DOFs, see M. Pfeiffer et. al., "Extension of Particle-based BGK Models to
       ! Polyatomic Species in Hypersonic Flow around a Flat-faced Cylinder", AIP Conference Proceedings 2132, 100001 (2019)
       DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
         CALL RANDOM_NUMBER(iRan)
         VibEnergyDOF(iLoop,iDOF) = - LOG(iRan)*Xi_vib_DOF(iPolyatMole,iDOF)/2.*TEqui*BoltzmannConst
-        PartStateIntEn(1,iPart) = PartStateIntEn(1,iPart)+VibEnergyDOF(iLoop,iDOF)
+        PartIntEn(iPart)%EVib = PartIntEn(iPart)%EVib+VibEnergyDOF(iLoop,iDOF)
       END DO
     ! ELSE: diatomic, only one vibrational DOF, calculate new vibrational energy according to M. Pfeiffer, "Extending the particle
     ! ellipsoidal statistical Bhatnagar-Gross-Krook method to diatomic molecules including quantized vibrational energies",
     ! Phys. Fluids 30, 116103 (2018)
     ELSE
       CALL RANDOM_NUMBER(iRan)
-      PartStateIntEn( 1,iPart) = -LOG(iRan)*Xi_VibSpec(iSpec)/2.*TEqui*BoltzmannConst
+      PartIntEn(iPart)%EVib = -LOG(iRan)*Xi_VibSpec(iSpec)/2.*TEqui*BoltzmannConst
     END IF
     ! Sum up new vibrational energy per species
-    NewEnVib(iSpec) = NewEnVib(iSpec) + PartStateIntEn(1,iPart) * partWeight
+    NewEnVib(iSpec) = NewEnVib(iSpec) + PartIntEn(iPart)%EVib(1) * partWeight
   END DO
 END IF
 ! Loop over all particles undergoing a relaxation in the rotation
@@ -1184,9 +1184,9 @@ DO iLoop = 1, nRotRelax
   CALL RANDOM_NUMBER(iRan)
   ! Calculate new rotational energy according to M. Pfeiffer et. al., "Extension of Particle-based BGK Models to Polyatomic Species
   ! in Hypersonic Flow around a Flat-faced Cylinder", AIP Conference Proceedings 2132, 100001 (2019)
-  PartStateIntEn( 2,iPart) = -Xi_RotSpec(iSpec) / 2. * BoltzmannConst*TEqui*LOG(iRan)
+  PartIntEn(iPart)%ERot = -Xi_RotSpec(iSpec) / 2. * BoltzmannConst*TEqui*LOG(iRan)
   ! Sum up new rotational energy per species
-  NewEnRot(iSpec) = NewEnRot(iSpec) + PartStateIntEn( 2,iPart) * partWeight
+  NewEnRot(iSpec) = NewEnRot(iSpec) + PartIntEn(iPart)%ERot(1) * partWeight
 END DO
 
 END SUBROUTINE RelaxInnerEnergy
@@ -1340,7 +1340,7 @@ SUBROUTINE EnergyConsVib(nPart, totalWeight, nVibRelax, VibRelaxWeightSpec, iPar
 !===================================================================================================================================
 ! MODULES
 USE MOD_Particle_Vars         ,ONLY: PartSpecies, nSpecies
-USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, PolyatomMolDSMC, VibQuantsPar, DSMC, SpecDSMC
+USE MOD_DSMC_Vars             ,ONLY: PartIntEn, PolyatomMolDSMC, DSMC, SpecDSMC
 USE MOD_BGK_Vars              ,ONLY: BGKDoVibRelaxation, BGKUseQuantVibEn
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
@@ -1388,7 +1388,7 @@ IF(BGKDoVibRelaxation) THEN
         iSpec = PartSpecies(iPart)
         ! Polyatomic molecules
         IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
-          PartStateIntEn(1,iPart) = 0.0
+          PartIntEn(iPart)%EVib = 0.0
           iPolyatMole = SpecDSMC(iSpec)%SpecToPolyArray
           ! Loop over all vibrational DOF
           DO iDOF = 1, PolyatomMolDSMC(iPolyatMole)%VibDOF
@@ -1419,24 +1419,24 @@ IF(BGKDoVibRelaxation) THEN
               END IF
             END IF
             ! Sum up the vibrational energy over all vibrational DOF
-            PartStateIntEn( 1,iPart)  = PartStateIntEn( 1,iPart) &
+            PartIntEn(iPart)%EVib  = PartIntEn(iPart)%EVib &
                + iQuant*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst
-            VibQuantsPar(iPart)%Quants(iDOF) = iQuant
+            PartIntEn(iPart)%QVib(iDOF) = iQuant
             ! Remaining OldEn for remaining particles
             OldEn = OldEn - iQuant*PolyatomMolDSMC(iPolyatMole)%CharaTVibDOF(iDOF)*BoltzmannConst*partWeight
           END DO
           ! Add zero-point energy
-          PartStateIntEn( 1,iPart)  = PartStateIntEn( 1,iPart) + SpecDSMC(iSpec)%EZeroPoint
+          PartIntEn(iPart)%EVib  = PartIntEn(iPart)%EVib + SpecDSMC(iSpec)%EZeroPoint
         ELSE  ! Diatomic molecules
           ! Vibrational energy is reformulated to a quantum number iQuant
-          betaV = alpha(iSpec)*PartStateIntEn( 1,iPart)/(SpecDSMC(iSpec)%CharaTVib*BoltzmannConst)
+          betaV = alpha(iSpec)*PartIntEn(iPart)%EVib(1)/(SpecDSMC(iSpec)%CharaTVib*BoltzmannConst)
           CALL RANDOM_NUMBER(iRan)
           iQuant = INT(betaV+iRan)
           ! Check maximum vibrational quantum number
           IF (iQuant.GT.SpecDSMC(iSpec)%MaxVibQuant) iQuant = SpecDSMC(iSpec)%MaxVibQuant
-          PartStateIntEn( 1,iPart)  = (iQuant + DSMC%GammaQuant)*SpecDSMC(iSpec)%CharaTVib*BoltzmannConst
+          PartIntEn(iPart)%EVib  = (iQuant + DSMC%GammaQuant)*SpecDSMC(iSpec)%CharaTVib*BoltzmannConst
           ! Remaining energy negative, new quantum number needs to be calculated
-          IF ((OldEn - (PartStateIntEn( 1,iPart) - SpecDSMC(iSpec)%EZeroPoint)*partWeight).LT.0.0) THEN
+          IF ((OldEn - (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint)*partWeight).LT.0.0) THEN
             ! Maximum quantum number
             MaxColQua = OldEn/(BoltzmannConst*SpecDSMC(iSpec)%CharaTVib*partWeight)
             ! OldEn < k_B*CharaTVib --> iQuant < 1
@@ -1455,10 +1455,10 @@ IF(BGKDoVibRelaxation) THEN
               END DO
             END IF
             ! Calculate vibrational energy including zero-point energy
-            PartStateIntEn( 1,iPart)  = (iQuant + DSMC%GammaQuant)*SpecDSMC(iSpec)%CharaTVib*BoltzmannConst
+            PartIntEn(iPart)%EVib = (iQuant + DSMC%GammaQuant)*SpecDSMC(iSpec)%CharaTVib*BoltzmannConst
           END IF
           ! Remaining OldEn for remaining particles
-          OldEn = OldEn - (PartStateIntEn( 1,iPart) - SpecDSMC(iSpec)%EZeroPoint)*partWeight
+          OldEn = OldEn - (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint)*partWeight
         END IF
       END DO
     ELSE ! Continuous treatment of vibrational energy
@@ -1467,9 +1467,9 @@ IF(BGKDoVibRelaxation) THEN
         iSpec = PartSpecies(iPart)
         partWeight = GetParticleWeight(iPart)
         ! Scaling of vibrational energy with factor alpha + zero-point energy
-        PartStateIntEn( 1,iPart) = alpha(iSpec)*PartStateIntEn( 1,iPart) + SpecDSMC(iSpec)%EZeroPoint
+        PartIntEn(iPart)%EVib = alpha(iSpec)*PartIntEn(iPart)%EVib + SpecDSMC(iSpec)%EZeroPoint
         ! Remaining OldEn for remaining particles
-        OldEn = OldEn - (PartStateIntEn( 1,iPart) - SpecDSMC(iSpec)%EZeroPoint)*partWeight
+        OldEn = OldEn - (PartIntEn(iPart)%EVib(1) - SpecDSMC(iSpec)%EZeroPoint)*partWeight
       END DO
     END IF ! BGKUseQuantVibEn
   ! NewEnVib = 0 for all species, relaxation towards the vibrational ground-state (new state is simply the zero-point energy)
@@ -1478,7 +1478,7 @@ IF(BGKDoVibRelaxation) THEN
     DO iLoop = 1, nVibRelax
       iPart = iPartIndx_NodeRelaxVib(iLoop)
       iSpec = PartSpecies(iPart)
-      PartStateIntEn( 1,iPart) = SpecDSMC(iSpec)%EZeroPoint
+      PartIntEn(iPart)%EVib = SpecDSMC(iSpec)%EZeroPoint
     END DO
   END IF ! (NewEnVib.GT.0.0).AND.(nVibRelax.GT.0)
 END IF ! BGKDoVibRelaxation

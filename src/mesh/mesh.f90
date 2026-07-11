@@ -38,7 +38,7 @@ CONTAINS
 SUBROUTINE DefineParametersMesh()
 ! MODULES
 USE MOD_Globals
-USE MOD_ReadInTools    ,ONLY: prms,addStrListEntry
+USE MOD_ReadInTools ,ONLY: prms,addStrListEntry
 USE MOD_Mesh_pAdaption ,ONLY: PRM_P_ADAPTION_ZERO,PRM_P_ADAPTION_RDN,PRM_P_ADAPTION_NPB,PRM_P_ADAPTION_HH
 USE MOD_Mesh_pAdaption ,ONLY: PRM_P_ADAPTION_LVL_MINTWO,PRM_P_ADAPTION_LVL_MINONE,PRM_P_ADAPTION_LVL_DEFAULT,PRM_P_ADAPTION_LVL_TWO
 ! IMPLICIT VARIABLE HANDLING
@@ -143,9 +143,9 @@ USE MOD_LoadBalance_Metrics_FV ,ONLY: ExchangeVolMesh_FV,ExchangeMetrics_FV
 USE MOD_DSMC_Vars              ,ONLY: DoRadialWeighting, DoLinearWeighting, DoCellLocalWeighting
 USE MOD_Particle_Vars          ,ONLY: usevMPF
 #endif
-#if USE_HDG && USE_LOADBALANCE
+#if USE_HDG
 USE MOD_Mesh_Tools             ,ONLY: BuildSideToNonUniqueGlobalSide
-#endif /*USE_HDG && USE_LOADBALANCE*/
+#endif /*USE_HDG*/
 #if !(PP_TimeDiscMethod==700)
 USE MOD_DG_Vars                ,ONLY: N_DG_Mapping,DG_Elems_master,DG_Elems_slave
 #endif /*!(PP_TimeDiscMethod==700)*/
@@ -574,17 +574,11 @@ IF(CalcMeshInfo)THEN
   !#endif /*PARTICLES*/
 END IF
 
-#if USE_HDG && USE_LOADBALANCE
+#if USE_HDG
 IF (ABS(meshMode).GT.0) CALL BuildSideToNonUniqueGlobalSide() ! requires ElemInfo
-#endif /*USE_HDG && USE_LOADBALANCE*/
+#endif /*USE_HDG*/
 !DEALLOCATE(ElemInfo,SideInfo)
 DEALLOCATE(SideInfo)
-IF(readFEMconnectivity)THEN
-  SDEALLOCATE(EdgeInfo)
-  SDEALLOCATE(VertexInfo)
-  SDEALLOCATE(EdgeConnectInfo)
-  SDEALLOCATE(VertexConnectInfo)
-END IF
 
 MeshInitIsDone=.TRUE.
 LBWRITE(UNIT_stdOut,'(A)')' INIT MESH DONE!'
@@ -603,9 +597,9 @@ USE MOD_GLobals
 USE MOD_DG_Vars   ,ONLY: N_DG_Mapping,DG_Elems_master,DG_Elems_slave,N_DG_Mapping!,pAdaptionType
 USE MOD_Mesh_Vars ,ONLY: SideToElem,nSides,nBCSides, offSetElem
 
-USE MOD_Mesh_Vars ,ONLY: firstMortarInnerSide,lastMortarInnerSide,MortarType,MortarInfo
+USE MOD_Mesh_Vars,   ONLY: firstMortarInnerSide,lastMortarInnerSide,MortarType,MortarInfo
 #if USE_MPI
-USE MOD_Mesh_Vars ,ONLY: firstMortarMPISide,lastMortarMPISide
+USE MOD_Mesh_Vars,   ONLY: firstMortarMPISide,lastMortarMPISide
 USE MOD_MPI       ,ONLY: StartExchange_DG_Elems,FinishExchangeMPIData
 USE MOD_MPI_Vars  ,ONLY: DataSizeSideSend,DataSizeSideRec,nNbProcs,nMPISides_rec,nMPISides_send,OffsetMPISides_rec
 USE MOD_MPI_Vars  ,ONLY: OffsetMPISides_send
@@ -1126,6 +1120,12 @@ IMPLICIT NONE
 !----------------------------------------------------------------------------------------------------------------------------
 !local variables
 !============================================================================================================================
+IF(readFEMconnectivity)THEN
+  SDEALLOCATE(EdgeInfo)
+  SDEALLOCATE(VertexInfo)
+  SDEALLOCATE(EdgeConnectInfo)
+  SDEALLOCATE(VertexConnectInfo)
+END IF
 ! Deallocate global variables, needs to go somewhere else later
 SDEALLOCATE(ElemInfo)
 ! mapping from elems to sides and vice-versa

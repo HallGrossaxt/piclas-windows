@@ -17,6 +17,7 @@ MODULE MOD_Particle_SurfaceFlux_Vars
 !> Variables and types for the surface flux, used directly in MOD_Particle_Vars as types are part of the Species type
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PUBLIC
@@ -63,8 +64,8 @@ TYPE tSurfaceFlux
   REAL                     , ALLOCATABLE :: VFR_total_allProcs(:)            ! -''-, all values for root in ReduceNoise-case
   REAL                                   :: VFR_total_allProcsTotal          !     -''-, total
   REAL                                   :: totalAreaSF                      ! Total area of the respective surface flux
-  INTEGER(KIND=8)                        :: InsertedParticle                 ! Number of all already inserted Particles
-  INTEGER(KIND=8)                        :: InsertedParticleSurplus          ! accumulated "negative" number of inserted Particles
+  INTEGER(KIND=i8)                       :: InsertedParticle                 ! Number of all already inserted Particles
+  INTEGER(KIND=i8)                       :: InsertedParticleSurplus          ! accumulated "negative" number of inserted Particles
   TYPE(tSurfFluxSubSideData), ALLOCATABLE :: SurfFluxSubSideData(:,:,:)      ! SF-specific Data of Sides (1:N,1:N,1:SideNumber)
   LOGICAL                                :: CircularInflow                   ! Circular region, which can be used to define small
                                                                              ! geometry features on large boundaries
@@ -72,6 +73,8 @@ TYPE tSurfaceFlux
   REAL                                   :: origin(2)                        ! origin in orth. coordinates of polar system
   REAL                                   :: rmax                             ! max radius of to-be inserted particles
   REAL                                   :: rmin                             ! min radius of to-be inserted particles
+  REAL                                   :: racetrackLength                  ! length between half circles for stadium / racetrack definition
+  REAL                                   :: racetrackDir(2)                  ! 2D vector to determine orientation of stadium
   INTEGER, ALLOCATABLE                   :: SurfFluxSideRejectType(:)        ! Type if parts in side can be rejected (1:SideNumber)
   LOGICAL                                :: Adaptive                         ! Is the surface flux an adaptive boundary?
   INTEGER                                :: AdaptiveType                     ! Chose the adaptive type, description in DefineParams
@@ -92,7 +95,7 @@ TYPE tSurfaceFlux
   LOGICAL                                :: SchottkyEffectTE                 ! Flag for Schottky effect in thermionic emission
   REAL                                   :: WorkFunctionTE                   ! Material-specific work function [Input: eV]
   REAL                                   :: RichardsonConstant               ! Material-specific constant [Input: A/(cm^2*K^2)]
-END TYPE
+END TYPE tSurfaceFlux
 
 LOGICAL                                 :: UseCircularInflow              ! Flag is set if the circular inflow feature is used:
                                                                           ! Particle insertion only in the defined circular area

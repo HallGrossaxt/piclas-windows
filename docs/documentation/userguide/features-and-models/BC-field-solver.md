@@ -1,7 +1,7 @@
 # Boundary Conditions - Field Solver
 
 Boundary conditions are defined in the mesh creation step in the hopr.ini file and can be modified when running PICLas in the
-corresponding *parameter.ini* file. In the *hopr.ini* file, which is read by the *hopr* executable, a boundary is defined by
+corresponding *parameter.ini* file. In the *hopr.ini* file, which is read by *PyHOPE*, a boundary is defined by
 
     BoundaryName = BC_Inflow   ! BC index 1 (from  position in the parameter file)
     BoundaryType = (/4,0,0,0/) ! (/ Type, curveIndex, State, alpha /)
@@ -23,7 +23,6 @@ include, periodic, Dirichlet, Silver-Mueller, perfectly conducting, symmetry and
 | :------------: | :-------: | :------------------------------------------------------------------------------------------------------------------------ |
 |    (/1,1/)     | periodic  | 1: positive direction of the 1st periodicity vector                                                                       |
 |    (/1,-1/)    | periodic  | -1: negative (opposite) direction of the 1st periodicity vector                                                           |
-|                |           |                                                                                                                           |
 |    (/2,2/)     | Dirichlet | 2: Coaxial waveguide                                                                                                      |
 |    (/2,22/)    | Dirichlet | 22: Coaxial waveguide BC (boundary condition or exact flux)                                                               |
 |    (/2,3/)     | Dirichlet | 3: Resonator                                                                                                              |
@@ -40,17 +39,13 @@ include, periodic, Dirichlet, Silver-Mueller, perfectly conducting, symmetry and
 |    (/2,16/)    | Dirichlet | 16: Gaussian pulse which is initialized in the domain and used as a boundary condition for t>0                            |
 |    (/2,50/)    | Dirichlet | 50: Initialization and BC Gyrotron - including derivatives                                                                |
 |    (/2,51/)    | Dirichlet | 51: Initialization and BC Gyrotron - including derivatives (nothing is set for z>eps)                                     |
-|                |           |                                                                                                                           |
 |    (/3,0/)     |    SM     | 1st order absorbing BC (Silver-Mueller) - Munz et al. 2000 / Computer Physics Communication 130, 83-117 with fix          |
 |                |           | of div. correction field for low B-fields that only set the correction fields when ABS(B)>1e-10                           |
 |    (/5,0/)     |    SM     | 1st order absorbing BC (Silver-Mueller) - Munz et al. 2000 / Computer Physics Communication 130, 83-117                   |
 |    (/6,0/)     |    SM     | 1st order absorbing BC (Silver-Mueller) - Munz et al. 2000 / Computer Physics Communication 130, 83-117 with fix          |
 |                |           | of div. correction field for low B-fields that only set the correction fields when B is significantly large compared to E |
-|                |           |                                                                                                                           |
 |    (/4,0/)     |    PEC    | Perfectly electric conducting surface (Munz, Omnes, Schneider 2000, pp. 97-98)                                            |
-|                |           |                                                                                                                           |
 |    (/10,0/)    | Symmetry  | Symmetry BC (perfect MAGNETIC conductor, PMC)                                                                             |
-|                |           |                                                                                                                           |
 |    (/20,0/)    |    Ref    | Use state that is read from .h5 file and interpolated to the BC                                                           |
 
 Dielectric -> type 100?
@@ -65,7 +60,6 @@ as detailed in the following table.
 | :------------: | :-------: | :----------------------------------------------------------------------------------------------------------------------------- |
 |    (/1,1/)     | periodic  | 1: positive direction of the 1st periodicity vector                                                                            |
 |    (/1,-1/)    | periodic  | -1: negative (opposite) direction of the 1st periodicity vector                                                                |
-|                |           |                                                                                                                                |
 |    (/2,0/)     | Dirichlet | 0: Phi=0                                                                                                                       |
 |    (/2,2/)     | Dirichlet | 2: Automatic adjustment for Phi to meet const. input power, see {ref}`sec:fixed-coupled-power`                                 |
 |   (/2,1001/)   | Dirichlet | 1001: linear potential y-z via Phi = 2340y + 2340z                                                                             |
@@ -80,27 +74,18 @@ as detailed in the following table.
 |   (/2,400/)    | Dirichlet | 400: Point Source in Dielectric Region with                                                                                    |
 |                |           | epsR_1  = 1  for x $<$ 0 (vacuum)                                                                                              |
 |                |           | epsR_2 != 1 for x $>$ 0 (dielectric region)                                                                                    |
-|                |           |                                                                                                                                |
 |    (/4,0/)     | Dirichlet | zero-potential (Phi=0)                                                                                                         |
-|                |           |                                                                                                                                |
 |    (/5,1/)     | Dirichlet | 1: use RefState Nbr 1 and $\cos(\omega t)$ function (for details see {ref}`sec:ref-state-bcs`)                                 |
-|                |           |                                                                                                                                |
 |    (/6,1/)     | Dirichlet | 1: use RefState Nbr 1 and $\cos(\omega t)+1$ function that does not switch sign (for details see {ref}`sec:ref-state-bcs`)     |
-|                |           |                                                                                                                                |
 |    (/7,1/)     | Dirichlet | 1: use LinState Nbr 1, linear function for Phi, see {ref}`sec:linear-potential`                                                |
-|                |           |                                                                                                                                |
 |    (/8,1/)     | Dirichlet | 8: Assign BC to EPC group nbr. 1 (different BCs can be assigned the same EPC), see {ref}`sec:electric-potential-condition`     |
-|                |           |                                                                                                                                |
 |    (/10,0/)    |  Neumann  | zero-gradient (dPhi/dn=0)                                                                                                      |
-|                |           |                                                                                                                                |
 |    (/11,0/)    |  Neumann  | q*n=1                                                                                                                          |
-|                |           |                                                                                                                                |
 |    (/20,1/)    |    FPC    | 1: Assign BC to FPC group nbr. 1 (different BCs can be assigned the same FPC), see {ref}`sec:floating-boundary-condition`      |
-|                |           |                                                                                                                                |
+|    (/30,0/)    |   DCBC    | {ref}`sec:distributed-capacitance-boundary-condition` (0: this number has no meaning)                                          |
 |    (/50,0/)    | Dirichlet | {ref}`sec:bias-voltage-for-dc` (0: this number has no meaning)                                                                 |
 |    (/51,1/)    | Dirichlet | {ref}`sec:bias-voltage-for-ac` (1: use RefState Nbr 1, see {ref}`sec:ref-state-bcs`)                                           |
 |    (/52,1/)    | Dirichlet | {ref}`sec:bias-voltage-for-ac-and-cpp` (1: use RefState Nbr 1, see {ref}`sec:ref-state-bcs`) and {ref}`sec:fixed-coupled-power`|
-|                |           |                                                                                                                                |
 |    (/60,1/)    | Dirichlet | {ref}`sec:fixed-coupled-power` for $\Phi=A\cos(\omega t)$ (1: use RefState Nbr 1, see {ref}`sec:ref-state-bcs`)                |
 
 (sec:ref-state-bcs)=
@@ -120,14 +105,14 @@ function (a frequency of 0 results in a fixed potential over time) and phase shi
 
 This yields the three parameters used in the cosine function
 
-$$\Phi(t)=A\cos (2\pi f t + \psi)$$
+$$\Phi(t)=A\cos (2\pi f t + \psi)~,$$
 
 where *A=-0.18011* is the amplitude, *t* is the time, *f=1* is the frequency and *psi=0* is the phase shift.
 
 Similar to boundary type *5* is type *6*, which simply uses a cosine function that always has the same sign, depending on the
 amplitude *A*
 
-$$\Phi(t)=\frac{A}{2}(\cos (2\pi f t + \psi)+1)$$
+$$\Phi(t)=\frac{A}{2}(\cos (2\pi f t + \psi)+1)~,$$
 
 (sec:linear-potential)=
 ### Linear potential function
@@ -183,13 +168,32 @@ automatically, e.g., "007-FPC-Charge-BCState-001" and "008-FPC-Voltage-BCState-0
 If the particle boundary condition is set to *open* (or *species-swap*), then each impacting charged particle that is removed there,
 will be added to the accumulated charge on that FPC.
 
+(sec:distributed-capacitance-boundary-condition)=
+### Distributed capacitance boundary condition (DCBC)
+Thick layers of dielectric materials, which are resolved by mesh elements can directly be modelled as described in Section {ref}`sec:dielectric-materials`.
+Thin layers of dielectric materials (on top of electrodes that represent a Dirichlet BC) can be modelled via the distributed capacitance boundary
+condition (DCBC), which is activated in the field solver by setting
+
+    BoundaryName = BC_DCBC  ! BC name in the mesh.h5 file
+    BoundaryType = (/30,0/) ! BCType=30 for DCBC and the BCState=0 has no meaning or function here
+
+and solves the following equation on the boundary faces
+
+$$-\vec{n}\cdot\vec{D}=\frac{\varepsilon_0\varepsilon_r}{d}\left(\Phi_0-\Phi\right)+\sigma~,$$
+
+where $d$ is the dielectric layer thickness, $\varepsilon_r$ the relative permittivity of the surface, $\Phi_0$
+is the electric potential at the surface of the electrode, $\Phi$ and $\vec{D}=-\varepsilon_0\varepsilon_r\nabla\Phi$
+are the unknown electric potential and displacement field, respectively, and $\sigma$ is the pointwise
+surface charge density in C/m$^2$ between the dielectric surface and the plasma region.
+These parameters are defined for each particle surface and are described in section {ref}`sec:distributed-capacitance-boundary-condition-for-particles`.
+
 (sec:electric-potential-condition)=
 ### Electric potential condition (EPC)
 Grounded surfaces with a specific resistance between the ground and the surface can be modelled as equipotential surfaces, where
 charged particles are removed and their charge is accumulated over each time step and a voltage is calculated from from the
 resistance of the surface and the resulting electric current via
 
-$$U=RI=-R\frac{dQ}{dt}$$
+$$U=RI=-R\frac{dQ}{dt}~,$$
 
 where $U$ is the voltage different to ground (0V), $R$ is the resistance assigned to the surface, $I$ is the electric current and
 $dQ$ the amount of charge that is removed in each time step $dt$.
@@ -202,7 +206,7 @@ The boundary is activated by setting one or more EPC
     BoundaryType = (/8,2/)  ! 8: activate EPC, 2: Index of the EPC group to which this BC belongs (2nd group)
 
 The resulting current $I$ and voltage $U$ are automatically written to *FieldAnalyze.csv*, e.g., "007-EPC-Current-BCState-001" and
-"008-EPC-Voltage-BCState-001".
+"008-EPC-Voltage-BCState-001". 
 
 (sec:fixed-coupled-power)=
 ### Power control
@@ -317,8 +321,11 @@ where a RefState must be defined, which specifies the parameters for the $cos(\o
 {ref}`sec:ref-state-bcs`. Note that this BC is only implemented with zero crossing.
 For details on the power coupling, see {ref}`sec:fixed-coupled-power`.
 
+(sec:dielectric-materials)=
 ## Dielectric Materials
-
+Thin layers of dielectric materials (on top of electrodes that represent a Dirichlet BC) can be modelled via the distributed
+capacitance boundary condition (DCBC), see Section {ref}`sec:distributed-capacitance-boundary-condition`.
+Thick layers of dielectric materials, which are resolved by mesh elements, are described in this section.
 Dielectric material properties can be considered by defining regions (or specific elements)
 in the computational domain, where permittivity and permeability constants for linear isotropic
 non-lossy dielectrics are used. The interfaces between dielectrics and vacuum regions must be separated
@@ -384,7 +391,7 @@ setting
 which is set true by default, hence, removing the particles.
 
 ### Dielectric Zones
-Regions or zones (corresponding to zones as defined by hopr) can also be used to define dielectrics.
+Regions or zones (corresponding to zones as defined by PyHOPE) can also be used to define dielectrics.
 In this case, the number of zones must be supplied
 
     DielectricNbrOfZones = 8

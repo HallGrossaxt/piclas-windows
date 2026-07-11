@@ -17,6 +17,7 @@ MODULE MOD_ParticleInit
 ! Add comments please!
 !===================================================================================================================================
 ! MODULES
+USE MOD_Globals_Vars, ONLY: i8
 ! IMPLICIT VARIABLE HANDLING
 IMPLICIT NONE
 PRIVATE
@@ -25,26 +26,6 @@ PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Private Part ---------------------------------------------------------------------------------------------------------------------
 ! Public Part ----------------------------------------------------------------------------------------------------------------------
-
-INTERFACE InitParticleGlobals
-  MODULE PROCEDURE InitParticleGlobals
-END INTERFACE
-
-INTERFACE InitParticles
-  MODULE PROCEDURE InitParticles
-END INTERFACE
-
-INTERFACE FinalizeParticles
-  MODULE PROCEDURE FinalizeParticles
-END INTERFACE
-
-INTERFACE InitialIonization
-  MODULE PROCEDURE InitialIonization
-END INTERFACE
-
-INTERFACE InitRandomSeed
-  MODULE PROCEDURE InitRandomSeed
-END INTERFACE
 
 INTERFACE PortabilityGetPID
   FUNCTION GetPID_C() BIND (C, name='getpid')
@@ -1135,9 +1116,7 @@ USE MOD_PreProc
 USE MOD_Particle_Vars       ,ONLY: PDM,PEM,PartState,nSpecies,Species,PartSpecies
 USE MOD_Particle_Vars       ,ONLY: InitialIonizationChargeAverage,InitialIonizationSpeciesID,InitialIonizationSpecies
 USE MOD_Mesh_Vars           ,ONLY: NGeo,XCL_NGeo,XiCL_NGeo,wBaryCL_NGeo,offsetElem
-USE MOD_DSMC_Vars           ,ONLY: CollisMode,DSMC,PartStateIntEn
 USE MOD_part_emission_tools ,ONLY: CalcVelocity_maxwell_lpn
-USE MOD_DSMC_Vars           ,ONLY: useDSMC
 USE MOD_Eval_xyz            ,ONLY: TensorProductInterpolation
 USE MOD_Part_Tools          ,ONLY: GetNextFreePosition
 #if USE_LOADBALANCE
@@ -1263,12 +1242,6 @@ DO iElem=1,PP_nElems
     CALL TensorProductInterpolation(PartPosRef(1:3),3,NGeo,XiCL_NGeo,wBaryCL_NGeo,XCL_NGeo(1:3,0:NGeo,0:NGeo,0:NGeo,iElem) &
                       ,PartState(1:3,ParticleIndexNbr)) !Map into phys. space
 
-    ! Set the internal energies (vb, rot and electronic) to zero if needed
-    IF ((useDSMC).AND.(CollisMode.GT.1)) THEN
-      PartStateIntEn(1,ParticleIndexNbr) = 0.
-      PartStateIntEn(2,ParticleIndexNbr) = 0.
-      IF (DSMC%ElectronicModel.GT.0)  PartStateIntEn(3,ParticleIndexNbr) = 0.
-    END IF
 
     ! Set the element ID of the electron to the current element ID
     PEM%GlobalElemID(ParticleIndexNbr) = iElem + offsetElem
@@ -1427,13 +1400,13 @@ INTEGER,INTENT(INOUT)          :: Seeds(SeedSize)
 !----------------------------------------------------------------------------------------------------------------------------------!
 ! LOCAL VARIABLES
 INTEGER                        :: iSeed,DateTime(8),ProcessID,iStat,OpenFileID,GoodSeeds
-INTEGER(KIND=8)                :: Clock,AuxilaryClock
+INTEGER(KIND=i8)               :: Clock,AuxilaryClock
 LOGICAL                        :: uRandomExists
 !==================================================================================================================================
 
 uRandomExists=.FALSE.
 IF (nRandomSeeds.NE.-1) THEN
-  Clock     = 1536679165842_8
+  Clock     = 1536679165842_i8
   ProcessID = 3671
 ELSE
 ! First try if the OS provides a random number generator
@@ -1450,9 +1423,9 @@ ELSE
     CALL SYSTEM_CLOCK(COUNT=Clock)
     IF (Clock .EQ. 0) THEN
       CALL DATE_AND_TIME(values=DateTime)
-      Clock =(DateTime(1) - 1970) * 365_8 * 24 * 60 * 60 * 1000 &
-      + DateTime(2) * 31_8 * 24 * 60 * 60 * 1000 &
-      + DateTime(3) * 24_8 * 60 * 60 * 1000 &
+      Clock =(DateTime(1) - 1970) * 365_i8 * 24 * 60 * 60 * 1000 &
+      + DateTime(2) * 31_i8 * 24 * 60 * 60 * 1000 &
+      + DateTime(3) * 24_i8 * 60 * 60 * 1000 &
       + DateTime(5) * 60 * 60 * 1000 &
       + DateTime(6) * 60 * 1000 &
       + DateTime(7) * 1000 &
@@ -1479,10 +1452,10 @@ IF(.NOT. uRandomExists) THEN
     IF (AuxilaryClock .EQ. 0) THEN
       AuxilaryClock = 104729
     ELSE
-      AuxilaryClock = MOD(AuxilaryClock, 4294967296_8)
+      AuxilaryClock = MOD(AuxilaryClock, 4294967296_i8)
     END IF
-    AuxilaryClock = MOD(AuxilaryClock * 279470273_8, 4294967291_8)
-    GoodSeeds = INT(MOD(AuxilaryClock, INT(HUGE(0),KIND=8)), KIND(0))
+    AuxilaryClock = MOD(AuxilaryClock * 279470273_i8, 4294967291_i8)
+    GoodSeeds = INT(MOD(AuxilaryClock, INT(HUGE(0),KIND=i8)), KIND(0))
     Seeds(iSeed) = GoodSeeds
   END DO
 END IF

@@ -66,14 +66,14 @@ USE MOD_Part_Tools             ,ONLY: UpdateNextFreePosition,isPushParticle,Calc
 USE MOD_Particle_Tracking      ,ONLY: PerformTracking
 USE MOD_vMPF                   ,ONLY: SplitAndMerge
 USE MOD_Particle_Vars          ,ONLY: UseSplitAndMerge
-USE MOD_PICDepo                ,ONLY: DepositVirtualDielectricLayerParticles
+USE MOD_PICDepo_HDG            ,ONLY: DepositVirtualDielectricLayerParticles
+USE MOD_Dielectric_Vars        ,ONLY: DoDielectricSurfaceCharge
+USE MOD_Particle_Boundary_Vars ,ONLY: DoVirtualDielectricLayer
 #endif /*PARTICLES*/
 USE MOD_HDG                    ,ONLY: HDG
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Timers     ,ONLY: LBStartTime,LBSplitTime,LBPauseTime
 #endif /*USE_LOADBALANCE*/
-USE MOD_Dielectric_Vars        ,ONLY: DoDielectricSurfaceCharge
-USE MOD_Particle_Boundary_Vars ,ONLY: DoVirtualDielectricLayer
 #ifdef drift_diffusion
 USE MOD_FV_Vars                ,ONLY: U_FV, Ut_FV
 USE MOD_FV                     ,ONLY: FV_main
