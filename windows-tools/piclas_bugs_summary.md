@@ -410,6 +410,126 @@ GPU build.
 
 ---
 
+## §16.27 — Per-species MacroParticleFactor for multi-species DSMC (2026-07-03 / 2026-07-11, v1.6)
+
+**Goal:** species-specific constant weighting factors in multi-species DSMC
+*without* a background gas — e.g. host + trace dopant at pressure ratio 1:50
+with comparable simulation-particle counts per species.
+
+**Files:** `src/particles/dsmc/dsmc_init.f90`,
+`src/particles/dsmc/dsmc_particle_pairing.f90`,
+`src/particles/dsmc/dsmc_vars.f90`, `src/particles/mcc/mcc_init.f90`,
+`src/particles/emission/particle_surface_flux.f90`,
+`src/particles/particle_init.f90`, `src/particles/particle_vMPF.f90`,
+`src/particles/particle_vars.f90`, `src/timedisc/timedisc_TimeStep_DSMC.f90`.
+Commit `497b29d`, released as **v1.6**.
+
+### Why lifting the init gate alone is wrong
+
+Upstream aborts on `Part-vMPF=T` without a background gas. The stock
+weighted pair kinematics (`dsmc_collis_mode.f90`, `FracMassCent` with
+effective masses `m*w`) conserve weighted momentum and energy per
+collision, but their *equilibrium* is effective-mass equipartition:
+`w1*T1 = w2*T2`, i.e. **T ∝ 1/weight**. With a 1:50 constant weight
+ratio the light-weighted dopant *heats* toward 50× the host temperature
+instead of relaxing (verified numerically: He at 984 K climbed to
+1416 K and rising, while an equal-MPF control relaxed correctly).
+Radial/linear weighting tolerates the scheme only because same-cell
+weight ratios stay near 1; the background-gas machinery avoids it by
+splitting the heavier-weighted partner to equal weight before colliding
+(`mcc.f90`).
+
+### Implementation — split-at-collision (new mode `DoSpeciesWeighting`)
+
+Active when `Part-vMPF=T`, no spatial (linear/radial) weighting, and no
+background gas. Aborts for `+VarTimeStep` and `+AmbipolarDiff`; XSec-based
+MCC with unequal species MPFs aborts in `mcc_init.f90`.
+
+- **Pairing** (`dsmc_particle_pairing.f90`): the pair-MPF sum
+  accumulates `MIN(w1,w2)` instead of the pair mean, so an accepted
+  collision event represents `w_min` real collisions and rates stay
+  exact. On acceptance, `DSMC_SplitPartnerForCollision` reduces the
+  heavier particle to the lighter one's weight and spawns the remainder
+  as a new particle with the pre-collision state (clone pattern from
+  `SplitParticles`, incl. polyatomic `VibQuantsPar` and ElecModel-2
+  `DistriFunc`). The pair then collides equal-weight through the
+  unmodified, exact stock kinematics.
+- **`Part-vMPFPairSplitRatio`** (default 1.2): split only when the pair
+  weight ratio exceeds this, preventing a dust-fragmentation cascade
+  (without it: 550k-particle runaway).
+- **Merging** (`particle_vMPF.f90 MergeParticles`): under
+  `DoSpeciesWeighting`, merged weights are redistributed uniformly
+  (`totalWeight/nPartNew`). The stock proportional rescale is a
+  multiplicative random walk — after ~600 merges single-particle
+  weights spanned 2.1 to 2.37e6 (one particle carrying 24% of the
+  species mass) and wrecked the statistics.
+- **Reservoir mode** (`timedisc_TimeStep_DSMC.f90`): the
+  `DSMC%ReservoirSimu` branch returned before `SplitAndMerge`, so
+  merging never ran in reservoir simulations; the call was added.
+- **Surface flux** (`particle_surface_flux.f90`): constant-MPF vMPF
+  insertion left `PartMPF` unset (latent bug also for background-gas
+  vMPF); now set from `Species(iSpec)%MacroParticleFactor`.
+
+### Validation
+
+Heat-bath relaxation, Ar 1e23 m⁻³ / MPF 2000 / 300 K + He 2e21 m⁻³ /
+MPF 40 / 1000 K, CollisMode=1, 1-element cube reservoir, merge
+threshold 6000 per species:
+
+- Both species relax to the analytic equilibrium (313.7 K for this
+  mixture); the He(t) relaxation curve overlays an equal-MPF
+  brute-force control within statistical noise at all times.
+- Total kinetic energy constant to 12+ digits; particle count bounded
+  by the merge threshold.
+
+### Regression (2026-07-11, after v1.6)
+
+- `NIG_Reservoir` and `WEK_Reservoir` (the suites exercising the merge
+  uniformization + reservoir SplitAndMerge): **PASS, 0 errors**.
+- `NIG_DSMC` / `NIG_tracking_DSMC` showed exit-3 crashes on the GPU
+  binary (RotPeriodicBCMulti, exchange_procs, mortar_exchange_procs) —
+  triaged as the pre-existing Bug-G/CUDA-context race: the failing MPI
+  counts shift between runs, and **all examples pass with the no-GPU
+  binary built from identical v1.6 source**. Unrelated to this feature
+  (vMPF is inactive in those tests).
+
+### MPI>1 verification (2026-07-11)
+
+Same Ar/He mixture on a 2×2×2-element cube (side 4.64e-6 m, specular
+walls, `cell_local` init, `triatracking`), **moving particles** — no
+reservoir mode — so split-at-collision remainders migrate across MPI
+rank boundaries. No-GPU binary, 2000 steps (dt=5e-10 s, tend=1e-6 s),
+MPI = 1, 2, 4, 8 (8 = one element per rank). All runs exit 0.
+
+| np | T_Ar end | T_He end | Ekin rel. drift | nPart Ar | nPart He |
+|----|----------|----------|-----------------|----------|----------|
+| 1  | 312.3 K  | 317.8 K  | -1.2e-14        | 7983     | 4996     |
+| 2  | 313.4 K  | 312.1 K  | +1.0e-14        | 7994     | 4994     |
+| 4  | 318.2 K  | 317.6 K  | +1.4e-14        | 7998     | 4994     |
+| 8  | 313.9 K  | 316.2 K  | +1.6e-14        | 7981     | 4997     |
+
+- Both species reach the analytic 313.7 K within statistical noise
+  (±4.5 K ≈ the sqrt(2/3N) temperature fluctuation for N≈5000).
+- Total kinetic energy conserved to machine precision at every rank
+  count — split, merge, and inter-rank particle exchange all conserve.
+- He(t) relaxation curves agree across np within noise at all sampled
+  times (e.g. t=5e-8 s: 722/699/731/735 K).
+- Ar count capped at ~8000 = 8 cells × merge threshold 1000; He stays
+  at its initial ~5000 (below threshold), as expected.
+
+Case: `hopr.ini` needs `jacobianTolerance=1E-30` for the micron-scale
+cube (HOPR's default rejects detT ≈ 1e-17 as null-negative).
+
+### User recipe
+
+`Part-vMPF=T`, per-species `Part-SpeciesX-MacroParticleFactor` (dopant
+MPF = host MPF / pressure ratio for equal particle counts), set
+`Part-SpeciesX-vMPFMergeThreshold` for **every** species (~1.2× the
+target per-cell count), optional `Part-vMPFPairSplitRatio` (default
+1.2). Keep octree off on Windows (§16.24).
+
+---
+
 ## Regression Test Score (after all fixes above)
 
 **NIG_tracking_DSMC (13 sub-tests): 11 / 13 PASS** — as of §16.10; mortar fixed via invariant analyze (§16.19).
