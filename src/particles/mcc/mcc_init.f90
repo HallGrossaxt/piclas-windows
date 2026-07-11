@@ -72,7 +72,7 @@ USE MOD_Globals
 USE MOD_ReadInTools
 USE MOD_Globals_Vars  ,ONLY: ElementaryCharge
 USE MOD_Particle_Vars ,ONLY: nSpecies, SampleElecExcitation, ExcitationLevelCounter, ExcitationSampleData, ExcitationLevelMapping
-USE MOD_Particle_Vars ,ONLY: VarTimeStep, Species, SpeciesDatabase
+USE MOD_Particle_Vars ,ONLY: VarTimeStep, Species, SpeciesDatabase, usevMPF
 USE MOD_Mesh_Vars     ,ONLY: nElems
 USE MOD_DSMC_Vars     ,ONLY: BGGas, SpecDSMC, CollInf, DSMC, ChemReac, CollisMode
 USE MOD_MCC_Vars      ,ONLY: UseMCC, XSec_Database, SpecXSec, XSec_NullCollision, XSec_Relaxation
@@ -149,6 +149,12 @@ IF(UseMCC.AND.(DSMC%VibRelaxProb.EQ.2.0)) CALL abort(__STAMP__&
 
 IF(.NOT.UseMCC.AND.VarTimeStep%UseSpeciesSpecific) CALL abort(__STAMP__,&
       'ERROR: Only MCC is implemented with a species-specific time step!')
+
+! XSec-based collision probabilities assume equal particle weights outside of the background gas trace-species treatment
+IF(UseMCC.AND.usevMPF.AND.(BGGas%NumberOfSpecies.EQ.0)) THEN
+  IF(ANY(Species(:)%MacroParticleFactor.NE.Species(1)%MacroParticleFactor)) CALL abort(__STAMP__,&
+      'ERROR: MCC/XSec-based collision modelling without a background gas requires equal weighting factors for all species!')
+END IF
 
 ! Disable SampleElecExcitation if electronic excitation has not been enabled for at least one species
 IF(SampleElecExcitation.AND.(.NOT.ANY(SpecDSMC(:)%UseElecXSec))) THEN

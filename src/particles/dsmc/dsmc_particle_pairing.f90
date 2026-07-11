@@ -503,7 +503,7 @@ USE MOD_Globals
 USE MOD_DSMC_CollisionProb      ,ONLY: DSMC_prob_calc
 USE MOD_DSMC_Collis             ,ONLY: DSMC_perform_collision
 USE MOD_DSMC_Vars               ,ONLY: Coll_pData,CollInf,CollisMode,PartStateIntEn,ChemReac,DSMC
-USE MOD_DSMC_Vars               ,ONLY: ParticleWeighting
+USE MOD_DSMC_Vars               ,ONLY: ParticleWeighting, DoSpeciesWeighting
 USE MOD_DSMC_Vars               ,ONLY: SelectionProc, useRelaxProbCorrFactor, iPartIndx_NodeNewElecRelax, newElecRelaxParts
 USE MOD_DSMC_Vars               ,ONLY: iPartIndx_NodeElecRelaxChem,nElecRelaxChemParts
 USE MOD_Particle_Vars           ,ONLY: PartSpecies, nSpecies, PartState, UseVarTimeStep, usevMPF
@@ -626,8 +626,15 @@ DO iPair = 1, nPair
   iCase = CollInf%Coll_Case(cSpec1, cSpec2)
   ! Summation of the average weighting factor of the collision pairs for each case (AA, AB, BB)
   IF(usevMPF.OR.UseVarTimeStep) THEN
-    CollInf%SumPairMPF(iCase) = CollInf%SumPairMPF(iCase) + (GetParticleWeight(Coll_pData(iPair)%iPart_p1) &
-                                                        + GetParticleWeight(Coll_pData(iPair)%iPart_p2))*0.5
+    IF(DoSpeciesWeighting) THEN
+      ! Split-at-collision treatment: an accepted collision event represents MIN(w1,w2) real collisions, thus the pair sum used
+      ! for the probability normalization has to be built from the pair-minimum instead of the pair-mean weight
+      CollInf%SumPairMPF(iCase) = CollInf%SumPairMPF(iCase) + MIN(GetParticleWeight(Coll_pData(iPair)%iPart_p1), &
+                                                                  GetParticleWeight(Coll_pData(iPair)%iPart_p2))
+    ELSE
+      CollInf%SumPairMPF(iCase) = CollInf%SumPairMPF(iCase) + (GetParticleWeight(Coll_pData(iPair)%iPart_p1) &
+                                                          + GetParticleWeight(Coll_pData(iPair)%iPart_p2))*0.5
+    END IF
   END IF
 
   CollInf%Coll_CaseNum(iCase) = CollInf%Coll_CaseNum(iCase) + 1 !sum of coll case (Sab)
@@ -659,6 +666,8 @@ DO iPair = 1, nPair
     CALL DSMC_prob_calc(iElem, iPair, NodeVolume)
     CALL RANDOM_NUMBER(iRan)
     IF (Coll_pData(iPair)%Prob.GE.iRan) THEN
+      ! Species weighting: equalize unequal pair weights by splitting the heavier-weighted particle before the collision
+      IF(DoSpeciesWeighting) CALL DSMC_SplitPartnerForCollision(iPair)
       CALL DSMC_perform_collision(iPair,iElem, NodeVolume, TotalPartNum)
       IF (CollInf%ProhibitDoubleColl) THEN
         CollInf%OldCollPartner(Coll_pData(iPair)%iPart_p1) = Coll_pData(iPair)%iPart_p2
@@ -714,6 +723,91 @@ IF (DSMC%DoAmbipolarDiff) THEN
 END IF
 
 END SUBROUTINE PerformPairingAndCollision
+
+
+SUBROUTINE DSMC_SplitPartnerForCollision(iPair)
+!===================================================================================================================================
+!> Species-specific constant particle weighting: equalizes the weights of a collision pair that has been accepted for a collision.
+!> The heavier-weighted particle continues into the collision carrying the lighter partner's weight; the weight difference is
+!> split off into a new particle that keeps the pre-collision state (position, velocity, internal energies), making the collision
+!> exactly conservative (mirrors the background-gas trace-species split treatment). The remainder particle does not participate
+!> in further collisions during this time step. NOTE: performing the collision with unequal weights via the weighted
+!> centre-of-mass kinematics instead would equilibrate towards T_species ~ 1/weight (effective-mass equipartition).
+!===================================================================================================================================
+! MODULES
+USE MOD_Globals
+USE MOD_Particle_Vars           ,ONLY: PartState, PDM, PEM, PartMPF, PartSpecies, PartPosRef, vMPFSplitLimit, Species
+USE MOD_Particle_Vars           ,ONLY: vMPFPairSplitRatio
+USE MOD_DSMC_Vars               ,ONLY: Coll_pData, PartStateIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC, VibQuantsPar
+USE MOD_DSMC_Vars               ,ONLY: ElectronicDistriPart
+USE MOD_Particle_Tracking_Vars  ,ONLY: TrackingMethod
+USE MOD_part_tools              ,ONLY: GetNextFreePosition
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER, INTENT(IN)           :: iPair
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER                       :: iPartHeavy, PositionNbr, LocalElemID, iSpec
+REAL                          :: WeightHeavy, WeightLight
+!===================================================================================================================================
+IF(PartMPF(Coll_pData(iPair)%iPart_p1).GE.PartMPF(Coll_pData(iPair)%iPart_p2)) THEN
+  iPartHeavy = Coll_pData(iPair)%iPart_p1
+  WeightLight = PartMPF(Coll_pData(iPair)%iPart_p2)
+ELSE
+  iPartHeavy = Coll_pData(iPair)%iPart_p2
+  WeightLight = PartMPF(Coll_pData(iPair)%iPart_p1)
+END IF
+WeightHeavy = PartMPF(iPartHeavy)
+
+! Only split when the pair weight ratio exceeds the tolerance: near-equal pairs collide unsplit with the standard weighted
+! kinematics (negligible bias at small ratios). This also prevents a fragmentation cascade into ever-smaller weights when the
+! per-cell merge rescales weights non-uniformly. The ratio guard additionally bounds the remainder from below by
+! (vMPFPairSplitRatio-1)*WeightLight; the absolute vMPFSplitLimit floor (0 if unset) is respected as well.
+IF(WeightHeavy.LT.vMPFPairSplitRatio*WeightLight) RETURN
+IF((WeightHeavy-WeightLight).LT.vMPFSplitLimit) RETURN
+
+! Reduce the collision partner to the lighter weight, the pair collides with equal weights
+PartMPF(iPartHeavy) = WeightLight
+
+! Create the remainder particle carrying the pre-collision state and the remaining weight
+iSpec = PartSpecies(iPartHeavy)
+PositionNbr = GetNextFreePosition()
+PartState(1:6,PositionNbr) = PartState(1:6,iPartHeavy)
+IF(TrackingMethod.EQ.REFMAPPING) PartPosRef(1:3,PositionNbr) = PartPosRef(1:3,iPartHeavy)
+PartSpecies(PositionNbr) = iSpec
+IF(CollisMode.GT.1) THEN
+  PartStateIntEn(1:2,PositionNbr) = PartStateIntEn(1:2,iPartHeavy)
+  IF(SpecDSMC(iSpec)%PolyatomicMol) THEN
+    IF(ALLOCATED(VibQuantsPar(PositionNbr)%Quants)) DEALLOCATE(VibQuantsPar(PositionNbr)%Quants)
+    ALLOCATE(VibQuantsPar(PositionNbr)%Quants(PolyatomMolDSMC(SpecDSMC(iSpec)%SpecToPolyArray)%VibDOF))
+    VibQuantsPar(PositionNbr)%Quants(:) = VibQuantsPar(iPartHeavy)%Quants(:)
+  END IF
+  IF(DSMC%ElectronicModel.GT.0) THEN
+    PartStateIntEn(3,PositionNbr) = PartStateIntEn(3,iPartHeavy)
+    IF((DSMC%ElectronicModel.EQ.2).AND..NOT.((Species(iSpec)%InterID.EQ.4).OR.SpecDSMC(iSpec)%FullyIonized)) THEN
+      IF(ALLOCATED(ElectronicDistriPart(PositionNbr)%DistriFunc)) DEALLOCATE(ElectronicDistriPart(PositionNbr)%DistriFunc)
+      ALLOCATE(ElectronicDistriPart(PositionNbr)%DistriFunc(1:SpecDSMC(iSpec)%MaxElecQuant))
+      ElectronicDistriPart(PositionNbr)%DistriFunc(:) = ElectronicDistriPart(iPartHeavy)%DistriFunc(:)
+    END IF
+  END IF
+END IF
+PartMPF(PositionNbr) = WeightHeavy - WeightLight
+PEM%GlobalElemID(PositionNbr) = PEM%GlobalElemID(iPartHeavy)
+PEM%LastGlobalElemID(PositionNbr) = PEM%GlobalElemID(iPartHeavy)
+PDM%ParticleInside(PositionNbr) = .TRUE.
+PDM%IsNewPart(PositionNbr)      = .FALSE.
+PDM%dtFracPush(PositionNbr)     = .FALSE.
+! Insert the new particle into the cell-local linked list so that it is included in sampling and the next pairing
+LocalElemID = PEM%LocalElemID(PositionNbr)
+PEM%pNext(PEM%pEnd(LocalElemID)) = PositionNbr
+PEM%pEnd(LocalElemID) = PositionNbr
+PEM%pNumber(LocalElemID) = PEM%pNumber(LocalElemID) + 1
+
+END SUBROUTINE DSMC_SplitPartnerForCollision
 
 
 RECURSIVE SUBROUTINE AddOctreeNode(TreeNode, iElem, NodeVol)

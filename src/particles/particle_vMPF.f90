@@ -149,6 +149,7 @@ USE MOD_Globals               ,ONLY: ISFINITE
 USE MOD_Particle_Vars         ,ONLY: PartState, PDM, PartMPF, PartSpecies, Species, CellEelec_vMPF, CellEvib_vMPF
 USE MOD_part_tools            ,ONLY: GetParticleWeight
 USE MOD_DSMC_Vars             ,ONLY: PartStateIntEn, CollisMode, SpecDSMC, DSMC, PolyatomMolDSMC, VibQuantsPar
+USE MOD_DSMC_Vars             ,ONLY: DoSpeciesWeighting
 USE MOD_Particle_Analyze_Tools,ONLY: CalcTelec, CalcTVibPoly
 USE MOD_Particle_Analyze_Vars ,ONLY: CalcEnergyScalingRatioVMPF,EnergyScalingRatioVMPF
 USE MOD_Globals_Vars          ,ONLY: BoltzmannConst
@@ -317,8 +318,15 @@ END DO
 ! 4.) calc bulk velocity after deleting and set new MPF
 DO iLoop = 1, nPartNew
   iPart = iPartIndx_Node(iLoop)
-  ! Set new particle weight by distributing the total weight onto the remaining particles, proportional to their current weight
-  PartMPF(iPart) = totalWeight * PartMPF(iPart) / (totalWeight - lostWeight)
+  IF(DoSpeciesWeighting) THEN
+    ! Uniform redistribution of the total weight: the proportional rescale below is a multiplicative random walk over repeated
+    ! merges, which concentrates the species weight in few particles (lognormal broadening over decades) and destroys the
+    ! effective sample size when the split-at-collision treatment merges every time step
+    PartMPF(iPart) = totalWeight / REAL(nPartNew)
+  ELSE
+    ! Set new particle weight by distributing the total weight onto the remaining particles, proportional to their current weight
+    PartMPF(iPart) = totalWeight * PartMPF(iPart) / (totalWeight - lostWeight)
+  END IF
   partWeight = GetParticleWeight(iPart)
   vBulk_new(1:3) = vBulk_new(1:3) + PartState(4:6,iPart) * partWeight
 END DO

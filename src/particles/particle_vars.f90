@@ -189,6 +189,9 @@ LOGICAL                                  :: usevMPF                           ! 
 INTEGER, ALLOCATABLE                     :: vMPFMergeThreshold(:)             ! Max particle number per cell and (iSpec)
 INTEGER, ALLOCATABLE                     :: vMPFSplitThreshold(:)             ! Min particle number per cell and (iSpec)
 REAL                                     :: vMPFSplitLimit                    ! Do not split particles below this MPF threshold
+REAL                                     :: vMPFPairSplitRatio                ! Species weighting (split-at-collision): only split
+                                                                              ! a collision pair when the weight ratio exceeds this
+                                                                              ! value (near-equal pairs collide unsplit)
 LOGICAL                                  :: UseSplitAndMerge                  ! Flag for particle merge
 REAL, ALLOCATABLE                        :: CellEelec_vMPF(:,:)
 REAL, ALLOCATABLE                        :: CellEvib_vMPF(:,:)

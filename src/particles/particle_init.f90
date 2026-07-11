@@ -160,6 +160,10 @@ CALL prms%CreateIntOption(      'Part-Species[$]-vMPFSplitThreshold', 'Particle 
                                                                       'per cell and species.', '0',numberedmulti=.TRUE.)
 CALL prms%CreateRealOption(     'Part-vMPFSplitLimit'         , 'Do not split particles below this MPF threshold', '1.0')
 CALL prms%CreateIntOption(      'Part-vMPFSplitAndMergeStep'  , 'Perform split and merge every N steps','1')
+CALL prms%CreateRealOption(     'Part-vMPFPairSplitRatio'     , 'Species-specific weighting (vMPF without background gas): '//&
+                                                                'collision pairs are only weight-equalized by splitting the '//&
+                                                                'heavier particle when their weight ratio exceeds this value. '//&
+                                                                'Near-equal pairs collide unsplit.', '1.2')
 
 ! Output of macroscopic values
 CALL prms%SetSection("Particle Sampling")
@@ -1104,6 +1108,8 @@ IF (usevMPF) THEN
   ELSE
     vMPFSplitLimit = 0.
   END IF ! ANY(vMPFSplitThreshold.GT.0)
+  ! Pair weight ratio above which the split-at-collision treatment (species-specific weighting) equalizes the pair
+  vMPFPairSplitRatio = GETREAL('Part-vMPFPairSplitRatio')
 
   ! --- Emission-specific MPF
   CAll InitializeEmissionSpecificMPF()

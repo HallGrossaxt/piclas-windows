@@ -253,6 +253,9 @@ DO iSpec=1,nSpecies
             PartMPF(ParticleIndexNbr) = CalcRadWeightMPF(PartState(2,ParticleIndexNbr), iSpec,ParticleIndexNbr)
           ELSE IF(DoLinearWeighting.OR.DoCellLocalWeighting) THEN
             PartMPF(ParticleIndexNbr) = CalcVarWeightMPF(PartState(:,ParticleIndexNbr),ElemID,ParticleIndexNbr)
+          ELSE IF(usevMPF) THEN
+            ! Constant species-specific weighting factor
+            PartMPF(ParticleIndexNbr) = Species(iSpec)%MacroParticleFactor
           END IF
           IF(CalcSurfFluxInfo) THEN
             ! Get the weight without using the GetParticleWeight function, which includes the time step

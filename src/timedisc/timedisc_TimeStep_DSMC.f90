@@ -95,6 +95,9 @@ INTEGER                    :: symmOrder
 IF (DSMC%ReservoirSimu) THEN ! fix grid should be defined for reservoir simu
   CALL UpdateNextFreePosition()
   CALL DSMC_main()
+  ! Split & Merge: Variable particle weighting (required here as well, e.g. when species-specific
+  ! weighting factors grow the particle count through the split-at-collision treatment)
+  IF(UseSplitAndMerge) CALL SplitAndMerge()
   IF(DSMC%CompareLandauTeller) THEN
     DO iPart=1,PDM%ParticleVecLength
       PDM%nextFreePosition(iPart)=iPart

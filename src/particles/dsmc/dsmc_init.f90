@@ -312,7 +312,7 @@ USE MOD_ReadInTools
 USE MOD_DSMC_Vars
 USE MOD_Mesh_Vars              ,ONLY: nElems, NGEo
 USE MOD_Globals_Vars           ,ONLY: Pi, BoltzmannConst, ElementaryCharge, PlanckConst
-USE MOD_Particle_Vars          ,ONLY: nSpecies, Species, PDM, UseVarTimeStep, usevMPF, UseGranularSpecies
+USE MOD_Particle_Vars          ,ONLY: nSpecies, Species, PDM, UseVarTimeStep, usevMPF, UseGranularSpecies, UseSplitAndMerge
 USE MOD_Particle_Vars          ,ONLY: DoFieldIonization, SpeciesDatabase,  SampleElecExcitation
 USE MOD_part_tools             ,ONLY: RotInitPolyRoutineFuncPTR, CalcERotQuant_particle, CalcERot_particle, CalcERotDataset_particle
 USE MOD_Symmetry_Vars          ,ONLY: Symmetry
@@ -1367,8 +1367,25 @@ ELSE !CollisMode.GT.0
       END IF
     END DO
   ELSE
-    IF(usevMPF.AND..NOT.(DoRadialWeighting.OR.DoLinearWeighting.OR.DoCellLocalWeighting)) &
-      CALL abort(__STAMP__,'ERROR in DSMC: Variable weighting factors are only available with a background gas!')
+    IF(usevMPF.AND..NOT.(DoRadialWeighting.OR.DoLinearWeighting.OR.DoCellLocalWeighting)) THEN
+      ! Species-specific constant weighting factors without a background gas: particles keep the constant MPF of their species.
+      ! Unequal pair weights are equalized at collision time by splitting the heavier-weighted particle (the remainder keeps the
+      ! pre-collision state), making the collision exactly conservative. NOTE: the weighted centre-of-mass kinematics alone are
+      ! NOT sufficient here, their equilibrium is biased (T_species ~ 1/weight for large constant weight ratios).
+      ! Rate bookkeeping: an accepted event represents MIN(w1,w2) real collisions (see SumPairMPF summation during pairing).
+      ! Compatibility with XSec/MCC-based collision modelling is checked in InitMCC.
+      DoSpeciesWeighting = .TRUE.
+      IF(UseVarTimeStep) CALL abort(__STAMP__,&
+          'ERROR in DSMC: Variable weighting factors without a background gas are not implemented with a variable time step!')
+      IF(DSMC%DoAmbipolarDiff) CALL abort(__STAMP__,&
+          'ERROR in DSMC: Variable weighting factors without a background gas are not implemented with ambipolar diffusion!')
+      LBWRITE(UNIT_stdOut,'(A)') ' | vMPF without background gas: species-specific weighting factors (pair split-at-collision).'
+      IF(.NOT.UseSplitAndMerge) THEN
+        LBWRITE(UNIT_stdOut,'(A)') ' | WARNING: no vMPFMergeThreshold set - the split-at-collision treatment increases the'
+        LBWRITE(UNIT_stdOut,'(A)') ' |          particle count with every unequal-weight collision. Set a per-cell merge'
+        LBWRITE(UNIT_stdOut,'(A)') ' |          threshold (Part-Species[$]-vMPFMergeThreshold) for every species to bound it.'
+      END IF
+    END IF
   END IF
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Calculate vib collision numbers and characteristic velocity, according to Abe

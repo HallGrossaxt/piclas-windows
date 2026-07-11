@@ -70,6 +70,9 @@ TYPE(tVarVibRelaxProb) VarVibRelaxProb
 LOGICAL                       :: DoRadialWeighting          ! Enables radial weighting in DSMC
 LOGICAL                       :: DoLinearWeighting          ! Enables linear weighting in DSMC
 LOGICAL                       :: DoCellLocalWeighting       ! Enables cell-local weighting in DSMC
+LOGICAL                       :: DoSpeciesWeighting=.FALSE. ! Species-specific constant weighting factors (vMPF without background
+                                                            ! gas or spatial weighting): unequal pair weights are equalized at
+                                                            ! collision time by splitting the heavier-weighted particle
 
 TYPE tParticleWeighting
   CHARACTER(LEN=256)          :: Type
