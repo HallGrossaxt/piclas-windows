@@ -530,6 +530,111 @@ target per-cell count), optional `Part-vMPFPairSplitRatio` (default
 
 ---
 
+## §16.28 — Upstream 4.2.0 merge: Phase 3 regression re-baseline (2026-07-11/12, branch upgrade/4.2.0)
+
+After the vendor-branch 3-way merge (commit `75d3d2c`, see merge commit
+message for the 16 conflict resolutions), the DSMC-family regression
+suites were re-synced from upstream 4.2.0 and re-baselined on Windows.
+
+### Result: 7 suites green on the merged code
+
+| Suite (4.2.0 version) | Result |
+|---|---|
+| NIG_Reservoir (9 ex.) | PASS 0/0/0 |
+| NIG_Reservoir_single_core (31 ex., new 4.2.0 split) | PASS 0/0/0 |
+| NIG_DSMC (19 ex. after Windows disables) | PASS 0/0/0 |
+| NIG_tracking_DSMC (13 ex.) | PASS 0/0/0 |
+| WEK_Reservoir (7 ex.) | PASS 0/0/0 |
+| WEK_Reservoir_single_core (3 ex., new) | PASS 0/0/0 |
+| NIG_LoadBalance / sphere_soft_DSMC | PASS 0/0/0 |
+
+Old 4.1.0 suite dirs preserved under `regressioncheck/_410_backup/`.
+`CHEM_EQUI_diss_CH4` passes in the 4.2.0 layout (old Windows disable
+obsolete). Upstream's regenerated references match Windows directly for
+the DSMC family — no broad re-baseline was needed.
+
+### PyHOPE on Windows (replaces hopr for reggie externals)
+
+4.2.0 reggie externals call `pyhope` (reading hopr.ini format). Setup:
+dedicated venv `C:\Data\PRJ\pyhope-venv` (Windows CPython 3.14 — the
+MSYS2 Python cannot install the `gmsh` wheel; the reggie venv is
+MSYS-based). pyhope 1.0.0 with **three local patches** in
+site-packages, each marked `piclas-win local patch`:
+1. `script/pyhope_cli.py`: `multiprocessing.set_start_method('fork')` →
+   `'spawn'` on win32 (no fork on Windows).
+2. `mesh/mesh_builtin.py` + `mesh/reader/reader_gmsh.py`: Unix-only
+   `import resource` / `setrlimit(RLIMIT_STACK)` guarded by platform.
+3. `mesh/mesh_builtin.py`: `np.float128` → `np.longdouble` (no 128-bit
+   long double on Windows).
+**These patches live only in the venv and are lost on `pip install
+--upgrade pyhope`** — re-apply or upstream them. reggie itself needed
+no changes (`check.py` resolves pyhope via `shutil.which`); the run
+scripts prepend `/c/Data/PRJ/pyhope-venv/Scripts` to PATH.
+
+### FIXED — merge dropped the particle_restart MS-MPI fix
+
+The 3-way merge silently took upstream's side for the
+`MPI_ALLGATHERV(MPI_IN_PLACE,…)` in the missing-particle recovery of
+`particle_restart.f90` (upstream rewrote the surrounding region — no
+conflict marker). Symptom: `NIG_tracking_DSMC/periodic` restart at
+MPI=2 aborts with "Species ID is zero". Re-applied the explicit
+`SendBuffRestart` buffer. **Audit: comparing the `MS-MPI` fix-comment
+markers per file between v1.6 and the merge showed this was the only
+dropped fix** (17 other files intact). Lesson: after vendor merges,
+audit fix markers per file — same-count `MPI_IN_PLACE` swaps hide from
+count-based greps.
+
+### Bug L (OPEN) — 4.2.0 load-balance heap race on MS-MPI
+
+`WEK_Reservoir/CHEM_EQUI_Titan_Chemistry_Database` (MPI=6,
+`DoLoadBalance=T`, `LoadBalanceMaxSteps=1`): SIGSEGV moments after
+"PERFORMING LOAD BALANCE", 5/5 at full speed. Identical config passed
+on v1.6 → 4.2.0 regression. Diagnosis:
+- Symbolized stack (gdb rank-wrapper via `%PMI_RANK%` .bat +
+  `_NO_DEBUG_HEAP=1` — plain gdb masks the bug via the Windows debug
+  heap): ucrtbase **heap-manager fault inside the first GETINT string
+  allocation of `InitPiclas(IsLoadBalance=.TRUE.)`** → heap corrupted
+  earlier, i.e. during `FinalizePiclas`.
+- `UseH5IOLoadBalance=T` crashes identically (common path). Debug
+  (-Og) passes. 17 `_heapchk` probes per rank through FinalizePiclas:
+  run passes with every probe OK (observer effect) → **use-after-free
+  race, most likely against the MS-MPI async progress thread during
+  window/buffer teardown.** No MinGW ASan; PageHeap needs admin.
+- Blast radius small: 4.2.0 `NIG_LoadBalance` passes → LB works on
+  Windows generally.
+Mitigation: `DoLoadBalance = F` in that example's local parameter.ini
+(commented). Deep fix deferred. Debug helpers left in the tree:
+`piclas_heapchk_c()` (glob_windows.c) + `HeapProbe(label)`
+(piclas_init.f90); `-finit-real=snan` added to the WIN32 Debug flags
+(SetCompiler.cmake), matching upstream's newer-GNU config.
+
+### KNOWN — Titan ElecModel=4 intrinsically nondeterministic on MS-MPI
+
+`WEK_Reservoir/CHEM_EQUI_Titan_Chemistry` run 2 (ElectronicModel=4):
+two identical runs with **fixed seeds** differ ≥30% in 10+ PartAnalyze
+columns (trace species: 2e17 vs 0). Bitwise double-runs differ on
+**Release AND Debug** (snan-init run clean → not uninitialized REALs,
+not codegen) → intrinsic MPI-timing sensitivity on MS-MPI
+(Linux/OpenMPI is deterministic enough for the shipped reference).
+**A fixed reference cannot validate EM4 on Windows; regenerating a
+"Windows reference" does NOT work** (the next run differs again — the
+May 2026 §16.14-era regeneration precedent does not transfer).
+Local fix: example variation reduced to `ElectronicModel = 1`
+(deterministic, matches the Linux reference within allowances);
+`analyze.ini` reference list trimmed to match; upstream
+`PartAnalyze_refElecMod4.csv` restored pristine.
+
+### Upstream-report candidates found during triage
+
+- `particle_tools.f90`: `QRot` and `QElec` are missing from all three
+  `PartIntEn` component-transfer sites (`ChangePartID`,
+  `IncreaseMaxParticleNumber`, `ReduceMaxParticleNumber`) — quantum
+  numbers silently lost/mixed on resize/rearrangement.
+- Bug L (LB heap race) and the EM4 nondeterminism may also reproduce
+  on other MPI implementations with async progress.
+
+---
+
 ## Regression Test Score (after all fixes above)
 
 **NIG_tracking_DSMC (13 sub-tests): 11 / 13 PASS** — as of §16.10; mortar fixed via invariant analyze (§16.19).

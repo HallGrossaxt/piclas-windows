@@ -138,6 +138,17 @@ long long piclas_total_physical_memory_c(void)
     return 0;
 }
 
+/*
+ * piclas_heapchk_c()
+ *   Validates the CRT heap (walks all blocks). Returns _HEAPOK (-2) when the
+ *   heap is consistent. Debugging aid for locating heap corruption.
+ */
+#include <malloc.h>
+int piclas_heapchk_c(void)
+{
+    return _heapchk();
+}
+
 #else /* non-Windows stub */
 
 int glob_expand_c(const char *pattern, char *results, int results_len)
@@ -152,6 +163,12 @@ int glob_expand_c(const char *pattern, char *results, int results_len)
 long long piclas_total_physical_memory_c(void)
 {
     return 0;
+}
+
+/* No CRT heap on non-Windows: always report OK (-2 == _HEAPOK). */
+int piclas_heapchk_c(void)
+{
+    return -2;
 }
 
 #endif /* _WIN32 */

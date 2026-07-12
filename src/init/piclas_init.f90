@@ -505,4 +505,33 @@ END IF
 
 END SUBROUTINE FinalizeLoadBalance
 
+
+!===================================================================================================================================
+!> DEBUG (piclas-win): validate the CRT heap and print the result. Used to localize heap corruption around FinalizePiclas.
+!===================================================================================================================================
+SUBROUTINE HeapProbe(label)
+! MODULES
+USE MOD_Globals        ,ONLY: myRank
+USE, INTRINSIC :: ISO_C_BINDING ,ONLY: C_INT
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+CHARACTER(LEN=*),INTENT(IN) :: label
+!-----------------------------------------------------------------------------------------------------------------------------------
+INTERFACE
+  FUNCTION piclas_heapchk_c() BIND(C,name='piclas_heapchk_c')
+    IMPORT C_INT
+    INTEGER(C_INT) :: piclas_heapchk_c
+  END FUNCTION piclas_heapchk_c
+END INTERFACE
+INTEGER :: heapstatus
+!===================================================================================================================================
+heapstatus = INT(piclas_heapchk_c())
+IF(heapstatus.NE.-2)THEN
+  WRITE(*,'(A,I0,A,A,A,I0)') 'HEAPPROBE rank ',myRank,' [',label,'] *** HEAP BAD *** status=',heapstatus
+ELSE
+  WRITE(*,'(A,I0,A,A,A)')    'HEAPPROBE rank ',myRank,' [',label,'] ok'
+END IF
+FLUSH(6)
+END SUBROUTINE HeapProbe
+
 END MODULE MOD_Piclas_Init
