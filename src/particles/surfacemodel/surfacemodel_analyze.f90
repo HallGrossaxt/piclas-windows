@@ -695,6 +695,9 @@ INTEGER, INTENT(OUT) :: SurfCollNum(nSpecies), AdsorbNum(nSpecies), DesorbNum(nS
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER            :: iSpec
+#if USE_MPI
+INTEGER            :: tmpCount(nSpecies)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 DO iSpec = 1,nSpecies
@@ -704,10 +707,15 @@ DO iSpec = 1,nSpecies
 END DO
 
 #if USE_MPI
+! MS-MPI drops/zeroes the root contribution for MPI_REDUCE(MPI_IN_PLACE,...) (counts become (N-1)/N of the
+! correct value, cf. §16.14); use explicit send buffers on the root
 IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,SurfCollNum ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
-  CALL MPI_REDUCE(MPI_IN_PLACE,AdsorbNum   ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
-  CALL MPI_REDUCE(MPI_IN_PLACE,DesorbNum   ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  tmpCount = SurfCollNum
+  CALL MPI_REDUCE(tmpCount    ,SurfCollNum ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  tmpCount = AdsorbNum
+  CALL MPI_REDUCE(tmpCount    ,AdsorbNum   ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  tmpCount = DesorbNum
+  CALL MPI_REDUCE(tmpCount    ,DesorbNum   ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
 ELSE
   CALL MPI_REDUCE(SurfCollNum ,SurfCollNum ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
   CALL MPI_REDUCE(AdsorbNum   ,AdsorbNum   ,nSpecies,MPI_INTEGER,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
@@ -743,10 +751,15 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER            :: iPBC
+#if USE_MPI
+REAL               :: tmpPorous(5,nPorousBC)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 #if USE_MPI
+! MS-MPI drops/zeroes the root contribution for MPI_REDUCE(MPI_IN_PLACE,...) (cf. §16.14); explicit send buffer
 IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE  , PorousBCOutput, 5*nPorousBC, MPI_DOUBLE_PRECISION, MPI_SUM, 0, SurfCOMM%UNICATOR, iError)
+  tmpPorous = PorousBCOutput
+  CALL MPI_REDUCE(tmpPorous     , PorousBCOutput, 5*nPorousBC, MPI_DOUBLE_PRECISION, MPI_SUM, 0, SurfCOMM%UNICATOR, iError)
 ELSE
   CALL MPI_REDUCE(PorousBCOutput, PorousBCOutput, 5*nPorousBC, MPI_DOUBLE_PRECISION, MPI_SUM, 0, SurfCOMM%UNICATOR, iError)
 END IF
@@ -788,7 +801,7 @@ IMPLICIT NONE
 INTEGER            :: iGroup
 #if USE_MPI
 INTEGER            :: counter
-REAL,ALLOCATABLE   :: SendBuff(:)
+REAL,ALLOCATABLE   :: SendBuff(:), tmpSendBuff(:)
 #endif /*USE_MPI*/
 REAL               :: TimeSample, TimeSampleTemp
 !===================================================================================================================================
@@ -813,8 +826,12 @@ DO iGroup = 1, SurfaceGroup%nGroups
   SendBuff(counter) = REAL(SurfaceGroup%Counter(iGroup))
 END DO
 ! All: Sum up and send sampled group information to MPIRoot
+! MS-MPI drops/zeroes the root contribution for MPI_REDUCE(MPI_IN_PLACE,...) (cf. §16.14); explicit send buffer
 IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,SendBuff,6*SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  ALLOCATE(tmpSendBuff(6*SurfaceGroup%nGroups))
+  tmpSendBuff = SendBuff
+  CALL MPI_REDUCE(tmpSendBuff,SendBuff,6*SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  DEALLOCATE(tmpSendBuff)
 ELSE
   CALL MPI_REDUCE(SendBuff,SendBuff,6*SurfaceGroup%nGroups,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
 END IF
@@ -887,6 +904,7 @@ IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 REAL    :: SendBuf(1:BPO%NPartBoundaries*BPO%NSpecies)
+REAL    :: tmpSendBuf(1:BPO%NPartBoundaries*BPO%NSpecies)
 INTEGER :: SendBufSize
 !===================================================================================================================================
 SendBufSize = BPO%NPartBoundaries*BPO%NSpecies
@@ -894,7 +912,9 @@ SendBufSize = BPO%NPartBoundaries*BPO%NSpecies
 ! Map 2D array to vector for sending via MPI
 SendBuf = RESHAPE(BPO%RealPartOut,(/SendBufSize/))
 IF(MPIRoot)THEN
-  CALL MPI_REDUCE(MPI_IN_PLACE,SendBuf(1:SendBufSize),SendBufSize,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  ! MS-MPI drops/zeroes the root contribution for MPI_REDUCE(MPI_IN_PLACE,...) (cf. §16.14); explicit send buffer
+  tmpSendBuf = SendBuf
+  CALL MPI_REDUCE(tmpSendBuf(1:SendBufSize),SendBuf(1:SendBufSize),SendBufSize,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
   ! MAP vector back to 2D array
   BPO%RealPartOut = RESHAPE(SendBuf,(/BPO%NPartBoundaries,BPO%NSpecies/))
 ELSE
@@ -924,14 +944,26 @@ IMPLICIT NONE
 ! OUTPUT VARIABLES
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
+REAL                              :: tmpSEE(SEE%NPartBoundaries)
 !===================================================================================================================================
 IF (MPIRoot) THEN
-  IF(CalcElectronSEE) CALL MPI_REDUCE(MPI_IN_PLACE, SEE%RealElectronOut         , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
-  IF(CalcPhotonSEE) CALL MPI_REDUCE(MPI_IN_PLACE  , SEE%RealElectronOutPhoton   , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  ! MS-MPI corrupts/zeroes MPI_REDUCE(MPI_IN_PLACE,...) buffers (catastrophic at MPI=1: SEE currents -> 0, cf. §16.14);
+  ! use an explicit send buffer instead
+  IF(CalcElectronSEE) THEN
+    tmpSEE = SEE%RealElectronOut
+    CALL MPI_REDUCE(tmpSEE, SEE%RealElectronOut         , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  END IF
+  IF(CalcPhotonSEE) THEN
+    tmpSEE = SEE%RealElectronOutPhoton
+    CALL MPI_REDUCE(tmpSEE, SEE%RealElectronOutPhoton   , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+  END IF
   IF(CalcEnergyViolationSEE) THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE                  , SEE%EventCount              , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
-    CALL MPI_REDUCE(MPI_IN_PLACE                  , SEE%EnergyConsViolationCount, SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
-    CALL MPI_REDUCE(MPI_IN_PLACE                  , SEE%EnergyConsViolationSum  , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+    tmpSEE = SEE%EventCount
+    CALL MPI_REDUCE(tmpSEE, SEE%EventCount              , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+    tmpSEE = SEE%EnergyConsViolationCount
+    CALL MPI_REDUCE(tmpSEE, SEE%EnergyConsViolationCount, SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
+    tmpSEE = SEE%EnergyConsViolationSum
+    CALL MPI_REDUCE(tmpSEE, SEE%EnergyConsViolationSum  , SEE%NPartBoundaries,MPI_DOUBLE_PRECISION,MPI_SUM,0,SurfCOMM%UNICATOR,IERROR)
   END IF
 ELSE
   ! Reset non MPIRoot counters, MPIRoot counters are reset after writing the data to the file
@@ -994,6 +1026,9 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 INTEGER           :: iPartBound,iSpec,iBPO,iBC,BCSideID,Nloc
 REAL,ALLOCATABLE  :: TotalSurfArea(:)
+#if USE_MPI
+REAL,ALLOCATABLE  :: tmpTotalSurfArea(:)
+#endif /*USE_MPI*/
 CHARACTER(LEN=32) :: hilf
 !REAL              :: area
 !===================================================================================================================================
@@ -1118,7 +1153,11 @@ IF(iter.EQ.0)THEN ! First iteration: Only output this information once
   END DO ! BCSideID = 1,nSides
 #if USE_MPI
   IF(MPIroot)THEN
-    CALL MPI_REDUCE(MPI_IN_PLACE , TotalSurfArea , BPO%NPartBoundaries , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
+    ! MS-MPI drops/zeroes the root contribution for MPI_REDUCE(MPI_IN_PLACE,...) (cf. §16.14); explicit send buffer
+    ALLOCATE(tmpTotalSurfArea(1:BPO%NPartBoundaries))
+    tmpTotalSurfArea = TotalSurfArea
+    CALL MPI_REDUCE(tmpTotalSurfArea , TotalSurfArea , BPO%NPartBoundaries , MPI_DOUBLE_PRECISION , MPI_SUM , 0 , MPI_COMM_PICLAS , iError)
+    DEALLOCATE(tmpTotalSurfArea)
     WRITE(UNIT_stdOut,'(A)') "Total area used for BoundaryParticleOutput (BPO):"
     DO iBPO = 1, BPO%NPartBoundaries
       IF(iBPO.GT.9)THEN
