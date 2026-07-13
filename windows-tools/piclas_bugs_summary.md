@@ -635,6 +635,73 @@ Local fix: example variation reduced to `ElectronicModel = 1`
 
 ---
 
+## §16.29 — CHE (check-in) tier re-baseline on 4.2.0 (2026-07-13/14)
+
+The CHE tier reached **8/9 runnable suites green** (3 PETSc+MPI suites
+skip on MSYS2). Two genuine solver bugs and five harness fixes:
+
+### FIXED — uninitialized iDOF: OOB write in the PIC EM-field output
+
+`hdf5_output_particle_pic.f90 WriteElectromagneticPICFieldToHDF5`
+accumulates `iDOF = iDOF + 1` over all element DOFs to fill
+`U_N_2D_local`, but never initializes `iDOF = 0` beforehand — unlike its
+sibling routine. On Linux the uninitialized value is 0 by chance; on
+Windows it starts at 1, so the DOF index overruns the array (dim 640
+indexed at 641) → SIGSEGV during "WRITE PIC EM-FIELD TO HDF5". Fixed
+`iDOF = 0` before the loop. Surfaced by `CHE_PIC_maxwell_RK4`
+(2D/3D_variable_B, variable_particle_init). **Genuine upstream
+uninitialized-variable bug — candidate for upstream report.**
+
+### FIXED — porous BC: single-member-communicator MPI_IN_PLACE zeroing
+
+`surfacemodel_porous.f90` sums the particles impinging on the pump
+(`SumPartImpinged`) across surface-comm leaders via
+`MPI_ALLREDUCE(MPI_IN_PLACE,…)` on `MPI_COMM_LEADERS_SURF`. On a single
+compute node that communicator has one member, and MS-MPI zeroes the
+`MPI_IN_PLACE` buffer of a single-member communicator → `SumPartImpinged
+= 0` → pumping speed 0 → no particles pumped → `nPartOut = 0` for the
+pumped species. Surfaced by `CHE_DSMC/BC_PorousBC(_2DAxi)`: the run
+succeeds but the time-integrated `nPartOut-Spec-003` was 0.0 vs
+reference 112112; with an explicit send buffer it is ~111815 (within
+tol). Same single-member-communicator class as the `SurfaceGroup%Area`
+fix (§16.21).
+
+### Harness / tooling (reggie2.0-win fork + run scripts)
+
+- **piclas2vtk is compiled per PP_TimeDiscMethod** — the DSMC-built tool
+  aborts `ConvertSurfNodeSourceData() not implemented for
+  PP_TimeDiscMethod=4,300,400,700` on poisson-HDG (DCBC) and DVM output.
+  `run_che_all.sh` now swaps the equation-matched piclas2vtk.exe +
+  libpiclas.dll into `reggie/bin` per suite (poisson→poisson build,
+  DVM→edvm build, default→maxwell-DSMC). Built a DVM piclas2vtk
+  (`build-edvm-mpi` + `PICLAS_BUILD_POSTI=ON`).
+- **vtudiff needs the `vtk` Python module** — reggie's top-level
+  `import vtk` eagerly loads `vtkRenderingQt`, which fails on the
+  headless MSYS2 Python (no Qt DLLs). Patched `analysis.py` to fall back
+  to importing only the core IO/data vtkmodules under a `vtk` shim; vtk
+  itself installed via `pacman -S mingw-w64-ucrt-x86_64-vtk`.
+- **`ln` source detection** in the Windows `ln`-deferral guard used a
+  positional index that only worked for `ln -s SRC TARGET`; corrected to
+  the first non-flag argument so the one-operand `ln -s ../mesh.h5`
+  (piclas2vtk mesh-into-subdir) is no longer mis-deferred.
+- **non-GPU BGK** for `CHE_BGK` (avoids the GPU+LB crash interaction);
+  4 CHE binaries built to match the 4.2.0 `builds.ini` (correcting stale
+  runner assumptions — e.g. `CHE_maxwell` needs nopart+Debug+
+  MEASURE_MPI_WAIT+READIN_CONSTANTS, not code-analyze).
+- **MPI trims** (mesh-elements-vs-ranks): `3D_periodic_CVWM` →
+  1,2,6,7,8,9,10,11,17 (mesh < 20 ranks); `CHE_poisson/poisson` → drop
+  MPI=10 (turner mesh has exactly 10 elements → 1 elem/rank crash).
+
+### Residual: CHE_poisson is a Bug-G instance
+
+`CHE_poisson/poisson` (`DoLoadBalance=T` + `DoInitialAutoRestart=T` —
+the exact §16.25 Bug-G trigger) crashes at a *different* MPI count each
+run (the documented ~1.25% Bug-G residual). Not further fixable without
+solving residual Bug G; not trimmed/disabled so the residual stays
+visible.
+
+---
+
 ## Regression Test Score (after all fixes above)
 
 **NIG_tracking_DSMC (13 sub-tests): 11 / 13 PASS** — as of §16.10; mortar fixed via invariant analyze (§16.19).
