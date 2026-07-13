@@ -345,6 +345,7 @@ END IF
 ! Allocate local 2D array
 ALLOCATE(U_N_2D_local(1:nVarOut,1:nDOFOutput))
 
+iDOF = 0  ! piclas-win: initialize the DOF counter (uninitialized upstream -> OOB write on Windows where it is not 0 by chance)
 DO iElem=1,PP_nElems
   Nloc = N_DG_Mapping(2,iElem+offsetElem)
   DO k=0,Nloc
