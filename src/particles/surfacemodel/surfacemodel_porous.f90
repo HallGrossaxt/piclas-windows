@@ -453,6 +453,9 @@ IMPLICIT NONE
 INTEGER                       :: LocalElemID,CNElemID,GlobalElemID,SurfSideID,GlobalSideID,iPorousSide,iPBC,SampleElemID
 REAL                          :: PumpingSpeedTemp,DeltaPressure,partWeight,SumPartPorousBC,dtVar
 REAL                          :: SumPartImpinged(nPorousBC)
+#if USE_MPI
+REAL                          :: tmpSumPartImpinged(nPorousBC)
+#endif /*USE_MPI*/
 !===================================================================================================================================
 
 IF (.NOT.SurfTotalSideOnNode) RETURN
@@ -487,7 +490,10 @@ END IF
 !     the information to the processors on the node
 #if USE_MPI
 IF (myComputeNodeRank.EQ.0) THEN
-  CALL MPI_ALLREDUCE(MPI_IN_PLACE,SumPartImpinged(1:nPorousBC),nPorousBC,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_LEADERS_SURF,iError)
+  ! MS-MPI zeroes the MPI_IN_PLACE buffer of a single-member communicator (1 surf leader = single compute node),
+  ! which sets SumPartImpinged=0 -> no pumping -> nPartOut=0 (cf. §16.21 SurfaceGroup%Area). Use an explicit send buffer.
+  tmpSumPartImpinged = SumPartImpinged(1:nPorousBC)
+  CALL MPI_ALLREDUCE(tmpSumPartImpinged,SumPartImpinged(1:nPorousBC),nPorousBC,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_LEADERS_SURF,iError)
 END IF
 CALL MPI_BCAST(SumPartImpinged(1:nPorousBC),nPorousBC,MPI_DOUBLE_PRECISION,0,MPI_COMM_SHARED,iError)
 #endif /*USE_MPI*/
