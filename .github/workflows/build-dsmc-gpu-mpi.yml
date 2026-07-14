@@ -99,7 +99,19 @@ jobs:
         run: |
           $url = 'https://github.com/microsoft/Microsoft-MPI/releases/download/v10.1.1/msmpisetup.exe'
           $exe = Join-Path $env:RUNNER_TEMP 'msmpisetup.exe'
-          Invoke-WebRequest -Uri $url -OutFile $exe
+          # Retry the download: the GitHub releases CDN occasionally drops the connection
+          # ("An existing connection was forcibly closed by the remote host"), which is transient.
+          $ok = $false
+          for ($i = 1; $i -le 5; $i++) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -TimeoutSec 120
+              $ok = $true; break
+            } catch {
+              Write-Host "MS-MPI download attempt $i failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds ($i * 10)
+            }
+          }
+          if (-not $ok) { throw "MS-MPI download failed after 5 attempts" }
           Start-Process -FilePath $exe -ArgumentList '-unattend' -Wait
           $dll = Join-Path $env:SystemRoot 'System32\msmpi.dll'
           if (-not (Test-Path $dll)) { throw "msmpi.dll not found after install" }
