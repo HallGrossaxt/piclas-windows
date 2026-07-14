@@ -51,6 +51,9 @@ USE MOD_Preproc
 USE MOD_Mesh_Vars          ,ONLY: nBCs,BoundaryType
 USE MOD_Analyze_Vars       ,ONLY: DoFieldAnalyze
 USE MOD_HDG_Vars           ,ONLY: UseFPC,FPC
+#if !(USE_PETSC)
+USE MOD_HDG_Vars           ,ONLY: UseFPCviaCG,FPCcapValid
+#endif /*!(USE_PETSC)*/
 USE MOD_Mesh_Vars          ,ONLY: nBCSides,BC
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars   ,ONLY: PerformLoadBalance
@@ -108,7 +111,14 @@ IF(FPC%nFPCBounds.EQ.0) RETURN ! Already determined in HDG initialization
 UseFPC = .TRUE.
 
 #if !(USE_PETSC)
-CALL CollectiveStop(__STAMP__,'FPC model requires compilation with LIBS_USE_PETSC=ON')
+! No PETSc (Windows/MS-MPI build): carry the FPC unknowns in the internal MPI-parallel CG solver via a
+! capacitance matrix (Woodbury) instead of aborting. See src/hdg/hdg_fpc_cg.f90 and scope_fpc_cg_magnetron.md.
+UseFPCviaCG = .TRUE.
+! Invalidate the cached capacitance matrix / A^-1 C columns: A changes across an HDG (re)init (e.g. load balance
+! redistributes the mesh, or a dielectric changes). For electrostatic HDG A is dt-independent, so this init hook is the
+! main invalidation trigger; SolveFPCviaCG rebuilds lazily on the next solve. See hdg_fpc_cg.f90 / scope_fpc_cg_magnetron.md.
+FPCcapValid = .FALSE.
+LBWRITE(UNIT_stdOut,'(A)')' | FPC without PETSc: using internal CG capacitance-matrix path (UseFPCviaCG=T).'
 #endif /*!(USE_PETSC)*/
 
 GETTIME(StartT)

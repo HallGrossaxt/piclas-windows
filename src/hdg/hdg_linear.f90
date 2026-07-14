@@ -75,6 +75,10 @@ USE MOD_MPI_HDG            ,ONLY: Mask_MPIsides
 USE MOD_Globals_Vars       ,ONLY: ElementaryCharge
 USE MOD_ChangeBasis        ,ONLY: ChangeBasis2D
 USE MOD_HDG_Tools          ,ONLY: CG_solver,DisplayConvergence
+#if !(USE_PETSC)
+USE MOD_HDG_Vars           ,ONLY: UseFPCviaCG
+USE MOD_HDG_FPC_CG         ,ONLY: SolveFPCviaCG
+#endif /*!(USE_PETSC)*/
 USE MOD_Interpolation_Vars ,ONLY: N_Inter
 #if defined(PARTICLES)
 USE MOD_Globals_Vars       ,ONLY: eps0
@@ -608,7 +612,13 @@ END IF ! UseFPC
 PetscCallA(VecRestoreArrayRead(PETScSolutionLocal,lambda_pointer,ierr))
 #else
   ! HDGLinear
-  CALL CG_solver(iVar)
+  IF(UseFPCviaCG)THEN
+    ! Floating BC without PETSc: masked CG solve of A_nn + capacitance-matrix correction for phi_F (sets FPC%Voltage
+    ! and the conductor-face lambda internally). See hdg_fpc_cg.f90.
+    CALL SolveFPCviaCG(iVar)
+  ELSE
+    CALL CG_solver(iVar)
+  END IF ! UseFPCviaCG
 #endif /*USE_PETSC*/
   !POST PROCESSING
 

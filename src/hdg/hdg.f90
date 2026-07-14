@@ -1133,6 +1133,8 @@ USE MOD_Interpolation_Vars ,ONLY: NMax
 #if USE_PETSC
 USE petsc
 USE MOD_HDG_Vars_PETSc
+#else
+USE MOD_HDG_FPC_CG         ,ONLY: FinalizeFPCviaCG
 #endif
 #if USE_LOADBALANCE
 USE MOD_LoadBalance_Vars   ,ONLY: PerformLoadBalance,UseH5IOLoadBalance
@@ -1212,6 +1214,9 @@ ELSE
   SDEALLOCATE(FPC%Voltage)
 END IF ! MPIRoot
 #endif /*USE_LOADBALANCE*/
+#if !(USE_PETSC)
+CALL FinalizeFPCviaCG() ! Deallocate the FPC-via-CG capacitance matrix and cached A^-1 C columns (no-op if unused)
+#endif /*!(USE_PETSC)*/
 SDEALLOCATE(ConductorBC)
 SDEALLOCATE(FPC%Group)
 SDEALLOCATE(FPC%BCState)

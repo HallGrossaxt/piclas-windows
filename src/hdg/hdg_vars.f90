@@ -58,6 +58,8 @@ TYPE HDG_Surf_N_Type
   REAL,ALLOCATABLE    :: R(:,:)               !<
   REAL,ALLOCATABLE    :: V(:,:)               !<
   REAL,ALLOCATABLE    :: Z(:,:)               !<
+  REAL,ALLOCATABLE    :: FPCz(:,:)            !< (1:nUniqueFPCBounds,nGP_face) cached A_nn^-1 * C_k per side
+                                              !< (FPC-via-CG / capacitance-matrix path only; ragged like lambda)
 #if USE_MPI
   REAL,ALLOCATABLE    :: buf(:,:)
   REAL,ALLOCATABLE    :: buf2(:,:)
@@ -187,6 +189,16 @@ TYPE tFPC
 END TYPE tFPC
 
 TYPE(tFPC)   :: FPC
+
+! --- FPC without PETSc: solve the bordered system in the internal CG via a capacitance matrix (Woodbury).
+!     Active only in non-PETSc builds when FPCs are present (set in InitFPC). See scope_fpc_cg_magnetron.md.
+LOGICAL              :: UseFPCviaCG = .FALSE. !< Carry FPC in the internal CG (no PETSc) via the capacitance matrix
+REAL,ALLOCATABLE     :: FPCcap(:,:)           !< S (nUniqueFPCBounds x nUniqueFPCBounds) capacitance matrix, S = D - C^T A_nn^-1 C
+REAL,ALLOCATABLE     :: FPCcapInv(:,:)        !< S^-1 (nUniqueFPCBounds x nUniqueFPCBounds)
+LOGICAL              :: FPCcapValid = .FALSE. !< FPCz/FPCcap are valid for the current A; invalidate on A-change (load balance, dt)
+LOGICAL              :: FPCMaskConductor = .TRUE. !< When UseFPCviaCG: mask conductor faces (A_nn) in MatVec/EvalResidual.
+                                              !< Coupling routines toggle this .FALSE. to form C/D/C^T y with the unmasked operator.
+
 !===================================================================================================================================
 !-- Electric Potential Condition (for decharging)
 !===================================================================================================================================
@@ -235,6 +247,9 @@ REAL    :: CoupledPowerTarget                   !< Target input power at all Bou
 REAL    :: CoupledPowerRelaxFac                 !< Relaxation factor for calculation of new electric potential
 REAL    :: CoupledPowerFrequency                !< Frequency with which the integrated power is calculated (must be consistent Part-AnalyzeStep, i.e., that one cycle with period T=1/f must be larger than Part-AnalyzeStep * dt)
 INTEGER :: CoupledPowerMode                     !< Method for power adjustment with 1: instantaneous power, 2: moving average power, 3: integrated power
+LOGICAL :: CoupledPowerPulsed                    !< T: CPP AC electrodes (ExactFunc -1) use a bipolar SQUARE wave instead of cos
+                                                 !<    (HiPIMS/pulsed-magnetron; two electrodes at phase 0 and pi give anti-phase cathode/anode)
+REAL    :: CoupledPowerPulseDuty                 !< Fraction of the period at the +amplitude level for the pulsed wave (0..1, default 0.5 = symmetric)
 
 !===================================================================================================================================
 !-- Bias Voltage (for calculating a BC voltage bias for certain BCs)

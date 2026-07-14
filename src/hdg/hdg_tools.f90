@@ -364,6 +364,7 @@ USE MOD_Globals
 USE MOD_DG_Vars            ,ONLY: N_DG_Mapping
 USE MOD_HDG_Vars           ,ONLY: nGP_face,nDirichletBCSides,DirichletBC,ZeroPotentialSide
 USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N,HDG_Vol_N
+USE MOD_HDG_Vars           ,ONLY: UseFPCviaCG,FPCMaskConductor,nConductorBCsides,ConductorBC
 USE MOD_Mesh_Vars          ,ONLY: nSides, SideToElem, ElemToSide, nMPIsides_YOUR,N_SurfMesh, offSetElem
 USE MOD_FillMortar_HDG     ,ONLY: BigToSmallMortar_HDG,SmallToBigMortar_HDG
 #if USE_MPI
@@ -614,6 +615,21 @@ IF (iVar.EQ.4) THEN
     END DO ! SideID=1,nSides
   END IF ! DoVZ
 
+  ! FPC-via-CG masked mode: treat conductor (FPC) faces like Dirichlet so the CG inverts A_nn (the normal-face
+  ! block). The capacitance-matrix correction (hdg_fpc_cg.f90) re-introduces the phi_F coupling around this solve.
+  ! Coupling routines toggle FPCMaskConductor=.FALSE. to obtain the unmasked operator for building C/D/C^T y.
+  IF(UseFPCviaCG.AND.FPCMaskConductor)THEN
+    IF(DoVZ)THEN
+      DO BCsideID=1,nConductorBCsides
+        HDG_Surf_N(ConductorBC(BCsideID))%Z(iVar,:) =0.
+      END DO
+    ELSE
+      DO BCsideID=1,nConductorBCsides
+        HDG_Surf_N(ConductorBC(BCsideID))%mv(iVar,:)=0.
+      END DO
+    END IF ! DoVZ
+  END IF ! UseFPCviaCG.AND.FPCMaskConductor
+
   ! Set potential to zero
   IF(ZeroPotentialSide>0)THEN
     IF(DoVZ)THEN
@@ -648,6 +664,7 @@ SUBROUTINE EvalResidual(iVar)
 USE MOD_Globals
 USE MOD_HDG_Vars  ,ONLY: nDirichletBCSides,DirichletBC,ZeroPotentialSide
 USE MOD_HDG_Vars  ,ONLY: HDG_Surf_N
+USE MOD_HDG_Vars  ,ONLY: UseFPCviaCG,FPCMaskConductor,nConductorBCsides,ConductorBC
 USE MOD_Mesh_Vars ,ONLY: nSides
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -683,6 +700,14 @@ IF (iVar.EQ.4) THEN
   DO BCsideID=1,nDirichletBCSides
     HDG_Surf_N(DirichletBC(BCsideID))%R(iVar,:)=0.
   END DO ! SideID=1,nSides
+
+  ! FPC-via-CG masked mode: exclude conductor (FPC) faces from the CG iteration (residual = 0), matching the
+  ! MatVec masking so the solver inverts A_nn. The phi_F charge balance is handled by the capacitance matrix.
+  IF(UseFPCviaCG.AND.FPCMaskConductor)THEN
+    DO BCsideID=1,nConductorBCsides
+      HDG_Surf_N(ConductorBC(BCsideID))%R(iVar,:)=0.
+    END DO
+  END IF ! UseFPCviaCG.AND.FPCMaskConductor
 
   ! Set residual to zero
   IF(ZeroPotentialSide>0) HDG_Surf_N(ZeroPotentialSide)%R(iVar,1) = 0.

@@ -77,6 +77,12 @@ CALL prms%CreateIntFromStringOption('CoupledPowerMode', 'Define mode used for co
 CALL addStrListEntry('CoupledPowerMode' , 'instantaneous' , 1)
 CALL addStrListEntry('CoupledPowerMode' , 'moving-average', 2)
 CALL addStrListEntry('CoupledPowerMode' , 'integrated'    , 3)
+
+CALL prms%CreateLogicalOption('CoupledPowerPulsed'   , 'T: coupled-power AC electrodes (BCType 5/51/52/60, ExactFunc -1) emit a '//&
+    'bipolar SQUARE wave instead of a cosine (HiPIMS/pulsed magnetron). Two electrodes with RefState phase 0 and pi then form '//&
+    'an anti-phase cathode/anode pair sharing the single regulated amplitude.', '.FALSE.')
+CALL prms%CreateRealOption(   'CoupledPowerPulseDuty', 'Fraction of the period spent at the +amplitude level for the pulsed '//&
+    'coupled-power wave (0..1). 0.5 = symmetric bipolar (dual-magnetron); <0.5 = asymmetric (short reverse pulse).', '0.5')
 #endif /*defined(PARTICLES)*/
 
 END SUBROUTINE DefineParametersEquation
@@ -301,7 +307,8 @@ USE MOD_LoadBalance_Vars ,ONLY: PerformLoadBalance
 USE MOD_Globals          ,ONLY: CollectiveStop
 USE MOD_HDG_Vars         ,ONLY: UseCoupledPowerPotential,CoupledPowerPotential,CoupledPowerTarget,CoupledPowerRelaxFac
 USE MOD_HDG_Vars         ,ONLY: CPPDataLength,CoupledPowerMode,CoupledPowerFrequency
-USE MOD_ReadInTools      ,ONLY: GETREALARRAY,GETREAL,GETINTFROMSTR,CountOption
+USE MOD_HDG_Vars         ,ONLY: CoupledPowerPulsed,CoupledPowerPulseDuty
+USE MOD_ReadInTools      ,ONLY: GETREALARRAY,GETREAL,GETINTFROMSTR,CountOption,GETLOGICAL
 USE MOD_Mesh_Vars        ,ONLY: BoundaryType,nBCs
 #if USE_MPI
 USE MOD_Globals          ,ONLY: IERROR,MPI_COMM_NULL,MPI_DOUBLE_PRECISION,MPI_COMM_PICLAS,MPI_INFO_NULL,MPI_UNDEFINED,MPIRoot
@@ -364,6 +371,11 @@ IF(.NOT.PerformLoadBalance)THEN
   IF(.NOT.ANY(CoupledPowerMode.EQ.(/1,2,3/))) CALL CollectiveStop(__STAMP__,'CoupledPowerMode with unknown value!')
   IF((CoupledPowerMode.EQ.3).AND.(ABS(CoupledPowerFrequency).LE.0.))&
       CALL CollectiveStop(__STAMP__,'CoupledPowerMode=3 requires a positive value for CoupledPowerFrequency!')
+  ! Pulsed (bipolar square-wave) coupled-power drive: HiPIMS / pulsed-magnetron waveform shape
+  CoupledPowerPulsed    = GETLOGICAL('CoupledPowerPulsed')
+  CoupledPowerPulseDuty = GETREAL('CoupledPowerPulseDuty')
+  IF((CoupledPowerPulseDuty.LE.0.).OR.(CoupledPowerPulseDuty.GE.1.))&
+      CALL CollectiveStop(__STAMP__,'CoupledPowerPulseDuty must be in (0,1).')
   ! Update time
   IF(CoupledPowerFrequency.GT.0.0) CoupledPowerPotential(5) = 1.0 / CoupledPowerFrequency
 #if USE_LOADBALANCE
@@ -495,6 +507,7 @@ USE MOD_Globals_Vars    ,ONLY: PI,ElementaryCharge,eps0
 USE MOD_Equation_Vars   ,ONLY: IniCenter,IniHalfwidth,IniAmplitude,RefState,LinPhi,LinPhiHeight,LinPhiNormal,LinPhiBasePoint
 #if defined(PARTICLES)
 USE MOD_HDG_Vars        ,ONLY: CoupledPowerPotential,UseCoupledPowerPotential,BiasVoltage,UseBiasVoltage
+USE MOD_HDG_Vars        ,ONLY: CoupledPowerPulsed,CoupledPowerPulseDuty
 USE MOD_Particle_Vars   ,ONLY: Species,nSpecies!,PartState,PDM
 USE MOD_TimeDisc_Vars   ,ONLY: time
 #endif /*defined(PARTICLES)*/
@@ -521,6 +534,9 @@ REAL,INTENT(OUT)                :: Resu(1:PP_nVar)    ! state in conservative va
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 REAL                            :: Omega,r1,r2,r_2D,r_3D,r_bary,cos_theta,eps1,eps2,xi,a(3),b(3),Q
+#if defined(PARTICLES)
+REAL                            :: tau   ! position within the pulse period [0,1) for the bipolar square wave (CASE(-1) pulsed)
+#endif /*defined(PARTICLES)*/
 #if defined(PARTICLES)
 INTEGER                         :: i!,iPart
 #endif /*defined(PARTICLES)*/
@@ -564,7 +580,20 @@ CASE(-1) ! Signal with zero-crossing: Amplitude, Frequency and Phase Shift suppl
 #if defined(PARTICLES)
   ! Match coupled power by adjusting the coefficient of the cos function
   IF(UseCoupledPowerPotential)THEN
-    Resu(:) = CoupledPowerPotential(2)*COS(Omega*t+RefState(3,iRefState))
+    IF(CoupledPowerPulsed)THEN
+      ! Bipolar SQUARE wave (HiPIMS / pulsed magnetron): +amplitude for the first CoupledPowerPulseDuty fraction of each
+      ! period, -amplitude for the rest. Phase (RefState(3)) shifts the wave; two electrodes at phase 0 and pi form an
+      ! anti-phase cathode/anode pair. tau in [0,1) is the position within the current period.
+      tau = RefState(2,iRefState)*t + RefState(3,iRefState)/(2.*PI)
+      tau = tau - FLOOR(tau)
+      IF(tau.LT.CoupledPowerPulseDuty)THEN
+        Resu(:) =  CoupledPowerPotential(2)
+      ELSE
+        Resu(:) = -CoupledPowerPotential(2)
+      END IF
+    ELSE
+      Resu(:) = CoupledPowerPotential(2)*COS(Omega*t+RefState(3,iRefState))
+    END IF ! CoupledPowerPulsed
   ELSE
 #endif /*defined(PARTICLES)*/
     Resu(:) = RefState(1,iRefState)*COS(Omega*t+RefState(3,iRefState))
@@ -818,9 +847,9 @@ CASE(600) ! 2 cubes with two different charges
     FPC%Charge(2)=10.0
   END IF ! ALLOCATED(FPC%Charge)
   resu = 0.
-#if !(USE_PETSC)
-  CALL abort(__STAMP__,'ExactFunc=600 requires LIBS_USE_PETSC=ON')
-#endif /*!(USE_PETSC)*/
+  ! FPC%Charge (set above once InitFPC has allocated it) is consumed by PETSc or, in non-PETSc builds, by the internal
+  ! FPC-via-CG capacitance-matrix path. No PETSc requirement here any more. (This func may be called before InitFPC,
+  ! in which case FPC%Charge is not yet allocated and the charges are set on the later ExactLambda call.)
 CASE(700) ! Analytical solution of a charged particle moving in cylindrical coordinates between two grounded walls
 #if defined(PARTICLES)
   eps1 = -ElementaryCharge/(4.0*PI*eps0)
