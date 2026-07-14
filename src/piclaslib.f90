@@ -87,7 +87,7 @@ SWRITE(UNIT_stdOut,'(132(" "))')
 SWRITE(UNIT_stdOut,'(A)')"piclas version "&
     //TRIM(int2strf(MajorVersion))//"."//TRIM(int2strf(MinorVersion))//"."//TRIM(int2strf(PatchVersion))&
     //" with commit "//TRIM(GIT_CURRENT_COMMIT)//" and build type "//TRIM(BuildType)
-SWRITE(UNIT_stdOut,'(A)')"piclas-win -- unofficial Windows port, based on PICLas 4.2.0 (https://github.com/piclas-framework/piclas)"
+SWRITE(UNIT_stdOut,'(A)')"piclas-win 2.0 -- unofficial Windows port, based on PICLas 4.2.0 (https://github.com/piclas-framework/piclas)"
 SWRITE(UNIT_stdOut,'(132("="))')
 FLUSH(UNIT_stdOut)
 

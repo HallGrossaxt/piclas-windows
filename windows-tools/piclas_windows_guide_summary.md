@@ -1,6 +1,6 @@
 # piclas-win 1.0 — Summary
 
-**Unofficial Windows port of PICLas 4.1.0** (commit d63756ee) for Windows 11 with MSYS2 UCRT64 / GCC 15.  
+**Unofficial Windows port of PICLas 4.2.0** (commit d63756ee) for Windows 11 with MSYS2 UCRT64 / GCC 15.  
 Documentation date: May 2026. Guide file: `piclas_windows_guide.html`.
 
 ---

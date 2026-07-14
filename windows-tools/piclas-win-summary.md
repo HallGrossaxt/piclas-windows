@@ -1,4 +1,4 @@
-# piclas-win — Windows Port of PICLas 4.1.0
+# piclas-win — Windows Port of PICLas 4.2.0
 ## Project Summary
 
 **Date:** 2026-05-24  

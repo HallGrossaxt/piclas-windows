@@ -32,7 +32,7 @@ that you modified it, and giving a relevant date"), we note:
   in the commit history of this repository.
 * The complete corresponding source for these modifications is this repository itself.
 * The startup banner of the program identifies the running binary as
-  `piclas-win <version> -- unofficial Windows port, based on PICLas 4.2.0`.
+  `piclas-win 2.0 -- unofficial Windows port, based on PICLas 4.2.0`.
 
 PICLas is a scientific project. If you use it (including this port) for publications or
 presentations in science, please support the original project by citing the publications listed in
