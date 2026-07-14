@@ -702,6 +702,39 @@ visible.
 
 ---
 
+## §16.30 — WEK (weekly) tier re-baseline on 4.2.0 (2026-07-14)
+
+The WEK tier reached **10/10 active suites green**: DSMC_Radiation,
+FPFlow, HOPR, BGKFlow, DSMC, PIC_maxwell, PIC_poisson (HEMPT), Radiation,
+Reservoir, Reservoir_single_core. No new source bugs — all fixes were
+binary-mapping, captured-input, or MPI-count issues:
+
+- **non-GPU binaries** for the suites that hit the GPU+LB crash: built a
+  non-GPU BGK release (`build-maxwell-bgk-mpi`) for WEK_BGKFlow, and
+  mapped WEK_PIC_maxwell to the non-GPU RK4 (`build-maxwell-rk4-superb-mpi`).
+- **WEK_PIC_poisson (HEMPT)** runs on the poisson+Boris+SuperB build
+  (`build-poisson-boris-superb-mpi`); the per-suite tool swap copies its
+  matching superB.exe + piclas2vtk.exe + libpiclas.dll into reggie/bin
+  (HEMPT uses both tools, which must share one libpiclas.dll).
+- **CVWM oversubscription** — the `1D/2D/3D_periodic_CVWM_split2hex` and
+  `3D_periodic_CVWM` examples ship MPI lists up to 100; trimmed to MPI=1
+  on the 16-core box (pre-4.2.0 WEK approach; other PIC_maxwell examples
+  keep multi-MPI coverage).
+- **WEK_Radiation captured inputs** — `Flow_N2-N_70degConeHot` needs both
+  a mesh (`mesh_70degCone2D_Set1_noWake_mesh.h5`) and the DSMC flow-field
+  it reads as a restart (`70degCone2D_Set1_ConeHot_DSMCState_…h5`), both
+  generated files the upstream sync omits. Recovered from the local
+  4.1.0 backup (format-compatible with the 4.2.0 binary; the standalone
+  radiation run finishes and writes RadiationSurfState).
+- **Flow_N2_70degCone** (WEK_DSMC) re-disabled: the sims succeed but the
+  piclas2vtk-on-restart conversion fails (a genuinely separate issue from
+  the `ln`-deferral / mesh-subdir fixes, which were already active).
+
+Platform skips: WEK_DVM (`lid_driven_cavity` > 60 min on the EDVM build),
+and the PETSc / tutorial WEK suites.
+
+---
+
 ## Regression Test Score (after all fixes above)
 
 **NIG_tracking_DSMC (13 sub-tests): 11 / 13 PASS** — as of §16.10; mortar fixed via invariant analyze (§16.19).
