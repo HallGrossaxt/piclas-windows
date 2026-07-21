@@ -108,4 +108,30 @@ END TYPE tPermanentMagnetInfo
 
 TYPE(tPermanentMagnetInfo),ALLOCATABLE :: PermanentMagnetInfo(:)!< Container for the permanent magnet info [1:NumOfPermanentMagnets]
 
+! === Soft-magnetic materials (linear mu_r > 1) for the reduced-scalar-potential (RSP) soft-iron correction
+
+INTEGER :: NumOfMagneticMaterials                             !< Number of soft-magnetic (mu_r>1) material regions (default 0)
+LOGICAL :: UseMagneticMaterials                               !< Master guard: .TRUE. iff NumOfMagneticMaterials>0
+LOGICAL :: MagMatParamsRead = .FALSE.                         !< .TRUE. once NumOfMagneticMaterials has been read (avoid double-read
+                                                              !< in the standalone superB HDG-RSP path where superB.f90 peeks it early)
+LOGICAL :: MagneticMaterialsBuilt = .FALSE.                   !< .TRUE. once MuRField has been built (idempotency: the standalone
+                                                              !< HDG-RSP path builds it before InitHDG; InitializeSuperB must not rebuild)
+
+TYPE tMagneticMaterialInfo
+  REAL    :: MuR                                              !< Relative permeability (>1) inside the region
+  REAL    :: xyzMinMax(6)                                     !< Bounding box (/xmin,xmax,ymin,ymax,zmin,zmax/) used for GP tagging
+  LOGICAL :: CheckRadius                                      !< Additionally require distance to Center <= Radius (spherical region)
+  REAL    :: Radius                                           !< Radius [m] for the optional spherical test
+  REAL    :: Center(3)                                        !< Center [m] for the optional radius test
+END TYPE tMagneticMaterialInfo
+
+TYPE(tMagneticMaterialInfo),ALLOCATABLE :: MagneticMaterialInfo(:) !< Region definitions [1:NumOfMagneticMaterials]
+
+TYPE tMagneticMaterial
+  REAL,ALLOCATABLE :: MuRField(:,:,:)                         !< Per-Gauss-point rel. permeability [0:Nloc,0:Nloc,0:Nloc]; 1.0 in air
+  INTEGER,ALLOCATABLE :: MatTag(:,:,:)                        !< Per-Gauss-point region index (0 = air); used for region diagnostics
+END TYPE tMagneticMaterial
+
+TYPE(tMagneticMaterial),ALLOCATABLE :: MagneticMaterial(:)    !< Per-element MuR field seeding chitens=mu_r [1:nElems]
+
 END MODULE MOD_SuperB_Vars

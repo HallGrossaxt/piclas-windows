@@ -21,9 +21,12 @@ USE MOD_Commandline_Arguments
 USE MOD_Globals
 USE MOD_Globals_Init          ,ONLY: InitGlobals
 USE MOD_SuperB_Init           ,ONLY: DefineParametersSuperB, FinalizeSuperB
+#if USE_HDG
+USE MOD_SuperB_Init           ,ONLY: InitMagneticMaterials, SetChiTensFromMuR
+#endif /*USE_HDG*/
 USE MOD_SuperB                ,ONLY: SuperB
 USE MOD_Globals_Vars          ,ONLY: ParameterFile
-USE MOD_ReadInTools           ,ONLY: prms,PrintDefaultparameterFile,ExtractparameterFile
+USE MOD_ReadInTools           ,ONLY: prms,PrintDefaultparameterFile,ExtractparameterFile,GETINT
 USE MOD_Interpolation         ,ONLY: InitInterpolation
 USE MOD_IO_HDF5               ,ONLY: InitIOHDF5
 USE MOD_MPI                   ,ONLY: InitMPI
@@ -36,6 +39,14 @@ USE MOD_Equation              ,ONLY: DefineParametersEquation
 USE MOD_Equation              ,ONLY: InitEquation
 USE MOD_Interpolation_Vars    ,ONLY: N_BG
 USE MOD_Mesh                  ,ONLY: InitMesh
+#if USE_HDG
+USE MOD_Equation              ,ONLY: InitChiTens
+USE MOD_HDG                   ,ONLY: DefineParametersHDG, InitHDG
+USE MOD_SuperB_Vars           ,ONLY: NumOfMagneticMaterials, UseMagneticMaterials, MagMatParamsRead
+#if USE_MPI
+USE MOD_MPI                   ,ONLY: InitMPIvars, DefineParametersMPI
+#endif /*USE_MPI*/
+#endif /*USE_HDG*/
 #ifdef PARTICLES
 USE MOD_Symmetry_Vars         ,ONLY: Symmetry
 #endif /*PARTICLES*/
@@ -102,6 +113,12 @@ CALL DefineParametersOutput()
 CALL DefineParametersMesh()
 CALL DefineParametersEquation()
 CALL DefineParametersSuperB()
+#if USE_HDG
+CALL DefineParametersHDG()
+#if USE_MPI
+CALL DefineParametersMPI()  ! registers GroupSize etc. read by InitMPIvars (HDG-RSP path)
+#endif /*USE_MPI*/
+#endif /*USE_HDG*/
 #if USE_MPI
 CALL DefineParametersMPIShared()
 #endif /*USE_MPI*/
@@ -141,6 +158,25 @@ CALL InitMesh(3) ! 0: only read and build Elem_xGP,
                  ! 1: as 0 + build connectivity
                  ! 2: as 1 + calc metrics
                  ! 3: as 2 but skip InitParticleMesh
+#if USE_HDG
+! Soft-magnetic materials (mu_r>1) require an HDG solve (reduced scalar potential, superB Step 5b). Bring up the HDG
+! solver here in the posti context so SuperB() can call the internal CG. Guarded: only when magnetic materials are present,
+! so a plain magnet/coil superB run is unaffected. SPIKE (2026-07-21): verifying InitHDG initialises under InitMesh(3).
+! Read NumOfMagneticMaterials once here (InitMagneticMaterials will reuse it via MagMatParamsRead) to decide HDG bring-up.
+NumOfMagneticMaterials = GETINT('NumOfMagneticMaterials','0')
+UseMagneticMaterials   = (NumOfMagneticMaterials.GT.0)
+MagMatParamsRead       = .TRUE.
+IF(UseMagneticMaterials)THEN
+#if USE_MPI
+  CALL InitMPIvars() ! DG/HDG MPI side-exchange bookkeeping (nNbProcs, DataSizeSurf*, SurfExchange sizing) - posti superB
+                     ! skips the DG init that normally does this; InitHDG->BuildPrecond->Mask_MPIsides needs it. (dmd.f90 precedent)
+#endif /*USE_MPI*/
+  CALL InitMagneticMaterials() ! build per-GP MuRField now (before HDG); idempotent, InitializeSuperB won't rebuild
+  CALL InitChiTens()           ! allocate HDG coefficient chi = identity
+  CALL SetChiTensFromMuR()     ! overwrite chi = mu_r  (MUST precede InitHDG, which bakes chi into the element matrices)
+  CALL InitHDG()               ! build the HDG element matrices with the variable mu_r operator
+END IF
+#endif /*USE_HDG*/
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! Calculate the background B-field via SuperB
 !-----------------------------------------------------------------------------------------------------------------------------------

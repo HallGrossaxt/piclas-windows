@@ -51,6 +51,10 @@ USE MOD_Mesh_Vars             ,ONLY: nElems, offSetElem
 USE MOD_Interpolation_Vars    ,ONLY: BGType,BGDataSize, N_BG, BGFieldVTKOutput
 USE MOD_HDF5_Output_Fields    ,ONLY: WriteBGFieldToHDF5,WriteBGFieldAnalyticToHDF5
 USE MOD_SuperB_Init           ,ONLY: InitializeSuperB
+USE MOD_SuperB_Vars           ,ONLY: UseMagneticMaterials
+#if USE_HDG
+USE MOD_SuperB_SoftIron       ,ONLY: SolveSoftIronRSP
+#endif /*USE_HDG*/
 USE MOD_DG_Vars               ,ONLY: N_DG_Mapping
 ! IMPLICIT VARIABLE HANDLING
  IMPLICIT NONE
@@ -158,6 +162,13 @@ IF(NumOfPermanentMagnets.GT.0) THEN
     N_BG(iElem)%BGField = N_BG(iElem)%BGField + BPermMag(iElem)%Field
   END DO
 END IF
+
+! ------------------------------------------------------------
+! Step 5b: Soft-magnetic material (mu_r>1) correction via the reduced scalar potential (HDG solve)
+! ------------------------------------------------------------
+#if USE_HDG
+IF(UseMagneticMaterials) CALL SolveSoftIronRSP()
+#endif /*USE_HDG*/
 
 ! ------------------------------------------------------------
 ! Step 5: Calculate time-dependent magnetic fields

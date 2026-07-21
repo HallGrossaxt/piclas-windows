@@ -73,6 +73,18 @@ REAL,ALLOCATABLE    :: Tau(:)                 !< Stabilization parameter, per el
 REAL,ALLOCATABLE    :: lambdaLB(:,:,:)        !< lambda, ((PP_N+1)^2,nSides)
 INTEGER,ALLOCATABLE :: iLocSides(:,:)         !< iLocSides, ((PP_N+1)^2,nSides) - used for I/O and ALLGATHERV of lambda
 REAL,ALLOCATABLE    :: qn_face_MagStat(:,:,:) !< for Neumann BC
+! --- superB soft-iron reduced-scalar-potential (RSP) source of div(mu_r grad Psi) = div(G), G = mu_r H_s + M ---
+! The RSP source enters the HDG system in two places (see MOD_SuperB_SoftIron for the derivation):
+!   u-system   (element-local): the strong volume source -int( (div G) v )      -> SoftIronRHSVol
+!   lambda-system (trace eq.) : the flux int( (G.n_out) mu ) on every face      -> SoftIronQnFace
+! The second term carries the material/magnet interface jump [[G.n]] and is what makes soft iron magnetise.
+LOGICAL             :: UseSoftIronRSP = .FALSE. !< when .TRUE., HDGLinear adds the two SoftIron* contributions to the RHS
+TYPE tSoftIronVol
+  REAL,ALLOCATABLE  :: RHSvol(:)                !< strong volume source -JwGP*div(G) per volume DOF r [1:nGP_vol(Nloc)]
+END TYPE tSoftIronVol
+TYPE(tSoftIronVol),ALLOCATABLE :: SoftIronRHSVol(:) !< [1:PP_nElems], filled by MOD_SuperB_SoftIron before the RSP solve
+REAL,ALLOCATABLE    :: SoftIronQnFace(:,:)      !< [1:nGP_face(NMax),1:nSides] sum over adjacent elements of
+                                                !< (G.n_out)*SurfElem*wGP*wGP, i.e. the Neumann-style interface/boundary flux
 INTEGER             :: nDirichletBCSides
 INTEGER             :: nNeumannBCsides
 INTEGER             :: nConductorBCsides      !< Number of processor-local sides that are conductors (FPC) in [1:nBCSides]

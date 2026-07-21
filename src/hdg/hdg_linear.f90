@@ -275,6 +275,14 @@ DO iElem=1,PP_nElems
   END DO
 END DO !iElem
 
+! superB soft-iron RSP: add the pre-assembled strong-form volume source -JwGP*div(mu_r H_s + M) to the element-local RHS.
+! Gated by UseSoftIronRSP (default .FALSE.) -> byte-identical for all standard HDG runs. PP_nVar==1 (scalar potential).
+IF(UseSoftIronRSP)THEN
+  DO iElem=1,PP_nElems
+    HDG_Vol_N(iElem)%RHS_vol(1,:) = HDG_Vol_N(iElem)%RHS_vol(1,:) + SoftIronRHSVol(iElem)%RHSvol(:)
+  END DO !iElem
+END IF
+
 !replace lambda with exact function (debugging)
 IF(ExactLambda)THEN
   DO SideID=1,nSides
@@ -319,6 +327,16 @@ DO BCsideID=1,nNeumannBCSides
   SideID=NeumannBC(BCsideID)
   HDG_Surf_N(SideID)%RHS_face(:,:) = HDG_Surf_N(SideID)%RHS_face(:,:) + HDG_Surf_N(SideID)%qn_face(:,:)
 END DO
+
+! superB soft-iron RSP: add the interface/boundary flux int((mu_r H_s + M).n_out v) accumulated over both adjacent elements.
+! This is the Neumann-style trace-equation contribution and carries the [[G.n]] jump at the material/magnet surfaces.
+! Added before Mask_MPIsides/SmallToBigMortar so MPI and mortar sides are treated exactly like the regular RHS_face.
+IF(UseSoftIronRSP)THEN
+  DO SideID=1,nSides
+    NSide = N_SurfMesh(SideID)%NSide
+    HDG_Surf_N(SideID)%RHS_face(1,:) = HDG_Surf_N(SideID)%RHS_face(1,:) + SoftIronQnFace(1:nGP_face(NSide),SideID)
+  END DO
+END IF
 
 #if defined(PARTICLES)
 ! Add Distributed Capacitance BC
