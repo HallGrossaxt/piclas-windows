@@ -21,6 +21,17 @@
 !>     div( mu_r grad Psi ) = div( mu_r H_s + M )                                          (RSP-PDE)
 !>     H = H_s - grad Psi ,   B = mu0 ( mu_r H + M )                                        (reconstruction)
 !>
+!> The source is NOT evaluated in that form. superB's free-space field obeys div(H_s + M) = div(B_free)/mu0 = 0 identically, so
+!>
+!>     div( mu_r H_s + M ) == div( (mu_r - 1) H_s )                                        (source actually used)
+!>
+!> and the second form is the only usable one. H_s comes from superB by differentiating PsiMag, which is itself a sum over discrete
+!> surface point charges; taking a second derivative of that amplifies the quadrature noise. In the first form the two large terms
+!> div(mu_r H_s) and div(M) have to cancel that noise against each other wherever mu_r=1, and they do not: a magnet inside the mesh
+!> gave a mu_r=1 error of rel~1 that did NOT converge under N-refinement (N=2,3,4,5). The second form is identically zero wherever
+!> mu_r=1 -- no cancellation, no dependence on M at all, and the source is supported only inside the soft-magnetic material. It makes
+!> the mu_r=1 regression exact by construction rather than merely convergent.
+!>
 !> This is a variable-coefficient scalar Poisson identical to the HDG dielectric operator (chitens = mu_r, set by SetChiTensFromMuR
 !> before InitHDG), so the LHS needs no new code. The RHS is the interesting part.
 !>
@@ -146,7 +157,7 @@ DO iElem=1,nElems
     mur   = MagneticMaterial(iElem)%MuRField(i,j,k)
     Hsvec = N_BG(iElem)%BGField(1:3,i,j,k)/mu0 - Mvec          ! H_s
     HsStore(iElem)%Hs(1:3,i,j,k) = Hsvec
-    Gvec  = mur*Hsvec + Mvec                                   ! G = mu_r H_s + M
+    Gvec  = (mur-1.0)*Hsvec                                    ! G = (mu_r - 1) H_s , see header
     HsStore(iElem)%G(1:3,i,j,k)  = Gvec
     Gt1(i,j,k) = DOT_PRODUCT(N_VolMesh(iElem)%Metrics_fTilde(1:3,i,j,k),Gvec)
     Gt2(i,j,k) = DOT_PRODUCT(N_VolMesh(iElem)%Metrics_gTilde(1:3,i,j,k),Gvec)
