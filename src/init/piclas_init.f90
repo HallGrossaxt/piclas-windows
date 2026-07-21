@@ -105,6 +105,9 @@ USE MOD_Particle_MPI         ,ONLY: InitParticleMPI
 #if USE_HDG
 USE MOD_HDG                  ,ONLY: InitHDG
 USE MOD_Equation             ,ONLY: InitRefState,InitChiTens
+#if USE_SUPER_B
+USE MOD_SuperB_SoftIron      ,ONLY: SolveSoftIronRSPDeferred
+#endif /*USE_SUPER_B*/
 #endif
 #if (PP_TimeDiscMethod==600)
 USE MOD_RadiationTrans_Init        ,ONLY: InitRadiationTransport
@@ -208,6 +211,11 @@ CALL InitSurfModelAnalyze()
 
 #if USE_HDG
 CALL InitHDG() ! Hybridizable Discontinuous Galerkin Method (HDGSEM)
+#if USE_SUPER_B
+! SuperB ran above (from InitParticles) while HDG was not up yet, so a pending soft-magnetic-material (mu_r>1) correction of the
+! background field is finished here. No-op unless MagneticMaterial[$]-MuR regions were defined.
+CALL SolveSoftIronRSPDeferred()
+#endif /*USE_SUPER_B*/
 #endif
 
 #if (PP_TimeDiscMethod==600)

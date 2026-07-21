@@ -49,7 +49,7 @@ MODULE MOD_SuperB_SoftIron
 #if USE_SUPER_B && USE_HDG
 IMPLICIT NONE
 PRIVATE
-PUBLIC :: SolveSoftIronRSP
+PUBLIC :: SolveSoftIronRSP, SolveSoftIronRSPDeferred
 !==================================================================================================================================
 CONTAINS
 
@@ -80,7 +80,7 @@ INTEGER :: iElem, Nloc, NSide, i, j, k, p, q, s, a, r, iMagnet, iLocSide, SideID
 #ifdef PARTICLES
 LOGICAL :: DoDepositionBak
 #endif /*PARTICLES*/
-REAL    :: mur, Mvec(3), Hsvec(3), Gvec(3), wpqs, acc, nout(3)
+REAL    :: mur, Mvec(3), Hsvec(3), Gvec(3), wpqs, acc, nsgn
 REAL    :: maxDiff, maxB, Bold(3), Bnew(3)
 REAL    :: matVol, matH(3), matHs(3), matB(3)   ! volume-weighted averages over the tagged material region
 #if USE_MPI
@@ -90,6 +90,7 @@ REAL    :: sbuf, sbuf3(3)
 REAL,ALLOCATABLE :: Gt1(:,:,:), Gt2(:,:,:), Gt3(:,:,:)   ! contravariant fluxes (J a^i . G) at each GP
 REAL,ALLOCATABLE :: Dmat(:,:)                            ! strong 1D derivative matrix, Dmat(i,a) = l_a'(xi_i)
 REAL,ALLOCATABLE :: Gvol(:,:,:,:), Gface(:,:,:)          ! G in the volume / prolonged to one face
+REAL,ALLOCATABLE :: Javol(:,:,:,:), Jaface(:,:,:)        ! the side's contravariant metric vector J*a^i, likewise prolonged
 ! Cache H_s (=BGField/mu0 - M) per element so B can be rebuilt after the solve overwrites nothing but BGField
 TYPE tHsElem
   REAL,ALLOCATABLE :: Hs(:,:,:,:)                          ! (1:3,0:Nloc,0:Nloc,0:Nloc)
@@ -174,30 +175,39 @@ END DO ! iElem
 !     [[G.n]] (zero wherever G.n is continuous, e.g. everywhere for mu_r=1). MPI and mortar sides are reduced later by
 !     Mask_MPIsides / SmallToBigMortar_HDG in HDGLinear, exactly like the regular RHS_face.
 ! ---------------------------------------------------------------------------------------------------------------------------------
+! The outward n*SurfElem of a local side is just +/- the element's own contravariant metric vector (J*a^i) prolonged to that face,
+! which is what elem_mat.f90:111-125 uses to build SurfElemLoc. Taking it from the element rather than from
+! N_SurfMesh%NormVec/SurfElem keeps this loop purely element-local, so it does not depend on the master/slave orientation
+! convention of the side -- which is exactly what made an earlier NormVec-based version disagree between MPI=1, 2 and 4.
 DO iElem=1,nElems
   Nloc = N_DG_Mapping(2,iElem+offSetElem)
   ALLOCATE(Gvol(1:3,0:Nloc,0:Nloc,0:Nloc), Gface(1:3,0:Nloc,0:Nloc))
+  ALLOCATE(Javol(1:3,0:Nloc,0:Nloc,0:Nloc), Jaface(1:3,0:Nloc,0:Nloc))
   DO iLocSide=1,6
     SideID = ElemToSide(E2S_SIDE_ID,iLocSide,iElem)
     flip   = ElemToSide(E2S_FLIP   ,iLocSide,iElem)
     NSide  = N_SurfMesh(SideID)%NSide
     IF(NSide.NE.Nloc) CALL abort(__STAMP__,'SolveSoftIronRSP: p-adaption (NSide/=Nloc) is not supported by the RSP source')
-    ! Prolong with the element's own flip -> Gface is in the side-local (p,q) ordering of NormVec/SurfElem
+    SELECT CASE(iLocSide)
+    CASE(XI_MINUS)  ; Javol = N_VolMesh(iElem)%Metrics_fTilde ; nsgn = -1.
+    CASE(XI_PLUS)   ; Javol = N_VolMesh(iElem)%Metrics_fTilde ; nsgn =  1.
+    CASE(ETA_MINUS) ; Javol = N_VolMesh(iElem)%Metrics_gTilde ; nsgn = -1.
+    CASE(ETA_PLUS)  ; Javol = N_VolMesh(iElem)%Metrics_gTilde ; nsgn =  1.
+    CASE(ZETA_MINUS); Javol = N_VolMesh(iElem)%Metrics_hTilde ; nsgn = -1.
+    CASE(ZETA_PLUS) ; Javol = N_VolMesh(iElem)%Metrics_hTilde ; nsgn =  1.
+    END SELECT
+    ! Prolong both with the element's own flip -> side-local (p,q) ordering, matching the side's RHS_face DOF ordering.
+    ! (wGP(p)*wGP(q) is invariant under the flip permutations, so no index back-mapping is needed for the weights.)
     Gvol = HsStore(iElem)%G
-    CALL ProlongToFace_Side(3,Nloc,iLocSide,flip,Gvol,Gface)
+    CALL ProlongToFace_Side(3,Nloc,iLocSide,flip,Gvol ,Gface )
+    CALL ProlongToFace_Side(3,Nloc,iLocSide,flip,Javol,Jaface)
     DO q=0,NSide; DO p=0,NSide
       r = q*(NSide+1) + p + 1
-      ! NormVec is the master element's outward normal; the slave (flip>0) sees the opposite direction
-      IF(flip.EQ.0)THEN
-        nout =  N_SurfMesh(SideID)%NormVec(1:3,p,q)
-      ELSE
-        nout = -N_SurfMesh(SideID)%NormVec(1:3,p,q)
-      END IF
-      SoftIronQnFace(r,SideID) = SoftIronQnFace(r,SideID) + DOT_PRODUCT(Gface(1:3,p,q),nout) &
-                               * N_SurfMesh(SideID)%SurfElem(p,q)*N_Inter(NSide)%wGP(p)*N_Inter(NSide)%wGP(q)
+      SoftIronQnFace(r,SideID) = SoftIronQnFace(r,SideID) &
+                               + nsgn*DOT_PRODUCT(Gface(1:3,p,q),Jaface(1:3,p,q))*N_Inter(NSide)%wGP(p)*N_Inter(NSide)%wGP(q)
     END DO; END DO
   END DO ! iLocSide
-  DEALLOCATE(Gvol,Gface)
+  DEALLOCATE(Gvol,Gface,Javol,Jaface)
 END DO ! iElem
 
 ! ---------------------------------------------------------------------------------------------------------------------------------
@@ -283,6 +293,131 @@ DEALLOCATE(SoftIronQnFace)
 SWRITE(UNIT_stdOut,'(A)') ' SOFT-IRON RSP CORRECTION DONE!'
 SWRITE(UNIT_stdOut,'(132("-"))')
 END SUBROUTINE SolveSoftIronRSP
+
+
+!==================================================================================================================================
+!> Internal-piclas-build entry point for the RSP correction, called from piclas_init.f90 right after InitHDG. No-op unless SuperB()
+!> flagged the correction as pending (SoftIronRSPPending), which it only does when it ran before HDG was up.
+!>
+!> The standalone superB.exe sets chitens = mu_r BEFORE InitHDG, so its element matrices are the RSP operator and nothing has to be
+!> undone. Here InitHDG has already baked the ELECTROSTATIC coefficient (1, or eps_r in dielectric regions) into Dhat/Ehat/Smat, and
+!> the PIC run that follows needs exactly those matrices back. So this routine
+!>   1. saves chitens and the HDG state (lambda, U_N%U, U_N%E),
+!>   2. swaps chitens to mu_r and rebuilds the element matrices + preconditioner,
+!>   3. runs the correction,
+!>   4. restores chitens, rebuilds again, and restores the HDG state,
+!> leaving the solver bit-for-bit in the condition InitHDG left it. Finally it performs the BGField h5 output and the magnet-array
+!> clean-up that SuperB() skipped.
+!==================================================================================================================================
+SUBROUTINE SolveSoftIronRSPDeferred()
+! MODULES
+USE MOD_Globals
+USE MOD_PreProc
+USE MOD_SuperB_Vars        ,ONLY: SoftIronRSPPending, DoCalcErrorNormsSuperB
+USE MOD_SuperB_Vars        ,ONLY: PermanentMagnets, PermanentMagnetInfo
+USE MOD_SuperB_Init        ,ONLY: SetChiTensFromMuR
+USE MOD_Equation_Vars      ,ONLY: chi
+USE MOD_Interpolation_Vars ,ONLY: N_BG
+USE MOD_Mesh_Vars          ,ONLY: nElems, offSetElem, nSides, N_SurfMesh
+USE MOD_DG_Vars            ,ONLY: N_DG_Mapping, U_N
+USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N, nGP_face
+USE MOD_HDG_Vars           ,ONLY: iteration, iterationTotal, RunTime, RunTimeTotal, RunTimePerIteration, HDGNorm
+USE MOD_Elem_Mat           ,ONLY: Elem_Mat
+#if USE_PETSC
+USE MOD_Elem_Mat           ,ONLY: PETScFillSystemMatrix
+#else
+USE MOD_Elem_Mat           ,ONLY: BuildPrecond
+#endif /*USE_PETSC*/
+USE MOD_HDF5_Output_Fields ,ONLY: WriteBGFieldToHDF5, WriteBGFieldAnalyticToHDF5
+IMPLICIT NONE
+!----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER :: iElem, SideID, Nloc, NSide
+! Backups taken over the RSP solve
+TYPE tChiBak
+  REAL,ALLOCATABLE :: tens(:,:,:,:,:), tensInv(:,:,:,:,:)
+END TYPE tChiBak
+TYPE tVolBak
+  REAL,ALLOCATABLE :: U(:,:,:,:), E(:,:,:,:)
+END TYPE tVolBak
+TYPE tSurfBak
+  REAL,ALLOCATABLE :: lambda(:,:)
+END TYPE tSurfBak
+TYPE(tChiBak) ,ALLOCATABLE :: ChiBak(:)
+TYPE(tVolBak) ,ALLOCATABLE :: VolBak(:)
+TYPE(tSurfBak),ALLOCATABLE :: SurfBak(:)
+! CG convergence counters, so the RSP solve does not show up in the first FieldAnalyze row
+INTEGER :: iterationBak, iterationTotalBak
+REAL    :: RunTimeBak, RunTimeTotalBak, RunTimePerIterationBak, HDGNormBak
+!==================================================================================================================================
+IF(.NOT.SoftIronRSPPending) RETURN
+
+! --- 1) Save chitens and the HDG state ------------------------------------------------------------------------------------------
+ALLOCATE(ChiBak(1:nElems), VolBak(1:nElems), SurfBak(1:nSides))
+DO iElem = 1, nElems
+  Nloc = N_DG_Mapping(2,iElem+offSetElem)
+  ALLOCATE(ChiBak(iElem)%tens(   1:3,1:3,0:Nloc,0:Nloc,0:Nloc)); ChiBak(iElem)%tens    = chi(iElem)%tens
+  ALLOCATE(ChiBak(iElem)%tensInv(1:3,1:3,0:Nloc,0:Nloc,0:Nloc)); ChiBak(iElem)%tensInv = chi(iElem)%tensInv
+  ALLOCATE(VolBak(iElem)%U(PP_nVar,0:Nloc,0:Nloc,0:Nloc))      ; VolBak(iElem)%U       = U_N(iElem)%U
+  ALLOCATE(VolBak(iElem)%E(1:3    ,0:Nloc,0:Nloc,0:Nloc))      ; VolBak(iElem)%E       = U_N(iElem)%E
+END DO ! iElem
+DO SideID = 1, nSides
+  NSide = N_SurfMesh(SideID)%NSide
+  ALLOCATE(SurfBak(SideID)%lambda(PP_nVar,nGP_face(NSide)))    ; SurfBak(SideID)%lambda = HDG_Surf_N(SideID)%lambda
+END DO ! SideID
+iterationBak      = iteration     ; iterationTotalBak      = iterationTotal
+RunTimeBak        = RunTime       ; RunTimeTotalBak        = RunTimeTotal
+RunTimePerIterationBak = RunTimePerIteration               ; HDGNormBak = HDGNorm
+
+! --- 2) Switch the HDG operator to div(mu_r grad .) ------------------------------------------------------------------------------
+CALL SetChiTensFromMuR()
+CALL Elem_Mat(0_i8)
+#if USE_PETSC
+CALL PETScFillSystemMatrix()
+#else
+CALL BuildPrecond()
+#endif /*USE_PETSC*/
+
+! --- 3) The actual correction ----------------------------------------------------------------------------------------------------
+CALL SolveSoftIronRSP()
+
+! --- 4) Restore the electrostatic operator and the HDG state ---------------------------------------------------------------------
+DO iElem = 1, nElems
+  chi(iElem)%tens    = ChiBak(iElem)%tens
+  chi(iElem)%tensInv = ChiBak(iElem)%tensInv
+END DO ! iElem
+CALL Elem_Mat(0_i8)
+#if USE_PETSC
+CALL PETScFillSystemMatrix()
+#else
+CALL BuildPrecond()
+#endif /*USE_PETSC*/
+DO iElem = 1, nElems
+  U_N(iElem)%U = VolBak(iElem)%U
+  U_N(iElem)%E = VolBak(iElem)%E
+  DEALLOCATE(ChiBak(iElem)%tens, ChiBak(iElem)%tensInv, VolBak(iElem)%U, VolBak(iElem)%E)
+END DO ! iElem
+DO SideID = 1, nSides
+  HDG_Surf_N(SideID)%lambda = SurfBak(SideID)%lambda
+  DEALLOCATE(SurfBak(SideID)%lambda)
+END DO ! SideID
+DEALLOCATE(ChiBak, VolBak, SurfBak)
+iteration      = iterationBak     ; iterationTotal      = iterationTotalBak
+RunTime        = RunTimeBak       ; RunTimeTotal        = RunTimeTotalBak
+RunTimePerIteration = RunTimePerIterationBak              ; HDGNorm = HDGNormBak
+SWRITE(UNIT_stdOut,'(A)') ' | Soft-iron: HDG chitens and solver state restored to the electrostatic problem.'
+
+! --- 5) The output and clean-up that SuperB() left to us -------------------------------------------------------------------------
+SoftIronRSPPending = .FALSE.
+CALL WriteBGFieldToHDF5()
+IF(DoCalcErrorNormsSuperB) CALL WriteBGFieldAnalyticToHDF5()
+DO iElem = 1, nElems
+  SDEALLOCATE(N_BG(iElem)%PsiMag)
+END DO ! iElem
+SDEALLOCATE(PermanentMagnets)
+SDEALLOCATE(PermanentMagnetInfo)
+
+END SUBROUTINE SolveSoftIronRSPDeferred
 
 #endif /*USE_SUPER_B && USE_HDG*/
 END MODULE MOD_SuperB_SoftIron

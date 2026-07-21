@@ -114,6 +114,9 @@ INTEGER :: NumOfMagneticMaterials                             !< Number of soft-
 LOGICAL :: UseMagneticMaterials                               !< Master guard: .TRUE. iff NumOfMagneticMaterials>0
 LOGICAL :: MagMatParamsRead = .FALSE.                         !< .TRUE. once NumOfMagneticMaterials has been read (avoid double-read
                                                               !< in the standalone superB HDG-RSP path where superB.f90 peeks it early)
+LOGICAL :: SoftIronRSPPending = .FALSE.                       !< .TRUE. when SuperB() ran before InitHDG (internal piclas build) and
+                                                              !< the RSP correction, the BGField h5 output and the magnet-array
+                                                              !< clean-up still have to be done by SolveSoftIronRSPDeferred()
 LOGICAL :: MagneticMaterialsBuilt = .FALSE.                   !< .TRUE. once MuRField has been built (idempotency: the standalone
                                                               !< HDG-RSP path builds it before InitHDG; InitializeSuperB must not rebuild)
 

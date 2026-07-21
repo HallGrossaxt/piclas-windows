@@ -51,9 +51,10 @@ USE MOD_Mesh_Vars             ,ONLY: nElems, offSetElem
 USE MOD_Interpolation_Vars    ,ONLY: BGType,BGDataSize, N_BG, BGFieldVTKOutput
 USE MOD_HDF5_Output_Fields    ,ONLY: WriteBGFieldToHDF5,WriteBGFieldAnalyticToHDF5
 USE MOD_SuperB_Init           ,ONLY: InitializeSuperB
-USE MOD_SuperB_Vars           ,ONLY: UseMagneticMaterials
+USE MOD_SuperB_Vars           ,ONLY: UseMagneticMaterials, SoftIronRSPPending
 #if USE_HDG
 USE MOD_SuperB_SoftIron       ,ONLY: SolveSoftIronRSP
+USE MOD_HDG_Vars              ,ONLY: HDGInitIsDone
 #endif /*USE_HDG*/
 USE MOD_DG_Vars               ,ONLY: N_DG_Mapping
 ! IMPLICIT VARIABLE HANDLING
@@ -166,8 +167,20 @@ END IF
 ! ------------------------------------------------------------
 ! Step 5b: Soft-magnetic material (mu_r>1) correction via the reduced scalar potential (HDG solve)
 ! ------------------------------------------------------------
+! The RSP needs a live HDG. In the standalone superB.exe, superB.f90 brings HDG up before calling SuperB(), so it can run right
+! here. In the internal piclas build, SuperB() is reached from InitParticles (piclas_init.f90:201) while InitHDG only runs at :210,
+! so the correction -- and with it the h5 output and the magnet-array clean-up below -- is deferred to SolveSoftIronRSPDeferred().
 #if USE_HDG
-IF(UseMagneticMaterials) CALL SolveSoftIronRSP()
+IF(UseMagneticMaterials)THEN
+  IF(UseTimeDepCoil) CALL abort(__STAMP__,&
+      'Soft-magnetic materials (MagneticMaterial[$]-MuR) are not implemented for time-dependent coils')
+  IF(HDGInitIsDone)THEN
+    CALL SolveSoftIronRSP()
+  ELSE
+    SoftIronRSPPending = .TRUE.
+    SWRITE(UNIT_stdOut,'(A)') ' | Soft-iron RSP correction deferred until after InitHDG (internal build).'
+  END IF ! HDGInitIsDone
+END IF ! UseMagneticMaterials
 #endif /*USE_HDG*/
 
 ! ------------------------------------------------------------
@@ -206,17 +219,21 @@ IF(BGFieldVTKOutput) CALL WriteLinearConductorVTK()
 ! ------------------------------------------------------------
 ! Step 6: Output to HDF5
 ! ------------------------------------------------------------
-! Write BGField (time-constant) or WriteBGFieldToHDF5 (time-dependent) fields to h5
-CALL WriteBGFieldToHDF5()
-! Output analytic field solution if required
-IF(DoCalcErrorNormsSuperB) CALL WriteBGFieldAnalyticToHDF5()
+! With a pending RSP correction the field is not final yet, and the magnet arrays are still needed as its source term, so both the
+! output and the clean-up below are done by SolveSoftIronRSPDeferred() instead.
+IF(.NOT.SoftIronRSPPending)THEN
+  ! Write BGField (time-constant) or WriteBGFieldToHDF5 (time-dependent) fields to h5
+  CALL WriteBGFieldToHDF5()
+  ! Output analytic field solution if required
+  IF(DoCalcErrorNormsSuperB) CALL WriteBGFieldAnalyticToHDF5()
 
-! Deallocate stuff
-DO iElem = 1, nElems
-  SDEALLOCATE(N_BG(iElem)%PsiMag)
-END DO
-SDEALLOCATE(PermanentMagnets)
-SDEALLOCATE(PermanentMagnetInfo)
+  ! Deallocate stuff
+  DO iElem = 1, nElems
+    SDEALLOCATE(N_BG(iElem)%PsiMag)
+  END DO
+  SDEALLOCATE(PermanentMagnets)
+  SDEALLOCATE(PermanentMagnetInfo)
+END IF ! .NOT.SoftIronRSPPending
 DO iCoil=1,NumOfCoils
   SDEALLOCATE(CoilInfo(iCoil)%CoilNodes)
 END DO
