@@ -108,6 +108,7 @@ USE MOD_Mesh_Vars             ,ONLY: nBCSides,N_SurfMesh
 USE MOD_Mesh_Vars             ,ONLY: BoundaryType,nSides,BC
 USE MOD_Mesh_Vars             ,ONLY: nGlobalMortarSides,nMortarMPISides,N_VolMesh
 USE MOD_Mesh_Vars             ,ONLY: offSetElem,ElemToSide
+USE MOD_Mesh_Vars             ,ONLY: nMPISides_YOUR ! needed for TraceLenInner (also imported under USE_PETSC below)
 USE MOD_Basis                 ,ONLY: InitializeVandermonde,LegendreGaussNodesAndWeights,BarycentricWeights
 USE MOD_FillMortar_HDG        ,ONLY: InitMortar_HDG
 USE MOD_HDG_Vars              ,ONLY: BRNbrOfRegions,ElemToBRRegion,RegionElectronRef
@@ -565,20 +566,37 @@ DO iElem = 1, PP_nElems
   HDG_Vol_N(iElem)%RHS_vol=0.
 END DO ! iElem = 1, PP_nElems
 
+! Flat backing store for the five CG trace vectors, plus the offset table that maps a side into it.
+! Laid out in SideID order, so the leading TraceLenInner reals are exactly the non-MPIsides_YOUR
+! range the dot products reduce over -- that range stays one contiguous block, no masking needed.
+SDEALLOCATE(TraceOff)
+ALLOCATE(TraceOff(nSides+1))
+TraceOff(1) = 0
+DO SideID = 1, nSides
+  TraceOff(SideID+1) = TraceOff(SideID) + PP_nVar*nGP_face(N_SurfMesh(SideID)%NSide)
+END DO ! SideID
+TraceLen      = TraceOff(nSides+1)
+TraceLenInner = TraceOff(nSides-nMPIsides_YOUR+1)
+
+SDEALLOCATE(TraceFlatLambda); ALLOCATE(TraceFlatLambda(TraceLen)); TraceFlatLambda = 0.
+SDEALLOCATE(TraceFlatMv)    ; ALLOCATE(TraceFlatMv(TraceLen))    ; TraceFlatMv     = 0.
+SDEALLOCATE(TraceFlatR)     ; ALLOCATE(TraceFlatR(TraceLen))     ; TraceFlatR      = 0.
+SDEALLOCATE(TraceFlatV)     ; ALLOCATE(TraceFlatV(TraceLen))     ; TraceFlatV      = 0.
+SDEALLOCATE(TraceFlatZ)     ; ALLOCATE(TraceFlatZ(TraceLen))     ; TraceFlatZ      = 0.
+
 DO SideID = 1, nSides
   NSide = N_SurfMesh(SideID)%NSide
-  ALLOCATE(HDG_Surf_N(SideID)%lambda(PP_nVar,nGP_face(NSide)))
-  HDG_Surf_N(SideID)%lambda=0.
+  ! Rank-remapping pointer assignment: the component keeps its (PP_nVar,nGP_face) shape, but the
+  ! storage is a window into the flat array rather than its own heap block.
+  ASSOCIATE( o => TraceOff(SideID) , n => PP_nVar*nGP_face(NSide) )
+    HDG_Surf_N(SideID)%lambda(1:PP_nVar,1:nGP_face(NSide)) => TraceFlatLambda(o+1:o+n)
+    HDG_Surf_N(SideID)%mv    (1:PP_nVar,1:nGP_face(NSide)) => TraceFlatMv    (o+1:o+n)
+    HDG_Surf_N(SideID)%R     (1:PP_nVar,1:nGP_face(NSide)) => TraceFlatR     (o+1:o+n)
+    HDG_Surf_N(SideID)%V     (1:PP_nVar,1:nGP_face(NSide)) => TraceFlatV     (o+1:o+n)
+    HDG_Surf_N(SideID)%Z     (1:PP_nVar,1:nGP_face(NSide)) => TraceFlatZ     (o+1:o+n)
+  END ASSOCIATE
   ALLOCATE(HDG_Surf_N(SideID)%RHS_face(PP_nVar,nGP_face(NSide)))
   HDG_Surf_N(SideID)%RHS_face=0.
-  ALLOCATE(HDG_Surf_N(SideID)%mv(PP_nVar,nGP_face(NSide)))
-  HDG_Surf_N(SideID)%mv=0.
-  ALLOCATE(HDG_Surf_N(SideID)%R(PP_nVar,nGP_face(NSide)))
-  HDG_Surf_N(SideID)%R=0.
-  ALLOCATE(HDG_Surf_N(SideID)%V(PP_nVar,nGP_face(NSide)))
-  HDG_Surf_N(SideID)%V=0.
-  ALLOCATE(HDG_Surf_N(SideID)%Z(PP_nVar,nGP_face(NSide)))
-  HDG_Surf_N(SideID)%Z=0.
 #if USE_MPI
   ALLOCATE(HDG_Surf_N(SideID)%buf(PP_nVar,nGP_face(NSide)))
   HDG_Surf_N(SideID)%buf=0.
@@ -1193,6 +1211,13 @@ SDEALLOCATE(NeumannBC)
 SDEALLOCATE(HDG_Vol_N)
 SDEALLOCATE(SmatE)
 SDEALLOCATE(ElemMatVecPass)
+! The %lambda/%mv/%R/%V/%Z components only pointed into these, so freeing the flat arrays frees them
+SDEALLOCATE(TraceFlatLambda)
+SDEALLOCATE(TraceFlatMv)
+SDEALLOCATE(TraceFlatR)
+SDEALLOCATE(TraceFlatV)
+SDEALLOCATE(TraceFlatZ)
+SDEALLOCATE(TraceOff)
 SDEALLOCATE(qn_face_MagStat)
 !SDEALLOCATE(delta)
 !SDEALLOCATE(LL_minus)

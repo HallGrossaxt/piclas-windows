@@ -63,15 +63,21 @@ INTEGER,ALLOCATABLE :: ElemMatVecPass(:)           !< 1:PP_nElems, 1 = element h
 
 ! HDG side variables
 TYPE HDG_Surf_N_Type
-  REAL,ALLOCATABLE    :: lambda(:,:)          !< lambda, ((NSideMin+1)^2,nSides) where NSideMin is the minimum of the two faces
+  ! lambda, mv, R, V, Z are NOT separately allocated: they are contiguous windows into the flat
+  ! TraceFlat_* arrays below (see AllocateTraceVectors in hdg.f90). Keeping them as components means
+  ! every consumer outside the CG hot loops -- mortars, the MPI exchange, the BCs, FPC, the state I/O --
+  ! is unchanged, while the CG itself walks one long contiguous array instead of nSides heap blocks.
+  ! CONTIGUOUS matters: without it the compiler must assume a strided target and copies to a temporary
+  ! whenever one of these is passed to an assumed-shape dummy or to MPI.
+  REAL,POINTER,CONTIGUOUS :: lambda(:,:)      !< lambda, ((NSideMin+1)^2,nSides) where NSideMin is the minimum of the two faces
   REAL,ALLOCATABLE    :: Precond(:,:)         !< block diagonal preconditioner for lambda(nGP_face, nGP-face, nSides)
   REAL,ALLOCATABLE    :: InvPrecondDiag(:)    !< 1/diagonal of Precond
   REAL,ALLOCATABLE    :: qn_face(:,:)         !< for Neumann BC
   REAL,ALLOCATABLE    :: RHS_face(:,:)        !<
-  REAL,ALLOCATABLE    :: mv(:,:)              !<
-  REAL,ALLOCATABLE    :: R(:,:)               !<
-  REAL,ALLOCATABLE    :: V(:,:)               !<
-  REAL,ALLOCATABLE    :: Z(:,:)               !<
+  REAL,POINTER,CONTIGUOUS :: mv(:,:)          !<
+  REAL,POINTER,CONTIGUOUS :: R(:,:)           !<
+  REAL,POINTER,CONTIGUOUS :: V(:,:)           !<
+  REAL,POINTER,CONTIGUOUS :: Z(:,:)           !<
   REAL,ALLOCATABLE    :: FPCz(:,:)            !< (1:nUniqueFPCBounds,nGP_face) cached A_nn^-1 * C_k per side
                                               !< (FPC-via-CG / capacitance-matrix path only; ragged like lambda)
 #if USE_MPI
@@ -82,6 +88,23 @@ END TYPE HDG_Surf_N_Type
 
 ! DG solution (JU or U) vectors)
 TYPE(HDG_Surf_N_Type),ALLOCATABLE :: HDG_Surf_N(:) !< Solution variable for each equation, node and element,
+
+! --- Flat storage behind the five CG trace vectors ---------------------------------------------
+! HDG_Surf_N(s)%lambda/mv/R/V/Z are windows into these. Side s occupies
+! TraceOff(s)+1 : TraceOff(s+1), i.e. PP_nVar*nGP_face(NSide(s)) reals, so p-adaption and mortars
+! (ragged side sizes) are handled by the offset table rather than by a uniform stride.
+! The CG dot products and axpy updates run over TraceLen contiguous reals in one loop; previously
+! they were nSides separate loops of 4 reals each, one heap block per side.
+REAL,ALLOCATABLE,TARGET :: TraceFlatLambda(:) !< backing store for %lambda
+REAL,ALLOCATABLE,TARGET :: TraceFlatMv(:)     !< backing store for %mv
+REAL,ALLOCATABLE,TARGET :: TraceFlatR(:)      !< backing store for %R
+REAL,ALLOCATABLE,TARGET :: TraceFlatV(:)      !< backing store for %V
+REAL,ALLOCATABLE,TARGET :: TraceFlatZ(:)      !< backing store for %Z
+INTEGER,ALLOCATABLE :: TraceOff(:)            !< [1:nSides+1] start offsets, TraceOff(1)=0
+INTEGER             :: TraceLen=0             !< total length = TraceOff(nSides+1)
+INTEGER             :: TraceLenInner=0        !< length excluding the nMPIsides_YOUR tail, i.e. the
+                                              !< range the dot products must reduce over (YOUR sides
+                                              !< are owned by another rank and must not be counted)
 
 REAL,ALLOCATABLE    :: Tau(:)                 !< Stabilization parameter, per element
 REAL,ALLOCATABLE    :: lambdaLB(:,:,:)        !< lambda, ((PP_N+1)^2,nSides)

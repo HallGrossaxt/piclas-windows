@@ -182,6 +182,7 @@ USE MOD_Preproc
 USE MOD_HDG_Vars           ,ONLY: HDGDisplayConvergence,iteration
 USE MOD_HDG_Vars           ,ONLY: EpsCG,MaxIterCG,PrecondType,useRelativeAbortCrit,OutIterCG,HDG_Surf_N
 USE MOD_HDG_Vars           ,ONLY: HDGProfileCG,CGPhaseTime,nCGPhase
+USE MOD_HDG_Vars           ,ONLY: TraceFlatLambda,TraceFlatR,TraceFlatV,TraceFlatZ,TraceLen
 USE MOD_TimeDisc_Vars      ,ONLY: iter,IterDisplayStep
 USE MOD_Mesh_Vars          ,ONLY: nSides
 #if USE_MPI
@@ -202,7 +203,7 @@ INTEGER, INTENT(IN),OPTIONAL::iVar
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 !REAL,DIMENSION(nGP_face*nSides) :: V,Z,R
-INTEGER                         :: SideID
+INTEGER                         :: SideID, i
 REAL                            :: AbortCrit2
 REAL                            :: omega,rr,vz,rz1,rz2,Norm_r2
 REAL                            :: timestartCG,timeEndCG
@@ -310,10 +311,21 @@ DO iteration=1,MaxIterCG
   omega=rz1/vz
 
   ! Use iVar here
+#if PP_nVar==1
+  ! One pass over the whole contiguous trace storage rather than nSides slice assignments of four
+  ! reals. TraceLen, not TraceLenInner: unlike the dot products these updates must cover the
+  ! MPIsides_YOUR tail too. Elementwise with no reduction, so this part is bit-identical -- it is
+  ! the dot products above that shift the last bits.
+  DO i = 1, TraceLen
+    TraceFlatLambda(i) = TraceFlatLambda(i) + omega * TraceFlatV(i)
+    TraceFlatR(i)      = TraceFlatR(i)      - omega * TraceFlatZ(i)
+  END DO ! i
+#else
   DO SideID = 1, nSides
     HDG_Surf_N(SideID)%lambda(iVar,:) = HDG_Surf_N(SideID)%lambda(iVar,:) + omega * HDG_Surf_N(SideID)%V(iVar,:)
     HDG_Surf_N(SideID)%R(iVar,:)      = HDG_Surf_N(SideID)%R(iVar,:)      - omega * HDG_Surf_N(SideID)%Z(iVar,:)
   END DO ! SideID = 1, nSides
+#endif /*PP_nVar==1*/
   IF(HDGProfileCG)THEN; CGPhaseTime(3)=CGPhaseTime(3)+PICLASTIME()-tPhase; tPhase=PICLASTIME(); END IF
   CALL VectorDotProductRR(rr)
   IF(ISNAN(rr)) CALL abort(__STAMP__,'HDG solver residual rr = NaN for CG iteration =', IntInfoOpt=iteration)
@@ -366,9 +378,15 @@ DO iteration=1,MaxIterCG
   CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
   rz1 = rz2/rz1
+#if PP_nVar==1
+  DO i = 1, TraceLen
+    TraceFlatV(i) = TraceFlatZ(i) + rz1*TraceFlatV(i)
+  END DO ! i
+#else
   DO SideID = 1, nSides
     HDG_Surf_N(SideID)%V(iVar,:) = HDG_Surf_N(SideID)%Z(iVar,:) + rz1*HDG_Surf_N(SideID)%V(iVar,:)
   END DO ! SideID = 1, nSides
+#endif /*PP_nVar==1*/
   rz1=rz2
   IF(HDGProfileCG) CGPhaseTime(6)=CGPhaseTime(6)+PICLASTIME()-tPhase
 #if USE_LOADBALANCE
@@ -449,6 +467,7 @@ USE MOD_LoadBalance_Timers ,ONLY: LBStartTime,LBPauseTime
 USE MOD_MPI_Vars           ,ONLY: MPIW8TimeField,MPIW8CountField
 #endif /*defined(MEASURE_MPI_WAIT)*/
 USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N
+USE MOD_HDG_Vars           ,ONLY: TraceFlatR,TraceLenInner
 USE MOD_Mesh_Vars          ,ONLY: nSides
 #if USE_MPI
 USE MOD_Mesh_Vars          ,ONLY: nMPISides_YOUR
@@ -464,7 +483,7 @@ IMPLICIT NONE
 REAL,INTENT(OUT)  :: Resu
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER           :: SideID, endnSides
+INTEGER           :: SideID, endnSides, i
 #if USE_MPI
 REAL              :: ResuSend
 #endif
@@ -486,9 +505,23 @@ endnSides=nSides
 CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
 Resu=0.
+#if PP_nVar==1
+! The trace vectors are contiguous in SideID order, and sides 1..endnSides are the leading block of
+! that storage, so the reduction is one straight walk instead of endnSides descriptor dereferences
+! of four reals each. Only valid for PP_nVar==1: the flat array interleaves the variables per side,
+! whereas the loop below reads variable 1 only.
+! NOT bit-identical to the loop it replaces, despite summing the same values left to right: at
+! -O3 -march=native the compiler contracts a*b+c into an FMA and vectorises this reduction, while
+! the DOT_PRODUCT-per-side form rounds after each four-element block. Measured effect on
+! NIG_dielectric/HDG_sphere_in_box_analytical_BC is <=3 CG iterations with L_2 unchanged.
+DO i = 1, TraceLenInner
+  Resu = Resu + TraceFlatR(i)*TraceFlatR(i)
+END DO ! i
+#else
 DO SideID = 1, endnSides
   Resu = Resu + DOT_PRODUCT(HDG_Surf_N(SideID)%R(1,:),HDG_Surf_N(SideID)%R(1,:))
 END DO ! SideID = 1, nSides
+#endif /*PP_nVar==1*/
 #if USE_LOADBALANCE
 CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
@@ -1038,6 +1071,7 @@ USE MOD_LoadBalance_Timers ,ONLY: LBStartTime,LBPauseTime
 USE MOD_MPI_Vars           ,ONLY: MPIW8TimeField,MPIW8CountField
 #endif /*defined(MEASURE_MPI_WAIT)*/
 USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N
+USE MOD_HDG_Vars           ,ONLY: TraceFlatR,TraceFlatV,TraceFlatZ,TraceLenInner
 USE MOD_Mesh_Vars          ,ONLY: nSides
 #if USE_MPI
 USE MOD_Mesh_Vars          ,ONLY: nMPISides_YOUR
@@ -1053,7 +1087,7 @@ IMPLICIT NONE
 REAL,INTENT(OUT)  :: Resu
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER           :: SideID, endnSides
+INTEGER           :: SideID, endnSides, i
 #if USE_MPI
 REAL              :: ResuSend
 #endif
@@ -1075,9 +1109,16 @@ endnSides=nSides
 CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
 Resu=0.
+#if PP_nVar==1
+! see VectorDotProductRR: one contiguous walk, same summation order, PP_nVar==1 only
+DO i = 1, TraceLenInner
+  Resu = Resu + TraceFlatR(i)*TraceFlatZ(i)
+END DO ! i
+#else
 DO SideID = 1, endnSides
   Resu = Resu + DOT_PRODUCT(HDG_Surf_N(SideID)%R(1,:),HDG_Surf_N(SideID)%Z(1,:))
 END DO ! SideID = 1, nSides
+#endif /*PP_nVar==1*/
 #if USE_LOADBALANCE
 CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
@@ -1114,6 +1155,7 @@ USE MOD_LoadBalance_Timers ,ONLY: LBStartTime,LBPauseTime
 USE MOD_MPI_Vars           ,ONLY: MPIW8TimeField,MPIW8CountField
 #endif /*defined(MEASURE_MPI_WAIT)*/
 USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N
+USE MOD_HDG_Vars           ,ONLY: TraceFlatR,TraceFlatV,TraceFlatZ,TraceLenInner
 USE MOD_Mesh_Vars          ,ONLY: nSides
 #if USE_MPI
 USE MOD_Mesh_Vars          ,ONLY: nMPISides_YOUR
@@ -1129,7 +1171,7 @@ IMPLICIT NONE
 REAL,INTENT(OUT)  :: Resu
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER           :: SideID, endnSides
+INTEGER           :: SideID, endnSides, i
 #if USE_MPI
 REAL              :: ResuSend
 #endif
@@ -1151,9 +1193,16 @@ endnSides=nSides
 CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
 Resu=0.
+#if PP_nVar==1
+! see VectorDotProductRR: one contiguous walk, same summation order, PP_nVar==1 only
+DO i = 1, TraceLenInner
+  Resu = Resu + TraceFlatR(i)*TraceFlatV(i)
+END DO ! i
+#else
 DO SideID = 1, endnSides
   Resu = Resu + DOT_PRODUCT(HDG_Surf_N(SideID)%R(1,:),HDG_Surf_N(SideID)%V(1,:))
 END DO ! SideID = 1, nSides
+#endif /*PP_nVar==1*/
 #if USE_LOADBALANCE
 CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
@@ -1190,6 +1239,7 @@ USE MOD_LoadBalance_Timers ,ONLY: LBStartTime,LBPauseTime
 USE MOD_MPI_Vars           ,ONLY: MPIW8TimeField,MPIW8CountField
 #endif /*defined(MEASURE_MPI_WAIT)*/
 USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N
+USE MOD_HDG_Vars           ,ONLY: TraceFlatR,TraceFlatV,TraceFlatZ,TraceLenInner
 USE MOD_Mesh_Vars          ,ONLY: nSides
 #if USE_MPI
 USE MOD_Mesh_Vars          ,ONLY: nMPISides_YOUR
@@ -1205,7 +1255,7 @@ IMPLICIT NONE
 REAL,INTENT(OUT)  :: Resu
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
-INTEGER           :: SideID,endnSides
+INTEGER           :: SideID,endnSides, i
 #if USE_MPI
 REAL              :: ResuSend
 #endif
@@ -1227,9 +1277,16 @@ endnSides=nSides
 CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
 Resu=0.
+#if PP_nVar==1
+! see VectorDotProductRR: one contiguous walk, same summation order, PP_nVar==1 only
+DO i = 1, TraceLenInner
+  Resu = Resu + TraceFlatV(i)*TraceFlatZ(i)
+END DO ! i
+#else
 DO SideID = 1, endnSides
   Resu = Resu + DOT_PRODUCT(HDG_Surf_N(SideID)%V(1,:),HDG_Surf_N(SideID)%Z(1,:))
 END DO ! SideID = 1, nSides
+#endif /*PP_nVar==1*/
 #if USE_LOADBALANCE
 CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
