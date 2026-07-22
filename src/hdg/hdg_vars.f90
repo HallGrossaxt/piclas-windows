@@ -50,8 +50,6 @@ TYPE(HDG_Vol_N_Type),ALLOCATABLE :: HDG_Vol_N(:)      !<
 ! HDG side variables
 TYPE HDG_Surf_N_Type
   REAL,ALLOCATABLE    :: lambda(:,:)          !< lambda, ((NSideMin+1)^2,nSides) where NSideMin is the minimum of the two faces
-  REAL,ALLOCATABLE    :: lambdaPrev1(:,:)     !< lambda after the previous solve      (only if UseLambdaExtrapolation)
-  REAL,ALLOCATABLE    :: lambdaPrev2(:,:)     !< lambda after the solve before that   (only if UseLambdaExtrapolation)
   REAL,ALLOCATABLE    :: Precond(:,:)         !< block diagonal preconditioner for lambda(nGP_face, nGP-face, nSides)
   REAL,ALLOCATABLE    :: InvPrecondDiag(:)    !< 1/diagonal of Precond
   REAL,ALLOCATABLE    :: qn_face(:,:)         !< for Neumann BC
@@ -70,13 +68,6 @@ END TYPE HDG_Surf_N_Type
 
 ! DG solution (JU or U) vectors)
 TYPE(HDG_Surf_N_Type),ALLOCATABLE :: HDG_Surf_N(:) !< Solution variable for each equation, node and element,
-
-! --- CG initial guess for skipped-solve operation (HDGSkip>1) ---
-! The CG starts from the lambda left by the previous solve. With HDGSkip>1 that lambda is many time steps
-! stale and makes a poor guess: measured ~1395 iterations at HDGSkip=100 against ~350-600 at HDGSkip=1.
-! Keeping the last two solved lambdas lets the next solve start from a linear extrapolation instead.
-LOGICAL             :: UseLambdaExtrapolation = .FALSE. !< only enabled for HDGSkip>1
-INTEGER             :: nLambdaHist = 0                  !< number of stored previous solutions (0,1,2)
 
 REAL,ALLOCATABLE    :: Tau(:)                 !< Stabilization parameter, per element
 REAL,ALLOCATABLE    :: lambdaLB(:,:,:)        !< lambda, ((PP_N+1)^2,nSides)
