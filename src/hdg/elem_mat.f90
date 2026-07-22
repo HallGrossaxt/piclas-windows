@@ -334,6 +334,9 @@ DO iElem=1,PP_nElems
 
 END DO !iElem
 
+! Refresh the element-major copy the CG MatVec reads (Smat has just changed)
+CALL BuildSmatElemMajor()
+
 IF(DoDisplayIter)THEN
   IF(HDGDisplayConvergence.AND.(MOD(td_iter,IterDisplayStep).EQ.0)) THEN
     time=PICLASTIME()
@@ -364,6 +367,112 @@ PPURE FUNCTION sindex_3to1(i1,i2,i3,iLocSide,Nloc) RESULT(i)
  END FUNCTION sindex_3to1
 
 END SUBROUTINE Elem_Mat
+
+
+!===================================================================================================================================
+!> Build SmatE, the element-major copy of Smat that the CG MatVec consumes.
+!>
+!> Per element the trace operator is exactly one dense nElemDOF x nElemDOF product, nElemDOF = 6*nGP_face:
+!>   y(i,jLocSide) = sum_{locSideID,j} Smat(i,j,jLocSide,locSideID) * lambda(j,locSideID)
+!> Smat's own index order is not the memory order of that matrix (the strides of j and jLocSide are swapped), so
+!> the values are copied once here into row=(i,jLocSide), col=(j,locSideID). Nothing is recomputed and no value
+!> changes -- this is a permutation. Called at the end of every Elem_Mat, i.e. whenever Smat changes (time step,
+!> load balance, p-adaption).
+!>
+!> Only the uniform-N case is handled. If any element's Nloc differs from the NSide of one of its own sides, the
+!> MatVec has to ChangeBasis2D the gathered and scattered traces per side pair; the flat path is then switched
+!> off and the original side-major loop runs unchanged.
+!>
+!> ElemMatVecPass splits the elements the way the side-major loop splits the sides: an element none of whose
+!> sides is an MPIsides_YOUR side can be evaluated before FinishExchange (pass 1), any other element needs the
+!> received halo lambda and is deferred to pass 2.
+!===================================================================================================================================
+SUBROUTINE BuildSmatElemMajor()
+! MODULES
+USE MOD_Globals
+USE MOD_PreProc
+USE MOD_HDG_Vars           ,ONLY: HDG_Vol_N,nGP_face,SmatE,ElemMatVecPass,UseElemMajorMatVec,nElemDOF_EM
+USE MOD_HDG_Vars           ,ONLY: ElemMajorMatVecWanted
+USE MOD_DG_Vars            ,ONLY: N_DG_Mapping
+USE MOD_Mesh_Vars          ,ONLY: ElemToSide,N_SurfMesh,offSetElem,nSides,nMPIsides_YOUR
+! IMPLICIT VARIABLE HANDLING
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER :: iElem,iLocSide,jLocSide,locSideID,i,j,SideID,Nloc,nGP,nDOF,firstYourSide
+LOGICAL :: uniformN
+!===================================================================================================================================
+! Applicable only when no side of any element needs a basis change
+uniformN = .FALSE.
+nDOF     = 0
+IF(ElemMajorMatVecWanted)THEN
+  uniformN = .TRUE.
+  DO iElem=1,PP_nElems
+    Nloc = N_DG_Mapping(2,iElem+offSetElem)
+    IF(nDOF.EQ.0) nDOF = 6*nGP_face(Nloc)
+    IF(6*nGP_face(Nloc).NE.nDOF)THEN
+      uniformN = .FALSE.
+      EXIT
+    END IF
+    DO iLocSide=1,6
+      IF(N_SurfMesh(ElemToSide(E2S_SIDE_ID,iLocSide,iElem))%NSide.NE.Nloc)THEN
+        uniformN = .FALSE.
+        EXIT
+      END IF
+    END DO !iLocSide
+    IF(.NOT.uniformN) EXIT
+  END DO !iElem
+END IF ! ElemMajorMatVecWanted
+
+UseElemMajorMatVec = uniformN.AND.(PP_nElems.GT.0)
+IF(.NOT.UseElemMajorMatVec)THEN
+  SDEALLOCATE(SmatE)
+  SDEALLOCATE(ElemMatVecPass)
+  nElemDOF_EM = 0
+  RETURN
+END IF
+
+! (Re)allocate if the size changed (load balance, p-adaption)
+IF(ALLOCATED(SmatE))THEN
+  IF((SIZE(SmatE,1).NE.nDOF).OR.(SIZE(SmatE,3).NE.PP_nElems))THEN
+    DEALLOCATE(SmatE)
+    SDEALLOCATE(ElemMatVecPass)
+  END IF
+END IF
+IF(.NOT.ALLOCATED(SmatE))THEN
+  ALLOCATE(SmatE(nDOF,nDOF,PP_nElems))
+  ALLOCATE(ElemMatVecPass(PP_nElems))
+END IF
+nElemDOF_EM = nDOF
+
+firstYourSide = nSides-nMPIsides_YOUR+1
+DO iElem=1,PP_nElems
+  Nloc = N_DG_Mapping(2,iElem+offSetElem)
+  nGP  = nGP_face(Nloc)
+
+  ! Permute the 36 blocks into one dense matrix: row = (jLocSide,i) [output], col = (locSideID,j) [input]
+  DO locSideID=1,6
+    DO jLocSide=1,6
+      DO j=1,nGP
+        DO i=1,nGP
+          SmatE((jLocSide-1)*nGP+i,(locSideID-1)*nGP+j,iElem) = HDG_Vol_N(iElem)%Smat(i,j,jLocSide,locSideID)
+        END DO !i
+      END DO !j
+    END DO !jLocSide
+  END DO !locSideID
+
+  ! Does this element need the halo lambda?
+  ElemMatVecPass(iElem) = 1
+  DO iLocSide=1,6
+    SideID = ElemToSide(E2S_SIDE_ID,iLocSide,iElem)
+    IF(SideID.GE.firstYourSide)THEN
+      ElemMatVecPass(iElem) = 2
+      EXIT
+    END IF
+  END DO !iLocSide
+END DO !iElem
+
+END SUBROUTINE BuildSmatElemMajor
 
 
 #if USE_PETSC

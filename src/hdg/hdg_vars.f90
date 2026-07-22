@@ -47,6 +47,20 @@ END TYPE HDG_Vol_N_Type
 
 TYPE(HDG_Vol_N_Type),ALLOCATABLE :: HDG_Vol_N(:)      !<
 
+! --- Element-major copy of Smat for the CG MatVec (performance only: same values, permuted index order) ---
+! Per element the trace MatVec is exactly one dense product of size nElemDOF = 6*nGP_face. HDG_Vol_N(iElem)%Smat
+! stores it as 36 separate (nGP_face x nGP_face) blocks with index order (i,j,jLocSide,locSideID), which is NOT
+! the memory order of that dense matrix -- the strides of j and jLocSide are swapped. SmatE holds the same
+! numbers permuted into row=(i,jLocSide), col=(j,locSideID), so the whole element MatVec becomes one contiguous
+! nElemDOF x nElemDOF product instead of 36 tiny ones. Smat itself is left untouched and is still the array the
+! preconditioner, the PETSc assembly and hdg_linear read.
+LOGICAL             :: ElemMajorMatVecWanted = .TRUE. !< read-in switch HDGElemMajorMatVec (A/B testing; .FALSE. forces side-major)
+LOGICAL             :: UseElemMajorMatVec = .FALSE. !< .TRUE. when the fast path is both wanted and applicable (set in Elem_Mat)
+INTEGER             :: nElemDOF_EM = 0             !< 6*nGP_face(Nloc), the element trace-block size (uniform N only)
+REAL,ALLOCATABLE    :: SmatE(:,:,:)                !< (nElemDOF_EM,nElemDOF_EM,PP_nElems) element-major Smat
+INTEGER,ALLOCATABLE :: ElemMatVecPass(:)           !< 1:PP_nElems, 1 = element has no MPIsides_YOUR side and can be
+                                                   !< done before FinishExchange, 2 = must wait for the halo lambda
+
 ! HDG side variables
 TYPE HDG_Surf_N_Type
   REAL,ALLOCATABLE    :: lambda(:,:)          !< lambda, ((NSideMin+1)^2,nSides) where NSideMin is the minimum of the two faces

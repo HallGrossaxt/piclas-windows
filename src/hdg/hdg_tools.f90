@@ -86,6 +86,93 @@ END SUBROUTINE SmallMatVec
 
 
 !===================================================================================================================================
+!> Element-major half of the lambda MatVec: gather the six traces of an element, apply the element block as ONE
+!> dense nElemDOF x nElemDOF product, scatter the result back.
+!>
+!> This is the same arithmetic as the side-major loop below, reassociated. There the element is reached once per
+!> local side and contributes one block-column, so its matrix is touched as 36 separate (nGP_face x nGP_face)
+!> slices spread over 6 visits -- 1.8M tiny products per CG iteration on the 50k-element magnetron case, with the
+!> element's Smat re-read each time through three levels of indirection. Here every element is visited once and
+!> its whole matrix is streamed contiguously out of SmatE (4.6 kB at N=1, an L1 resident block).
+!>
+!> pass=1 does the elements that need no halo data, pass=2 the rest (see ElemMatVecPass), mirroring the way the
+!> side-major loop is split around FinishExchange.
+!>
+!> NOTE: because the six block-columns of an element are now summed into y before the result reaches HDG_Surf_N,
+!> contributions arrive at a shared side in a different ORDER than in the side-major loop. The sum is the same,
+!> the rounding is not, so results are NOT bit-identical to the old path -- unlike the SmallMatVec change above,
+!> which preserved the order exactly. The iteration count therefore moves a little: measured 295->294 and 292->292
+!> on NIG_dielectric/HDG_sphere_in_box_analytical_BC (MPI=1/4), 375->375 on HDG_slab and 514->522 on HDG_cylinder,
+!> i.e. up to ~1.6%, with the reported L_2 errors unchanged in every case. Benchmarks must therefore compare
+!> seconds PER ITERATION, not wall clock per solve.
+!===================================================================================================================================
+SUBROUTINE MatVecElems(pass,iVar,DoVZ)
+! MODULES
+USE MOD_PreProc
+USE MOD_HDG_Vars  ,ONLY: HDG_Surf_N,SmatE,ElemMatVecPass,nElemDOF_EM
+USE MOD_Mesh_Vars ,ONLY: ElemToSide
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN) :: pass  !< 1: elements independent of the halo, 2: elements needing MPIsides_YOUR lambda
+INTEGER,INTENT(IN) :: iVar
+LOGICAL,INTENT(IN) :: DoVZ  !< .TRUE.: V -> Z, .FALSE.: lambda -> mv
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER :: iElem,iLocSide,SideID,jSideID(6),nGP,i,j,o
+REAL    :: x(nElemDOF_EM),y(nElemDOF_EM),t
+!===================================================================================================================================
+nGP = nElemDOF_EM/6
+
+DO iElem=1,PP_nElems
+  IF(ElemMatVecPass(iElem).NE.pass) CYCLE
+  jSideID(:) = ElemToSide(E2S_SIDE_ID,:,iElem)
+
+  ! gather the six side traces into one element vector
+  IF(DoVZ)THEN
+    DO iLocSide=1,6
+      o = (iLocSide-1)*nGP
+      x(o+1:o+nGP) = HDG_Surf_N(jSideID(iLocSide))%V(iVar,:)
+    END DO !iLocSide
+  ELSE
+    DO iLocSide=1,6
+      o = (iLocSide-1)*nGP
+      x(o+1:o+nGP) = HDG_Surf_N(jSideID(iLocSide))%lambda(iVar,:)
+    END DO !iLocSide
+  END IF ! DoVZ
+
+  ! y = SmatE * x, column outer / row inner so the matrix is walked in memory order
+  DO i=1,nElemDOF_EM
+    y(i) = 0.
+  END DO !i
+  DO j=1,nElemDOF_EM
+    t = x(j)
+    DO i=1,nElemDOF_EM
+      y(i) = y(i) + SmatE(i,j,iElem)*t
+    END DO !i
+  END DO !j
+
+  ! scatter back onto the six sides
+  IF(DoVZ)THEN
+    DO iLocSide=1,6
+      SideID = jSideID(iLocSide)
+      o      = (iLocSide-1)*nGP
+      HDG_Surf_N(SideID)%Z(iVar,:)  = HDG_Surf_N(SideID)%Z(iVar,:)  + y(o+1:o+nGP)
+    END DO !iLocSide
+  ELSE
+    DO iLocSide=1,6
+      SideID = jSideID(iLocSide)
+      o      = (iLocSide-1)*nGP
+      HDG_Surf_N(SideID)%mv(iVar,:) = HDG_Surf_N(SideID)%mv(iVar,:) + y(o+1:o+nGP)
+    END DO !iLocSide
+  END IF ! DoVZ
+
+END DO !iElem
+
+END SUBROUTINE MatVecElems
+
+
+!===================================================================================================================================
 !> Conjugate Gradient solver
 !===================================================================================================================================
 SUBROUTINE CG_solver(iVar)
@@ -414,6 +501,7 @@ USE MOD_DG_Vars            ,ONLY: N_DG_Mapping
 USE MOD_HDG_Vars           ,ONLY: nGP_face,nDirichletBCSides,DirichletBC,ZeroPotentialSide
 USE MOD_HDG_Vars           ,ONLY: HDG_Surf_N,HDG_Vol_N
 USE MOD_HDG_Vars           ,ONLY: UseFPCviaCG,FPCMaskConductor,nConductorBCsides,ConductorBC
+USE MOD_HDG_Vars           ,ONLY: UseElemMajorMatVec
 USE MOD_Mesh_Vars          ,ONLY: nSides, SideToElem, ElemToSide, nMPIsides_YOUR,N_SurfMesh, offSetElem
 USE MOD_FillMortar_HDG     ,ONLY: BigToSmallMortar_HDG,SmallToBigMortar_HDG
 #if USE_MPI
@@ -483,6 +571,9 @@ ELSE
   END DO ! SideID=1,nSides
 END IF ! DoVZ
 
+IF(UseElemMajorMatVec)THEN
+  CALL MatVecElems(1,iVar,DoVZ) ! elements that need no halo lambda
+ELSE
 DO SideID=firstSideID,lastSideID
 
   NSide = N_SurfMesh(SideID)%NSide
@@ -549,6 +640,7 @@ DO SideID=firstSideID,lastSideID
   !add mass matrix
 
 END DO ! SideID=1,nSides
+END IF ! UseElemMajorMatVec
 !SWRITE(*,*)'DEBUG---------------------------------------------------------'
 #if USE_LOADBALANCE
 CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
@@ -563,6 +655,9 @@ CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
 firstSideID=nSides-nMPIsides_YOUR+1
 lastSideID =nSides
+IF(UseElemMajorMatVec)THEN
+  CALL MatVecElems(2,iVar,DoVZ) ! elements that needed the received halo lambda
+ELSE
 DO SideID=firstSideID,lastSideID
   NSide = N_SurfMesh(SideID)%NSide
   !master element
@@ -626,6 +721,7 @@ DO SideID=firstSideID,lastSideID
     END DO !jLocSide
   END IF !locSideID.NE.-1
 END DO ! SideID=1,nSides
+END IF ! UseElemMajorMatVec
 #if USE_LOADBALANCE
 CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/

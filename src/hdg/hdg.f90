@@ -70,6 +70,7 @@ CALL prms%CreateRealOption(   'HDGSkip_t0'             ,'Time during which HDGSk
 CALL prms%CreateLogicalOption('HDGDisplayConvergence'  ,'Display divergence criteria: Iterations, RunTime and Residual', '.FALSE.')
 CALL prms%CreateRealArrayOption( 'EPC-Resistance'      ,'Vector (length corresponds to the number of EPC boundaries) with the resistance for each EPC in Ohm', no=0)
 CALL prms%CreateLogicalOption('HDGNSideMin'            ,'Use the minimum polynomial degree at the sides for the HDG solver', '.FALSE.')
+CALL prms%CreateLogicalOption('HDGElemMajorMatVec'     ,'Evaluate the CG matrix-vector product element-major (one dense product per element) instead of side-major. Same operator, different summation order, so the last bits and hence the iteration count may differ slightly. Only for A/B performance testing: .FALSE. restores the side-major loop.', '.TRUE.')
 #if defined(PARTICLES)
 CALL prms%CreateLogicalOption(  'UseBiasVoltage'              , 'Activate usage of bias voltage adjustment (for specific boundaries only)', '.FALSE.')
 CALL prms%CreateIntOption(      'BiasVoltage-NPartBoundaries' , 'Number of particle boundaries where the total ion excess is to be calculated for bias voltage model')
@@ -197,6 +198,7 @@ GETTIME(StartT)
 
 ! (0. Read generic HDG Settings)
 HDGDisplayConvergence = GETLOGICAL('HDGDisplayConvergence')
+ElemMajorMatVecWanted = GETLOGICAL('HDGElemMajorMatVec')
 
 HDGSkip = GETINT('HDGSkip')
 IF (HDGSkip.GT.0) THEN
@@ -545,6 +547,14 @@ DO iElem=1,PP_nElems
 END DO !iElem
 
 CALL Elem_Mat(0_i8) ! takes iter=0 (kind=8)
+
+! Report which MatVec the CG will use. The element-major path needs a uniform polynomial degree; with p-adaption
+! or NSide/=Nloc the traces have to be basis-changed per side pair and Elem_Mat falls back to the side-major loop.
+IF(UseElemMajorMatVec)THEN
+  SWRITE(UNIT_stdOut,'(A,I0,A,I0,A)') ' HDG MatVec: element-major, one dense ',nElemDOF_EM,'x',nElemDOF_EM,' product per element'
+ELSE
+  SWRITE(UNIT_stdOut,'(A)')      ' HDG MatVec: side-major (element-major not applicable or disabled)'
+END IF
 
 ! 10. Allocate and zero missing HDG_VOL_N and HDG_Surf_N stuff
 DO iElem = 1, PP_nElems
@@ -1179,6 +1189,8 @@ SDEALLOCATE(OffsetGlobalPETScDOF)
 SDEALLOCATE(DirichletBC)
 SDEALLOCATE(NeumannBC)
 SDEALLOCATE(HDG_Vol_N)
+SDEALLOCATE(SmatE)
+SDEALLOCATE(ElemMatVecPass)
 SDEALLOCATE(qn_face_MagStat)
 !SDEALLOCATE(delta)
 !SDEALLOCATE(LL_minus)
