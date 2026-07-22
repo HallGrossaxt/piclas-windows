@@ -181,6 +181,7 @@ USE MOD_Globals
 USE MOD_Preproc
 USE MOD_HDG_Vars           ,ONLY: HDGDisplayConvergence,iteration
 USE MOD_HDG_Vars           ,ONLY: EpsCG,MaxIterCG,PrecondType,useRelativeAbortCrit,OutIterCG,HDG_Surf_N
+USE MOD_HDG_Vars           ,ONLY: HDGProfileCG,CGPhaseTime,nCGPhase
 USE MOD_TimeDisc_Vars      ,ONLY: iter,IterDisplayStep
 USE MOD_Mesh_Vars          ,ONLY: nSides
 #if USE_MPI
@@ -205,6 +206,7 @@ INTEGER                         :: SideID
 REAL                            :: AbortCrit2
 REAL                            :: omega,rr,vz,rz1,rz2,Norm_r2
 REAL                            :: timestartCG,timeEndCG
+REAL                            :: tPhase
 !INTEGER                         :: VecSize
 LOGICAL                         :: converged
 #if USE_LOADBALANCE
@@ -220,6 +222,7 @@ IF(HDGDisplayConvergence.AND.(MOD(iter,IterDisplayStep).EQ.0)) THEN
   SWRITE(*,*)'CG solver start'
 END IF
 TimeStartCG=PICLASTIME()
+IF(HDGProfileCG) CGPhaseTime = 0.
 #if USE_MPI
 ! not use MPI_YOUR sides for vector_dot_product!!!
 !CALL abort(__STAMP__,'not implemented')
@@ -291,14 +294,17 @@ CALL VectorDotProductRV(rz1) !Z=V
 !IF(MPIroot) print*, '!!!!!!!!!!!!!!!!!!!!!!'
 !IF(MPIroot) print*, iVar
 DO iteration=1,MaxIterCG
+  IF(HDGProfileCG) tPhase=PICLASTIME()
   ! matrix vector
   IF(PRESENT(iVar)) THEN
     CALL MatVec(iVar,.TRUE.) ! CALL MatVec(V,Z, iVar)
   ELSE
     CALL MatVec(1,.TRUE.) ! CALL MatVec(V,Z)
   END IF
+  IF(HDGProfileCG)THEN; CGPhaseTime(1)=CGPhaseTime(1)+PICLASTIME()-tPhase; tPhase=PICLASTIME(); END IF
 
   CALL VectorDotProductVZ(vz)
+  IF(HDGProfileCG)THEN; CGPhaseTime(2)=CGPhaseTime(2)+PICLASTIME()-tPhase; tPhase=PICLASTIME(); END IF
 
   IF(ABS(vz).LE.0.0) CALL abort(__STAMP__,'vz is zero!')
   omega=rz1/vz
@@ -308,6 +314,7 @@ DO iteration=1,MaxIterCG
     HDG_Surf_N(SideID)%lambda(iVar,:) = HDG_Surf_N(SideID)%lambda(iVar,:) + omega * HDG_Surf_N(SideID)%V(iVar,:)
     HDG_Surf_N(SideID)%R(iVar,:)      = HDG_Surf_N(SideID)%R(iVar,:)      - omega * HDG_Surf_N(SideID)%Z(iVar,:)
   END DO ! SideID = 1, nSides
+  IF(HDGProfileCG)THEN; CGPhaseTime(3)=CGPhaseTime(3)+PICLASTIME()-tPhase; tPhase=PICLASTIME(); END IF
   CALL VectorDotProductRR(rr)
   IF(ISNAN(rr)) CALL abort(__STAMP__,'HDG solver residual rr = NaN for CG iteration =', IntInfoOpt=iteration)
 #if USE_MPI
@@ -328,6 +335,7 @@ DO iteration=1,MaxIterCG
 #else
   converged=(rr.LT.AbortCrit2)
 #endif /*USE_MPI*/
+  IF(HDGProfileCG)THEN; CGPhaseTime(4)=CGPhaseTime(4)+PICLASTIME()-tPhase; tPhase=PICLASTIME(); END IF
   IF(converged) THEN !converged
     TimeEndCG=PICLASTIME()
     CALL EvalResidual(1)
@@ -352,6 +360,7 @@ DO iteration=1,MaxIterCG
 #if USE_LOADBALANCE
   CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
+  IF(HDGProfileCG)THEN; CGPhaseTime(5)=CGPhaseTime(5)+PICLASTIME()-tPhase; tPhase=PICLASTIME(); END IF
   CALL VectorDotProductRZ(rz2)
 #if USE_LOADBALANCE
   CALL LBStartTime(tLBStart) ! Start time measurement
@@ -361,6 +370,7 @@ DO iteration=1,MaxIterCG
     HDG_Surf_N(SideID)%V(iVar,:) = HDG_Surf_N(SideID)%Z(iVar,:) + rz1*HDG_Surf_N(SideID)%V(iVar,:)
   END DO ! SideID = 1, nSides
   rz1=rz2
+  IF(HDGProfileCG) CGPhaseTime(6)=CGPhaseTime(6)+PICLASTIME()-tPhase
 #if USE_LOADBALANCE
   CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
@@ -377,6 +387,7 @@ END SUBROUTINE CG_solver
 SUBROUTINE DisplayConvergence(ElapsedTime, iteration, Norm)
 ! MODULES
 USE MOD_HDG_Vars      ,ONLY: HDGDisplayConvergence,HDGNorm,RunTime,RunTimePerIteration,iterationTotal,RunTimeTotal
+USE MOD_HDG_Vars      ,ONLY: HDGProfileCG,CGPhaseTime,nCGPhase
 USE MOD_Globals       ,ONLY: UNIT_StdOut
 USE MOD_TimeDisc_Vars ,ONLY: iter,IterDisplayStep
 !----------------------------------------------------------------------------------------------------------------------------------!
@@ -387,6 +398,11 @@ INTEGER,INTENT(IN)  :: iteration
 REAL,INTENT(IN)     :: Norm
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
+INTEGER             :: iPhase
+REAL                :: tSum
+CHARACTER(LEN=24),PARAMETER :: CGPhaseName(nCGPhase) = &
+    [ CHARACTER(LEN=24) :: 'MatVec', 'dot(V,Z)+allreduce', 'axpy lambda,R', &
+                           'dot(R,R)+allred+bcast', 'preconditioner', 'dot(R,Z)+allred+upd V' ]
 !===================================================================================================================================
 RunTime = ElapsedTime
 RunTimeTotal = RunTimeTotal + RunTime
@@ -404,6 +420,16 @@ IF(HDGDisplayConvergence.AND.(MOD(iter,IterDisplayStep).EQ.0)) THEN
   WRITE(UNIT_StdOut,'(A,1X,ES25.14E3)')                'RunTime/iteration [s]:',RunTimePerIteration
   !WRITE(UNIT_StdOut,'(A,1X,ES16.7)')'RunTime/iteration/DOF[s]:',(TimeEndCG-TimeStartCG)/REAL(iteration*PP_nElems*nGP_vol)
   WRITE(UNIT_StdOut,'(A,1X,ES25.14E3)')                'Final Residual       :',HDGNorm
+  IF(HDGProfileCG.AND.(iteration.GT.0))THEN
+    tSum = SUM(CGPhaseTime)
+    IF(tSum.GT.0.)THEN
+      WRITE(UNIT_StdOut,'(A)') 'CG phase split (root rank, % of the timed CG loop):'
+      DO iPhase=1,nCGPhase
+        WRITE(UNIT_StdOut,'(A,A24,A,F6.2,A,ES12.5,A)') '   ',CGPhaseName(iPhase),' : ', &
+            100.*CGPhaseTime(iPhase)/tSum,' %  (',CGPhaseTime(iPhase)/REAL(iteration),' s/iter)'
+      END DO !iPhase
+    END IF ! tSum.GT.0.
+  END IF ! HDGProfileCG
   WRITE(UNIT_StdOut,'(132("-"))')
 END IF
 END SUBROUTINE DisplayConvergence
@@ -961,7 +987,35 @@ REAL,INTENT(INOUT):: X(dimA,nRHS)
 !-----------------------------------------------------------------------------------------------------------------------------------
 ! LOCAL VARIABLES
 INTEGER           :: lapack_info
+INTEGER           :: i,k
+REAL              :: s
 !===================================================================================================================================
+! The block-Jacobi preconditioner calls this once per side per CG iteration with dimA = nGP_face
+! (4 at N=1, 9 at N=2) and nRHS = 1 -- roughly 1e5 calls per rank per iteration. At that size a
+! LAPACK call is nearly all overhead, exactly as DGEMV was for the MatVec blocks (see SmallMatVec).
+! A is the upper Cholesky factor U of A = U^T U, so the solve is a forward substitution against U^T
+! followed by a back substitution against U. The loop order below is the reference-LAPACK order, so
+! the result is unchanged to the last bit.
+IF((dimA.LE.SMALLMATVEC_NMAX).AND.(nRHS.EQ.1))THEN
+  ! forward: U^T y = b, with (U^T)(i,k) = A(k,i)
+  DO i = 1,dimA
+    s = RHS(i,1)
+    DO k = 1,i-1
+      s = s - A(k,i)*X(k,1)
+    END DO !k
+    X(i,1) = s/A(i,i)
+  END DO !i
+  ! back: U x = y
+  DO i = dimA,1,-1
+    s = X(i,1)
+    DO k = i+1,dimA
+      s = s - A(i,k)*X(k,1)
+    END DO !k
+    X(i,1) = s/A(i,i)
+  END DO !i
+  RETURN
+END IF
+
 X = RHS
 CALL DPOTRS('U',dimA,nRHS,A,dimA,X,dimA,lapack_info)
 !IF (lapack_info .NE. 0) THEN

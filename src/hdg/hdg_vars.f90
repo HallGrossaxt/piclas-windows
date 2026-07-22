@@ -132,6 +132,15 @@ INTEGER,ALLOCATABLE :: MaskedSide(:)          !< 1:nSides: all sides which are s
 INTEGER,ALLOCATABLE :: SmallMortarInfo(:)     !< 1:nSides: info on small Mortar sides:
                                               !< -1: is neighbor small mortar , 0: not a small mortar, 1: small mortar on big side
 LOGICAL             :: HDGDisplayConvergence  !< Display divergence criteria: Iterations, Runtime and Residual
+
+! --- CG phase profiling (diagnostic only; accumulated per solve, reported by DisplayConvergence) ---
+! A CG iteration is one MatVec + three dot products (each an MPI_ALLREDUCE) + a BCAST + one
+! preconditioner apply + two vector updates. Everything except the MatVec walks the per-side
+! HDG_Surf_N components, so this split is what decides whether flattening those is worth it.
+INTEGER,PARAMETER   :: nCGPhase = 6         !< 1 MatVec, 2 dot(V,Z), 3 axpy lambda/R, 4 dot(R,R)+BCAST,
+                                            !< 5 preconditioner, 6 dot(R,Z)+update V
+LOGICAL             :: HDGProfileCG=.FALSE. !< Read-in switch HDGProfileCG: time the CG phases and print the split
+REAL                :: CGPhaseTime(nCGPhase)!< Accumulated seconds per phase for the current solve
 REAL                :: RunTime                !< CG Solver runtime
 REAL                :: RunTimePerIteration    !< CG Solver runtime per iteration
 REAL                :: HDGNorm                !< Norm
