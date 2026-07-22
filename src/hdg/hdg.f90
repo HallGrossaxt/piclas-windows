@@ -68,6 +68,9 @@ CALL prms%CreateIntOption(    'HDGSkip'                ,'Number of time step ite
 CALL prms%CreateIntOption(    'HDGSkipInit'            ,'Number of time step iterations until the HDG solver is called (i.e. all intermediate calls are skipped) while time < HDGSkip_t0 (if HDGSkip > 0)', '0')
 CALL prms%CreateRealOption(   'HDGSkip_t0'             ,'Time during which HDGSkipInit is used instead of HDGSkip (if HDGSkip > 0)', '0.')
 CALL prms%CreateLogicalOption('HDGDisplayConvergence'  ,'Display divergence criteria: Iterations, RunTime and Residual', '.FALSE.')
+CALL prms%CreateLogicalOption('HDGLambdaExtrapolate'   ,'Start the CG from a linear extrapolation of the last two solved '//&
+                                                        'lambdas instead of the last one. Only read (and only useful) when '//&
+                                                        'HDGSkip > 1, where the previous lambda is many time steps stale.', '.TRUE.')
 CALL prms%CreateRealArrayOption( 'EPC-Resistance'      ,'Vector (length corresponds to the number of EPC boundaries) with the resistance for each EPC in Ohm', no=0)
 CALL prms%CreateLogicalOption('HDGNSideMin'            ,'Use the minimum polynomial degree at the sides for the HDG solver', '.FALSE.')
 #if defined(PARTICLES)
@@ -205,6 +208,12 @@ IF (HDGSkip.GT.0) THEN
 ELSE
   HDGSkip=0
 END IF
+
+! Extrapolate the CG initial guess from the last two solves. Only meaningful when solves are skipped: with
+! HDGSkip<=1 the previous lambda is already a good guess and this stays off, so default runs are unaffected.
+UseLambdaExtrapolation = .FALSE.
+IF(HDGSkip.GT.1) UseLambdaExtrapolation = GETLOGICAL('HDGLambdaExtrapolate','.TRUE.')
+nLambdaHist = 0
 
 ! Read in CG parameters (also used for PETSc)
 #if USE_PETSC
@@ -557,6 +566,12 @@ DO SideID = 1, nSides
   NSide = N_SurfMesh(SideID)%NSide
   ALLOCATE(HDG_Surf_N(SideID)%lambda(PP_nVar,nGP_face(NSide)))
   HDG_Surf_N(SideID)%lambda=0.
+  IF(UseLambdaExtrapolation)THEN
+    ALLOCATE(HDG_Surf_N(SideID)%lambdaPrev1(PP_nVar,nGP_face(NSide)))
+    ALLOCATE(HDG_Surf_N(SideID)%lambdaPrev2(PP_nVar,nGP_face(NSide)))
+    HDG_Surf_N(SideID)%lambdaPrev1=0.
+    HDG_Surf_N(SideID)%lambdaPrev2=0.
+  END IF ! UseLambdaExtrapolation
   ALLOCATE(HDG_Surf_N(SideID)%RHS_face(PP_nVar,nGP_face(NSide)))
   HDG_Surf_N(SideID)%RHS_face=0.
   ALLOCATE(HDG_Surf_N(SideID)%mv(PP_nVar,nGP_face(NSide)))

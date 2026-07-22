@@ -142,6 +142,17 @@ chitens_face=0.0
 chitens_face(1,1)=1.
 chitens_face(2,2)=1.
 chitens_face(3,3)=1.
+
+! CG initial guess. Normally lambda is left over from the previous solve, which is a good starting point.
+! With HDGSkip>1 it is HDGSkip time steps stale, so extrapolate linearly from the last two solves instead:
+! lambda_guess = 2*prev1 - prev2 (the solves are equally spaced, so the time factors cancel). Done here,
+! before the Dirichlet and FPC values are re-imposed below, so prescribed faces are not affected.
+IF(UseLambdaExtrapolation.AND.(nLambdaHist.GE.2))THEN
+  DO SideID = 1, nSides
+    HDG_Surf_N(SideID)%lambda = 2.*HDG_Surf_N(SideID)%lambdaPrev1 - HDG_Surf_N(SideID)%lambdaPrev2
+  END DO ! SideID
+END IF ! UseLambdaExtrapolation
+
 #if USE_LOADBALANCE
     CALL LBStartTime(tLBStart) ! Start time measurement
 #endif /*USE_LOADBALANCE*/
@@ -669,6 +680,15 @@ PetscCallA(VecRestoreArrayRead(PETScSolutionLocal,lambda_pointer,ierr))
   CALL LBPauseTime(LB_DG,tLBStart) ! Pause/Stop time measurement
 #endif /*USE_LOADBALANCE*/
 END DO !iVar
+
+! Record this solution so the next skipped-solve call can extrapolate from the last two
+IF(UseLambdaExtrapolation)THEN
+  DO SideID = 1, nSides
+    HDG_Surf_N(SideID)%lambdaPrev2 = HDG_Surf_N(SideID)%lambdaPrev1
+    HDG_Surf_N(SideID)%lambdaPrev1 = HDG_Surf_N(SideID)%lambda
+  END DO ! SideID
+  nLambdaHist = MIN(nLambdaHist+1,2)
+END IF ! UseLambdaExtrapolation
 
 #if USE_LOADBALANCE
 CALL LBStartTime(tLBStart) ! Start time measurement
