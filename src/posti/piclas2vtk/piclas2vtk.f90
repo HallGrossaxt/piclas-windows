@@ -172,11 +172,14 @@ SWRITE(UNIT_stdOut,'(132("="))')
 
 ! Set and read in parameters differently depending if piclas2vtk is invoked with a parameter file or not
 IF(NVisuDefault.OR.CmdLineMode) THEN
+  ! Neither branch reads a parameter file, so these properties of the prms object have to be set by
+  ! hand -- the formatted output below builds its edit descriptors from them, and leaving them at 0
+  ! makes that "(a0)", i.e. a "Zero width in format descriptor" runtime abort. Must therefore cover
+  ! CmdLineMode (--NVisu=N) as well, not just NVisuDefault.
+  prms%maxNameLen  = 25 ! meshCheckWeirdElements is the longest option
+  prms%maxValueLen = 23 ! CHEBYSHEV-GAUSS-LOBATTO is the longest possible value
   IF(NVisuDefault) THEN
     NVisu = 1
-      ! Since we are not reading a parameter file, some properties of the prms object need to be set
-    prms%maxNameLen  = 25 ! meshCheckWeirdElements is the longest option
-    prms%maxValueLen = 23 ! CHEBYSHEV-GAUSS-LOBATTO is the longest possible value
   ELSE IF(CmdLineMode) THEN
     ! Read NVisu from the first command line argument
     NVisuString = TRIM(ParameterFile(9:LEN(TRIM(ParameterFile))))
