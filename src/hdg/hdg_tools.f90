@@ -25,6 +25,8 @@ IMPLICIT NONE
 PRIVATE
 !-----------------------------------------------------------------------------------------------------------------------------------
 #if USE_HDG
+!> Largest block edge length handled by the inlined SmallMatVec instead of DGEMV (16 covers N<=3)
+INTEGER,PARAMETER :: SMALLMATVEC_NMAX = 16
 PUBLIC :: CG_solver
 PUBLIC :: DisplayConvergence
 PUBLIC :: MatVec
@@ -36,6 +38,53 @@ PUBLIC :: VectorDotProductRR
 CONTAINS
 
 #if USE_HDG
+!===================================================================================================================================
+!> y(1:n) = A(1:n,1:n) * x(1:n) for the small dense blocks the HDG MatVec is built from.
+!>
+!> These blocks are nGP_face = (Nloc+1)^2 square, i.e. 4x4 at N=1 and 9x9 at N=2, and the MatVec issues of
+!> order 1e6 of them per CG iteration. A BLAS call cannot pay for itself at that size: measured against the
+!> OpenBLAS this build links, DGEMV on 4x4 costs ~94 ns per call versus under 2 ns for the same arithmetic
+!> inlined -- 16 flops behind ~94 ns of call overhead. That overhead, not the arithmetic, dominated the
+!> whole field solve.
+!>
+!> Above SMALLMATVEC_NMAX the picture reverses (BLAS blocking and prefetch win), so larger blocks still go
+!> to DGEMV. The loop order below (column outer, row inner) is the reference-BLAS order, so results are
+!> unchanged to the last bit for any implementation that accumulates in the same order.
+!===================================================================================================================================
+SUBROUTINE SmallMatVec(n,A,x,y)
+! MODULES
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN)    :: n
+REAL,INTENT(IN)       :: A(n,n)
+REAL,INTENT(IN)       :: x(*)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! OUTPUT VARIABLES
+REAL,INTENT(INOUT)    :: y(*)   !< only y(1:n) is written, as with DGEMV and beta=0
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER               :: i,j
+REAL                  :: t
+!===================================================================================================================================
+IF(n.GT.SMALLMATVEC_NMAX)THEN
+  CALL DGEMV('N',n,n,1.,A,n,x,1,0.,y,1)
+  RETURN
+END IF
+
+DO i = 1,n
+  y(i) = 0.
+END DO
+DO j = 1,n
+  t = x(j)
+  DO i = 1,n
+    y(i) = y(i) + A(i,j)*t
+  END DO
+END DO
+
+END SUBROUTINE SmallMatVec
+
+
 !===================================================================================================================================
 !> Conjugate Gradient solver
 !===================================================================================================================================
@@ -454,10 +503,8 @@ DO SideID=firstSideID,lastSideID
     DO jLocSide = 1,6
       SideID2 = jSideID(jLocSide)
       NSide = N_SurfMesh(SideID2)%NSide
-      CALL DGEMV('N',nGP_face(Nloc),nGP_face(Nloc),1., &
-                        HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), nGP_face(Nloc), &
-                        lambdatmp(1:nGP_face(Nloc)),1,0.,& ! !: add to mv, 0: set mv
-                        mvtmp(1:nGP_face(Nloc)),1)
+      ! mvtmp = Smat * lambdatmp. Inlined rather than DGEMV: see SmallMatVec.
+      CALL SmallMatVec(nGP_face(Nloc), HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), lambdatmp, mvtmp)
       IF(Nloc.NE.NSide)THEN
         CALL ChangeBasis2D(1, Nloc, NSide, TRANSPOSE(PREF_VDM(NSide,Nloc)%Vdm) , mvtmp(1:nGP_face(Nloc)), mvtmp(1:nGP_face(NSide)))
       END IF !Nloc.NE.NSide
@@ -487,10 +534,8 @@ DO SideID=firstSideID,lastSideID
     DO jLocSide = 1,6
       SideID2 = jSideID(jLocSide)
       NSide = N_SurfMesh(SideID2)%NSide
-      CALL DGEMV('N',nGP_face(Nloc),nGP_face(Nloc),1., &
-                        HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), nGP_face(Nloc), &
-                        lambdatmp(1:nGP_face(Nloc)),1,0.,& ! !: add to mv, 0: set mv
-                        mvtmp(1:nGP_face(Nloc)),1)
+      ! mvtmp = Smat * lambdatmp. Inlined rather than DGEMV: see SmallMatVec.
+      CALL SmallMatVec(nGP_face(Nloc), HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), lambdatmp, mvtmp)
       IF(Nloc.NE.NSide)THEN
         CALL ChangeBasis2D(1, Nloc, NSide, TRANSPOSE(PREF_VDM(NSide,Nloc)%Vdm), mvtmp(1:nGP_face(Nloc)), mvtmp(1:nGP_face(NSide)))
       END IF !Nloc.NE.NSide
@@ -537,10 +582,8 @@ DO SideID=firstSideID,lastSideID
     DO jLocSide = 1,6
       SideID2 = jSideID(jLocSide)
       NSide = N_SurfMesh(SideID2)%NSide
-      CALL DGEMV('N',nGP_face(Nloc),nGP_face(Nloc),1., &
-                        HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), nGP_face(Nloc), &
-                        lambdatmp(1:nGP_face(Nloc)),1,0.,& ! !: add to mv, 0: set mv
-                        mvtmp(1:nGP_face(Nloc)),1)
+      ! mvtmp = Smat * lambdatmp. Inlined rather than DGEMV: see SmallMatVec.
+      CALL SmallMatVec(nGP_face(Nloc), HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), lambdatmp, mvtmp)
       IF(Nloc.NE.NSide)THEN
         CALL ChangeBasis2D(1, Nloc, NSide, TRANSPOSE(PREF_VDM(NSide,Nloc)%Vdm) , mvtmp(1:nGP_face(Nloc)), mvtmp(1:nGP_face(NSide)))
       END IF ! Nloc.NE.NSide
@@ -570,10 +613,8 @@ DO SideID=firstSideID,lastSideID
     DO jLocSide = 1,6
       SideID2 = jSideID(jLocSide)
       NSide = N_SurfMesh(SideID2)%NSide
-      CALL DGEMV('N',nGP_face(Nloc),nGP_face(Nloc),1., &
-                        HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), nGP_face(Nloc), &
-                        lambdatmp(1:nGP_face(Nloc)),1,0.,& ! !: add to mv, 0: set mv
-                        mvtmp(1:nGP_face(Nloc)),1)
+      ! mvtmp = Smat * lambdatmp. Inlined rather than DGEMV: see SmallMatVec.
+      CALL SmallMatVec(nGP_face(Nloc), HDG_Vol_N(ElemID)%Smat(:,:,jLocSide,locSideID), lambdatmp, mvtmp)
       IF(Nloc.NE.NSide)THEN
         CALL ChangeBasis2D(1, Nloc, NSide, TRANSPOSE(PREF_VDM(NSide,Nloc)%Vdm), mvtmp(1:nGP_face(Nloc)), mvtmp(1:nGP_face(NSide)))
       END IF ! Nloc.NE.NSide
