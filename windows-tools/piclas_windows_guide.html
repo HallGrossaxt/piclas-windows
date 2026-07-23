@@ -224,6 +224,47 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <table>
   <tr><th>Version</th><th>Date</th><th>Highlights</th></tr>
   <tr>
+    <td><strong>v1.2</strong></td>
+    <td>July 2026</td>
+    <td>
+      <strong>HDG (Poisson) field solve ~9.5&times; faster at 4 ranks &mdash; no physics change (&sect;16.31).</strong>
+      A performance pass on the internal HDG conjugate-gradient solver, driven by the 2D magnetron case where the
+      field solve was ~68&ndash;79% of wall clock. Each step preserves the converged solution (bit-identical, or a
+      valid SPD-preconditioner change verified against analytic references and by residual-tolerance scaling):
+      <ul style="margin-top:4px;">
+        <li><b>Element-major MatVec</b> (<code>7d75c55</code>): one dense product per element instead of 36 tiny 4&times;4
+            ones &mdash; 1.52&times;.</li>
+        <li><b>Inlined 4&times;4 Cholesky</b> in the block-Jacobi preconditioner (<code>067c18e</code>): the same
+            BLAS-overhead-on-tiny-blocks pattern as the earlier DGEMV inline &mdash; bit-identical, 1.13&times;.</li>
+        <li><b>Flat contiguous storage</b> for the five CG trace vectors (<code>b0297f5</code>): replaces per-side heap
+            allocations with pointer windows into one array &mdash; the biggest single win, 2.03&times;.</li>
+        <li><b>Additive coarse-space correction</b> (<code>46653d8</code>, <code>HDGCoarseCorrection</code>, default off;
+            <code>HDGnCoarse</code> sets granularity): geometric-aggregation deflation of the low-frequency modes the local
+            preconditioner cannot touch &mdash; 3.76&times; fewer iterations at the default, up to 7.87&times;. <code>HDGProfileCG</code>
+            prints the CG phase split.</li>
+      </ul>
+      Phase 6 (GPU) was measured and <em>dropped</em>: after this work the field solve is only ~45% of wall clock, so a
+      perfect GPU field solve caps the whole run at ~1.8&times; &mdash; the CPU particle push is now the bigger cost.
+      <br><br>
+      <strong>Three correctness/build fixes surfaced by the work:</strong>
+      <ul style="margin-top:4px;">
+        <li><b><code>piclas2vtk --NVisu=N</code> crash</b> (<code>19a7487</code>): "Zero width in format descriptor" &mdash;
+            <code>prms%maxNameLen</code>/<code>maxValueLen</code> were unset on the <code>--NVisu</code> path. <code>--NVisu=1/2</code>
+            now work; bare <code>.h5</code> byte-identical.</li>
+        <li><b>Load-balance SIGSEGV</b> (<code>390797d</code>): the flat trace vectors are <code>CONTIGUOUS</code> pointers;
+            <code>FinalizeHDG</code> freed their backing store before the non-H5IO LB <code>lambda</code> save reads it.
+            Fixed by reordering the deallocations. Distinct from Bug&nbsp;L (the pre-existing 4.2.0 MS-MPI LB heap race).</li>
+        <li><b>SuperB <code>PARTICLES=OFF</code> clean-build failure</b> (<code>4698581</code>): <code>piclas_init.f90</code>'s
+            soft-iron call was guarded by <code>USE_SUPER_B</code> alone, so a clean <code>PARTICLES=OFF + POSTI_BUILD_SUPERB</code>
+            build failed (missing <code>mod_superb_softiron</code>). Guarded with <code>USE_SUPER_B &amp;&amp; defined(PARTICLES)</code>.</li>
+      </ul>
+      <strong>Validation:</strong> all HDG regression suites pass 0/0/0 with the full stack &mdash; <code>NIG_dielectric</code>,
+      <code>NIG_poisson</code>, <code>NIG_PIC_poisson_RK3</code>/<code>_plasma_wave</code>/<code>_Leapfrog</code>,
+      <code>WEK_PIC_poisson</code> &mdash; covering analytic references, PIC coupling, mortars, SEE, SuperB background field,
+      MPI up to 20, and both load-balance paths. Builds on the upstream 4.2.0 merge (&sect;16.28&ndash;16.30).
+    </td>
+  </tr>
+  <tr>
     <td><strong>v1.0</strong></td>
     <td>June 2026</td>
     <td>
@@ -1100,6 +1141,15 @@ cmake --build C:/Data/PRJ/Piclas/build-poisson-leapfrog-release \
 <h3>8.2 Convert all state files at once</h3>
 <pre class="cmd"><code>piclas2vtk.exe parameter.ini plasma_wave_State_*.h5</code></pre>
 <p>Output files (<code>.vtu</code>) are written to the same directory. Open them in ParaView.</p>
+
+<p><strong>Supersampled output (<code>--NVisu</code>):</strong> to write a finer visualization mesh without a
+parameter file, pass <code>--NVisu=N</code> before the <code>.h5</code> file(s):</p>
+<pre class="cmd"><code>piclas2vtk.exe --NVisu=2 magnetron2d_State_000.*.h5</code></pre>
+<p>A bare <code>piclas2vtk.exe file.h5</code> defaults to <code>NVisu=1</code> (element-mean cells). Higher
+<code>NVisu</code> resolves the DG polynomial within each cell (e.g. <code>--NVisu=2</code> roughly quadruples the
+2D output size). <span style="color:var(--green)">Fixed in v1.2 (<code>19a7487</code>):</span> the
+<code>--NVisu=N</code> form previously aborted with "Zero width in format descriptor"; it now works, and the
+bare-<code>.h5</code> form is byte-identical to before.</p>
 
 <h3>8.3 Opening results in ParaView</h3>
 <ol>

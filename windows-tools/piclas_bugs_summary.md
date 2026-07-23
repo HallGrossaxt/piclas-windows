@@ -735,6 +735,96 @@ and the PETSc / tutorial WEK suites.
 
 ---
 
+## §16.31 — HDG field-solve acceleration + correctness fixes (2026-07-22/23, merged to master 4698581)
+
+A performance pass on the HDG (Poisson) CG field solver, plus three correctness/build bugs the work
+surfaced. The magnetron 2D case (`C:\Data\PRJ\Magnetron2D`, 50 170 elements, N=1) was the driver; the
+field solve was ~68–79% of wall clock before this work. All measured on an idle box at 4 ranks.
+
+### Acceleration — ~9.5x on the field solve at 4 ranks (default), no physics change
+
+Each step preserves the converged solution (it is either bit-identical or a valid SPD preconditioner
+change); the CG residual is always measured on the true operator, so results match to tolerance.
+
+| step | commit | s/iteration | cumulative | how verified |
+|---|---|---|---|---|
+| side-major baseline | — | 0.0563 | 1.00x | — |
+| element-major MatVec (one dense product/element) | `7d75c55` | 0.0370 | 1.52x | `NIG_dielectric` L_2 unchanged, iters within ~2% |
+| inline the 4x4 Cholesky in the block-Jacobi precond | `067c18e` | 0.0334 | 1.69x | bit-identical (295/292 iters, same L_2) |
+| flat contiguous storage for the 5 CG trace vectors | `b0297f5` | 0.0164 | 3.43x | L_2 unchanged; magnetron iter counts match reference |
+| additive coarse-space correction (default off) | `46653d8` | 0.0222 @ 1049 iters | **9.5x** | L_2 to 8 digits + tolerance-scaling to 5e-11 |
+
+- The dominant recurring pattern was **a BLAS/LAPACK call wrapped around 4x4 work** — fixed twice
+  (DGEMV in the MatVec `70d3151`, DPOTRS in the preconditioner `067c18e`).
+- The coarse correction (`HDGCoarseCorrection`, default OFF; `HDGnCoarse` sets granularity) is an
+  additive two-level deflation over geometric side-aggregates: 3.76x fewer iterations at the default,
+  up to 7.87x. Reliably beneficial only on large elliptic solves (aggregates << sides); it can raise
+  the count on a small mesh, hence default-off. `HDGProfileCG` (default off) prints the CG phase split.
+- Phase 6 (GPU) was measured and **dropped**: after 1–5 the field solve is only ~45% of wall clock
+  (HDGSkip=100, coarse on), so a perfect GPU field solve caps the whole run at ~1.8x — the CPU
+  particle push is now the bigger cost. CUDA 13.2 / RTX 3060 are present if ever retargeted at particles.
+
+### FIXED — piclas2vtk crashes when NVisu is given on the command line (`19a7487`)
+
+`piclas2vtk --NVisu=N <file>.h5` aborted with `Fortran runtime error: Zero width in format
+descriptor`. Both no-parameter-file branches share the formatted echo of the chosen NVisu, which
+builds its edit descriptors from `prms%maxNameLen`/`maxValueLen`; those were assigned only in the
+bare-`.h5` branch, so via `--NVisu` they were 0 → `(a0)`. Hoisted the assignments above the inner IF.
+The bare `.h5` form (already working) is byte-identical after the fix; `--NVisu=1/2` now work.
+
+### FIXED — SIGSEGV during load balance in the HDG CG (`390797d`)
+
+**Introduced by, and fixed within, this session's flat-trace-vector change** — distinct from Bug L
+(the pre-existing 4.2.0 MS-MPI LB heap race, §16.28). `b0297f5` made `HDG_Surf_N %lambda/%mv/%R/%V/%Z`
+`CONTIGUOUS` pointers into flat backing arrays. `FinalizeHDG` freed those backing arrays early, but
+the non-H5IO load-balance path reads `%lambda` LATER in the same `FinalizeHDG` (`LambdaSideToMaster`
+→ `lambdaLB`) to carry the trace solution across the redistribution. Dangling pointer → SIGSEGV at
+"PERFORMING LOAD BALANCE 1 of N". Fix: free the flat storage AFTER `SDEALLOCATE(HDG_Surf_N)`, matching
+how `%lambda`'s own descriptor is kept alive across the save. Verified on
+`NIG_PIC_poisson_Leapfrog/EBeam_3D_and_2D-axisym` (10 load balances, MPI=4). No analytic gate or
+benchmark caught it (the magnetron bench has LB off) — only the regression suite did.
+
+### FIXED — clean build of PARTICLES=OFF + SuperB HDG configs (`4698581`)
+
+A clean build of `POSTI_BUILD_SUPERB=ON + PARTICLES=OFF + HDG` (e.g.
+`build-poisson-rk3-codeanalyze-mpi`, the `NIG_poisson` binary) failed: compile `Cannot open module
+file mod_superb_softiron.mod`, link `undefined reference to solvesoftironrspdeferred`. The SuperB
+sources are compiled into the MAIN library only for `PARTICLES=ON` (particlesF90 glob in
+`src/CMakeLists.txt`); for `PARTICLES=OFF` only `superB_vars.f90` is, the rest living solely in the
+standalone `superBlibF90`. Every other main-lib SuperB user is PARTICLES-gated (BG-field callers are
+under `src/particles/`; `define_parameters_init`'s SuperB use is inside a `defined(PARTICLES)` block)
+— only the soft-iron call added to `piclas_init.f90` was guarded by `USE_SUPER_B` alone. Fix: guard
+it with `USE_SUPER_B && defined(PARTICLES)` (SuperB runs internally only from InitParticles).
+Incremental builds had masked this via a stale `.mod`; `ninja -t clean` exposes it. Verified: clean
+build from scratch succeeds (254 targets); PARTICLES=ON SuperB builds unaffected.
+
+### Validation — HDG regression suites all green with the full stack
+
+Rebuilt the Poisson binaries from the merged source and ran the HDG suites:
+
+| Suite | Result | Coverage |
+|---|---|---|
+| `NIG_dielectric` | ✅ 0/0/0 | analytic L_2 refs, N=1–4, cylinder/slab/sphere/point-charge, multiple BCs |
+| `NIG_poisson` | ✅ 0/0/0 | pure HDG Laplace (on the CODE_ANALYZE binary, after the `4698581` build fix) |
+| `NIG_PIC_poisson_RK3` | ✅ 0/0/0 | PIC coupling, `turner` H5IO load balance |
+| `NIG_PIC_poisson_plasma_wave` | ✅ 0/0/0 | PIC coupling |
+| `NIG_PIC_poisson_Leapfrog` | ✅ 0/0/0 | non-H5IO load balance (EBeam), SEE, mortars |
+| `WEK_PIC_poisson` | ✅ 0/0/0 | SuperB background field, HEMPT at MPI=1/10/20 |
+
+All 15 `build-poisson-*` binaries rebuilt to carry `390797d` + `4698581`. The 2 `build-maxwell-*superb`
+binaries need neither (HDG code is `USE_HDG`-gated out).
+
+### Regression-infra note — 4.2.0 merge re-introduced locally-disabled examples
+
+While validating, several examples that had been disabled on Windows (`turner_bias-voltage_AC-DC`, the
+BR `_auto-switch` variants in RK3, `BC_SEE_*` and others in Leapfrog) were found back in the active
+suite dirs with `_disabled_windows/` twins still present. Cause: `regressioncheck/` is git-ignored, so
+the disabling `mv` into `_disabled_windows/` is a local-only operation the 4.2.0 merge's checkout
+undid. They caused spurious run/analyze failures until moved back out. The `_disabled_windows/` twins
+are the canonical record; re-verify after any future upstream merge.
+
+---
+
 ## Regression Test Score (after all fixes above)
 
 **NIG_tracking_DSMC (13 sub-tests): 11 / 13 PASS** — as of §16.10; mortar fixed via invariant analyze (§16.19).
@@ -790,6 +880,9 @@ and the PETSc / tutorial WEK suites.
 | **NIG_DVM_plasma** | `plasma_sheath` | h5diff wants `DG_Solution`; the `edvm` build writes only `DVM_Solution` | Needs the PLOESMA+PETSc coupled-field build to produce `DG_Solution`; `edvm` is DVM-only. Effectively blocked (MPI+PETSc incompatible on MSYS2) | Requires PLOESMA+PETSc build (permanent limitation) |
 
 **RESOLVED (no longer open):**
+- **HDG load-balance SIGSEGV** (§16.31, `390797d`) — flat-trace-vector backing store freed before the non-H5IO LB `lambda` save reads it; dangling `CONTIGUOUS` pointer. Fixed by reordering the `FinalizeHDG` deallocations. **Distinct from Bug L** (that is the pre-existing 4.2.0 MS-MPI LB heap race, still open). `NIG_PIC_poisson_Leapfrog` passes 0/0/0.
+- **SuperB PARTICLES=OFF clean-build failure** (§16.31, `4698581`) — `piclas_init.f90` soft-iron call guarded by `USE_SUPER_B` alone; unbuildable for `PARTICLES=OFF + POSTI_BUILD_SUPERB`. Fixed with `USE_SUPER_B && defined(PARTICLES)`. Clean build of `build-poisson-rk3-codeanalyze-mpi` now succeeds; `NIG_poisson` passes 0/0/0.
+- **piclas2vtk `--NVisu` crash** (§16.31, `19a7487`) — "Zero width in format descriptor" because `prms%maxNameLen`/`maxValueLen` were unset on the `--NVisu` path. Hoisted the assignments. `--NVisu=1/2` now work; bare `.h5` byte-identical.
 - **Bug B** (`mortar` PartInt mismatch) — re-attributed as benign Windows-vs-Linux FP boundary-sensitivity; analyze.ini replaced with energy-conservation invariants (§16.19). Now 0 analyze errors.
 - **emission_gyrotron analyze errors** — DivideByTimeStep trapezoid artifact for N=1,3 and Newton failure for N=9 MPI=1; fixed by restricting N=6,9 and MPI=2,10 (§16.20).
 - **3D_periodic_CVWM MPI oversubscription** — MPI=20,30 removed (§16.20).
