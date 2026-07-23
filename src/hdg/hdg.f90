@@ -1222,13 +1222,6 @@ SDEALLOCATE(NeumannBC)
 SDEALLOCATE(HDG_Vol_N)
 SDEALLOCATE(SmatE)
 SDEALLOCATE(ElemMatVecPass)
-! The %lambda/%mv/%R/%V/%Z components only pointed into these, so freeing the flat arrays frees them
-SDEALLOCATE(TraceFlatLambda)
-SDEALLOCATE(TraceFlatMv)
-SDEALLOCATE(TraceFlatR)
-SDEALLOCATE(TraceFlatV)
-SDEALLOCATE(TraceFlatZ)
-SDEALLOCATE(TraceOff)
 SDEALLOCATE(SideToAgg)
 SDEALLOCATE(CoarseChol)
 SDEALLOCATE(qn_face_MagStat)
@@ -1340,6 +1333,17 @@ END IF ! PerformLoadBalance
 
 !SDEALLOCATE(lambda)
 SDEALLOCATE(HDG_Surf_N)
+! Free the flat trace storage only AFTER HDG_Surf_N: %lambda/%mv/%R/%V/%Z are CONTIGUOUS pointers into
+! these arrays, and during load balance the block above (PerformLoadBalance) reads %lambda via
+! LambdaSideToMaster to save it into lambdaLB. Freeing the backing store before that read leaves the
+! pointers dangling -> SIGSEGV in the LB save. Deallocating here keeps the storage alive through both
+! the LB save and the HDG_Surf_N teardown.
+SDEALLOCATE(TraceFlatLambda)
+SDEALLOCATE(TraceFlatMv)
+SDEALLOCATE(TraceFlatR)
+SDEALLOCATE(TraceFlatV)
+SDEALLOCATE(TraceFlatZ)
+SDEALLOCATE(TraceOff)
 SDEALLOCATE(nGP_vol)
 SDEALLOCATE(nGP_face)
 #if USE_MPI
