@@ -70,6 +70,8 @@ CALL prms%CreateRealOption(   'HDGSkip_t0'             ,'Time during which HDGSk
 CALL prms%CreateLogicalOption('HDGDisplayConvergence'  ,'Display divergence criteria: Iterations, RunTime and Residual', '.FALSE.')
 CALL prms%CreateRealArrayOption( 'EPC-Resistance'      ,'Vector (length corresponds to the number of EPC boundaries) with the resistance for each EPC in Ohm', no=0)
 CALL prms%CreateLogicalOption('HDGNSideMin'            ,'Use the minimum polynomial degree at the sides for the HDG solver', '.FALSE.')
+CALL prms%CreateLogicalOption('HDGCoarseCorrection'    ,'Add an additive two-level coarse-space correction (geometric-aggregation deflation) to the block-Jacobi CG preconditioner. Targets the low-frequency modes the local preconditioner cannot, reducing the iteration count. Default off.', '.FALSE.')
+CALL prms%CreateIntOption(    'HDGnCoarse'             ,'Target number of coarse aggregates along the widest domain dimension (other dimensions get proportionally fewer). Only used when HDGCoarseCorrection=T.', '16')
 CALL prms%CreateLogicalOption('HDGProfileCG'           ,'Time the individual phases of a CG iteration (MatVec, dot products, preconditioner, vector updates) and print the split with the convergence line. Diagnostic only.', '.FALSE.')
 CALL prms%CreateLogicalOption('HDGElemMajorMatVec'     ,'Evaluate the CG matrix-vector product element-major (one dense product per element) instead of side-major. Same operator, different summation order, so the last bits and hence the iteration count may differ slightly. Only for A/B performance testing: .FALSE. restores the side-major loop.', '.TRUE.')
 #if defined(PARTICLES)
@@ -103,6 +105,7 @@ USE MOD_Basis                 ,ONLY: PolynomialDerivativeMatrix
 USE MOD_Interpolation_Vars    ,ONLY: N_Inter,NMax
 USE MOD_ChangeBasis           ,ONLY: ChangeBasis2D
 USE MOD_Elem_Mat              ,ONLY: Elem_Mat,BuildPrecond
+USE MOD_HDG_Tools             ,ONLY: InitCoarseAgg,BuildCoarseOperator
 USE MOD_ReadInTools           ,ONLY: GETLOGICAL,GETREAL,GETINT
 USE MOD_Mesh_Vars             ,ONLY: nBCSides,N_SurfMesh
 USE MOD_Mesh_Vars             ,ONLY: BoundaryType,nSides,BC
@@ -202,6 +205,8 @@ GETTIME(StartT)
 HDGDisplayConvergence = GETLOGICAL('HDGDisplayConvergence')
 ElemMajorMatVecWanted = GETLOGICAL('HDGElemMajorMatVec')
 HDGProfileCG          = GETLOGICAL('HDGProfileCG')
+UseCoarseCorrection   = GETLOGICAL('HDGCoarseCorrection')
+nCoarseTarget         = GETINT('HDGnCoarse')
 
 HDGSkip = GETINT('HDGSkip')
 IF (HDGSkip.GT.0) THEN
@@ -614,6 +619,12 @@ END DO ! SideID = 1, nSides
 ! Requires HDG_Surf_N(SideID)%buf
 #if !USE_PETSC
 CALL BuildPrecond()
+! Phase 5: build the additive coarse-space second level (needs the trace vectors and MatVec, so after
+! the preconditioner and the HDG_Surf_N allocation above). Non-PETSc CG path only.
+IF(UseCoarseCorrection)THEN
+  CALL InitCoarseAgg()
+  IF(UseCoarseCorrection) CALL BuildCoarseOperator()
+END IF
 #endif
 
 #if USE_PETSC
@@ -1218,6 +1229,8 @@ SDEALLOCATE(TraceFlatR)
 SDEALLOCATE(TraceFlatV)
 SDEALLOCATE(TraceFlatZ)
 SDEALLOCATE(TraceOff)
+SDEALLOCATE(SideToAgg)
+SDEALLOCATE(CoarseChol)
 SDEALLOCATE(qn_face_MagStat)
 !SDEALLOCATE(delta)
 !SDEALLOCATE(LL_minus)

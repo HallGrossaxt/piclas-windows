@@ -32,6 +32,8 @@ PUBLIC :: DisplayConvergence
 PUBLIC :: MatVec
 PUBLIC :: evalresidual
 PUBLIC :: VectorDotProductRR
+PUBLIC :: InitCoarseAgg
+PUBLIC :: BuildCoarseOperator
 #endif /*USE_HDG*/
 !===================================================================================================================================
 
@@ -916,10 +918,237 @@ END SUBROUTINE EvalResidual
 !===================================================================================================================================
 !> Apply the block-diagonal preconditioner for the lambda system
 !===================================================================================================================================
+!===================================================================================================================================
+!> Phase 5 coarse correction, step 1: assign every owned CG-unknown side to a coarse aggregate.
+!>
+!> Aggregates are boxes of a regular grid laid over the domain bounding box. The grid is finer along
+!> the wider dimensions: dimension d gets max(1, nint(nCoarseTarget*ext_d/maxext)) bins, so a thin
+!> (quasi-2D) mesh does not waste aggregates on its degenerate direction. A side belongs to the box
+!> its Face_xGP centroid falls in; excluded sides (Dirichlet/conductor/mortar = MaskedSide/=0, and the
+!> MPIsides_YOUR tail) get aggregate 0 and never enter the coarse space. The binning is by absolute
+!> coordinate against a bounding box reduced over all ranks, so a side shared by two ranks lands in the
+!> same aggregate on both -- which is what makes W consistent across the MPI decomposition.
+!===================================================================================================================================
+SUBROUTINE InitCoarseAgg()
+! MODULES
+USE MOD_Globals
+USE MOD_PreProc
+USE MOD_HDG_Vars  ,ONLY: nCoarse,nCoarseTarget,SideToAgg,MaskedSide,UseCoarseCorrection,CoarseValid
+USE MOD_Mesh_Vars ,ONLY: nSides,nMPIsides_YOUR,N_SurfMesh
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER :: SideID,NSide,p,q,d,nb(3),bin(3),lastInner
+REAL    :: ctr(3),bbmin(3),bbmax(3),ext(3),maxext
+REAL    :: sMin(3),sMax(3)
+!===================================================================================================================================
+SDEALLOCATE(SideToAgg)
+ALLOCATE(SideToAgg(nSides))
+SideToAgg = 0
+CoarseValid = .FALSE.
+lastInner = nSides-nMPIsides_YOUR
+
+! 1) bounding box over the centroids of the owned CG-unknown sides (reduced across ranks)
+sMin =  HUGE(1.); sMax = -HUGE(1.)
+DO SideID=1,lastInner
+  IF(MaskedSide(SideID).NE.0) CYCLE
+  NSide = N_SurfMesh(SideID)%NSide
+  ctr = 0.
+  DO q=0,NSide; DO p=0,NSide
+    ctr = ctr + N_SurfMesh(SideID)%Face_xGP(1:3,p,q)
+  END DO; END DO
+  ctr = ctr/REAL((NSide+1)**2)
+  sMin = MIN(sMin,ctr); sMax = MAX(sMax,ctr)
+END DO ! SideID
+#if USE_MPI
+CALL MPI_ALLREDUCE(sMin,bbmin,3,MPI_DOUBLE_PRECISION,MPI_MIN,MPI_COMM_PICLAS,iError)
+CALL MPI_ALLREDUCE(sMax,bbmax,3,MPI_DOUBLE_PRECISION,MPI_MAX,MPI_COMM_PICLAS,iError)
+#else
+bbmin = sMin; bbmax = sMax
+#endif
+
+! 2) per-dimension bin counts, proportional to extent so the thin direction gets 1 bin
+ext = bbmax-bbmin
+maxext = MAXVAL(ext)
+IF(maxext.LE.0.)THEN
+  UseCoarseCorrection = .FALSE.
+  SWRITE(UNIT_stdOut,'(A)') ' HDG coarse correction: degenerate bounding box, disabled.'
+  RETURN
+END IF
+DO d=1,3
+  nb(d) = MAX(1, NINT(REAL(nCoarseTarget)*ext(d)/maxext))
+  IF(ext(d).LE.maxext*1.e-6) nb(d) = 1   ! degenerate (quasi-2D) direction
+END DO
+nCoarse = nb(1)*nb(2)*nb(3)
+
+! 3) assign each owned CG-unknown side to its box (linear id 1..nCoarse)
+DO SideID=1,lastInner
+  IF(MaskedSide(SideID).NE.0) CYCLE
+  NSide = N_SurfMesh(SideID)%NSide
+  ctr = 0.
+  DO q=0,NSide; DO p=0,NSide
+    ctr = ctr + N_SurfMesh(SideID)%Face_xGP(1:3,p,q)
+  END DO; END DO
+  ctr = ctr/REAL((NSide+1)**2)
+  DO d=1,3
+    IF(nb(d).EQ.1)THEN
+      bin(d) = 0
+    ELSE
+      bin(d) = MIN(nb(d)-1, MAX(0, INT((ctr(d)-bbmin(d))/ext(d)*REAL(nb(d)))))
+    END IF
+  END DO
+  SideToAgg(SideID) = 1 + bin(1) + nb(1)*(bin(2) + nb(2)*bin(3))
+END DO ! SideID
+
+SWRITE(UNIT_stdOut,'(A,I0,A,I0,A,I0,A,I0,A)') ' HDG coarse correction: ',nCoarse, &
+    ' aggregates (',nb(1),' x ',nb(2),' x ',nb(3),')'
+END SUBROUTINE InitCoarseAgg
+
+
+!===================================================================================================================================
+!> Phase 5 coarse correction, step 2: form and factorise the coarse operator E = W^T A W.
+!>
+!> Column a of A W is A applied to the indicator of aggregate a. A is exactly what MatVec(iVar,.TRUE.)
+!> computes (reads %V, writes %Z, zeroes Dirichlet), including the MPI exchange and mortar handling, so
+!> the indicator is placed in %V and MatVec is called once per aggregate. E(b,a) is then the sum of
+!> that result over the DOFs of aggregate b, reduced across ranks. Globally-empty aggregates (possible
+!> after the geometric binning) get a unit diagonal so the Cholesky succeeds; their W^T r is zero too,
+!> so they contribute nothing. Built once; E stays valid until the operator changes.
+!===================================================================================================================================
+SUBROUTINE BuildCoarseOperator()
+! MODULES
+USE MOD_Globals
+USE MOD_PreProc
+USE MOD_HDG_Vars  ,ONLY: nCoarse,SideToAgg,CoarseChol,CoarseValid,HDG_Surf_N,MaskedSide,UseCoarseCorrection
+USE MOD_Mesh_Vars ,ONLY: nSides,nMPIsides_YOUR
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER          :: a,b,SideID,lastInner,lapack_info
+REAL,ALLOCATABLE :: Eloc(:,:),Eglob(:,:)
+!===================================================================================================================================
+IF(.NOT.UseCoarseCorrection) RETURN
+IF(nCoarse.LE.0) RETURN
+lastInner = nSides-nMPIsides_YOUR
+
+SDEALLOCATE(CoarseChol)
+ALLOCATE(CoarseChol(nCoarse,nCoarse))
+ALLOCATE(Eloc(nCoarse,nCoarse)); Eloc = 0.
+
+DO a=1,nCoarse
+  ! %V = indicator of aggregate a on owned unknown sides; MatVec exchanges it onto the YOUR sides
+  DO SideID=1,nSides
+    HDG_Surf_N(SideID)%V(1,:) = 0.
+  END DO ! SideID
+  DO SideID=1,lastInner
+    IF(SideToAgg(SideID).EQ.a) HDG_Surf_N(SideID)%V(1,:) = 1.
+  END DO ! SideID
+  ! Z = A * V (masked operator)
+  CALL MatVec(1,.TRUE.)
+  ! E(b,a) = W_b^T Z = sum over owned sides in aggregate b of sum(Z)
+  DO SideID=1,lastInner
+    b = SideToAgg(SideID)
+    IF(b.EQ.0) CYCLE
+    Eloc(b,a) = Eloc(b,a) + SUM(HDG_Surf_N(SideID)%Z(1,:))
+  END DO ! SideID
+END DO ! a
+
+! assemble the global coarse operator (separate recv buffer: MS-MPI corrupts MPI_IN_PLACE)
+#if USE_MPI
+ALLOCATE(Eglob(nCoarse,nCoarse))
+CALL MPI_ALLREDUCE(Eloc,Eglob,nCoarse*nCoarse,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+CoarseChol = Eglob
+DEALLOCATE(Eglob)
+#else
+CoarseChol = Eloc
+#endif
+DEALLOCATE(Eloc)
+
+! empty aggregates -> unit diagonal so the factorisation is defined (their W^T r is zero anyway)
+DO a=1,nCoarse
+  IF(ABS(CoarseChol(a,a)).LE.0.)THEN
+    CoarseChol(a,:) = 0.; CoarseChol(:,a) = 0.; CoarseChol(a,a) = 1.
+  END IF
+END DO ! a
+
+! symmetrise away the round-off asymmetry from the assembly, then Cholesky
+DO a=1,nCoarse; DO b=a+1,nCoarse
+  CoarseChol(a,b) = 0.5*(CoarseChol(a,b)+CoarseChol(b,a))
+  CoarseChol(b,a) = CoarseChol(a,b)
+END DO; END DO
+CALL DPOTRF('U',nCoarse,CoarseChol,nCoarse,lapack_info)
+IF(lapack_info.NE.0)THEN
+  SWRITE(UNIT_stdOut,'(A,I0,A)') ' HDG coarse correction: coarse operator not SPD (info=',lapack_info,'), disabling.'
+  UseCoarseCorrection = .FALSE.
+  CoarseValid = .FALSE.
+  RETURN
+END IF
+CoarseValid = .TRUE.
+END SUBROUTINE BuildCoarseOperator
+
+
+!===================================================================================================================================
+!> Phase 5 coarse correction, step 3: add the coarse-space correction W E^-1 W^T R to the local
+!> preconditioner output. Additive two-level: this is called right after the block-Jacobi / diagonal
+!> apply, on the same target (%V when DoV, else %Z). R is restricted to the aggregates (a sum per box,
+!> reduced across ranks), the small dense E-system is solved, and the result is prolonged back with a
+!> constant added to every DOF of each box.
+!===================================================================================================================================
+SUBROUTINE ApplyCoarseCorrection(iVar,DoV)
+! MODULES
+USE MOD_Globals
+USE MOD_HDG_Vars  ,ONLY: nCoarse,SideToAgg,CoarseChol,CoarseValid,HDG_Surf_N,MaskedSide
+USE MOD_Mesh_Vars ,ONLY: nSides,nMPIsides_YOUR
+IMPLICIT NONE
+!-----------------------------------------------------------------------------------------------------------------------------------
+! INPUT VARIABLES
+INTEGER,INTENT(IN) :: iVar
+LOGICAL,INTENT(IN) :: DoV   !< .TRUE.: correct %V, .FALSE.: correct %Z (matches ApplyPrecond)
+!-----------------------------------------------------------------------------------------------------------------------------------
+! LOCAL VARIABLES
+INTEGER :: a,SideID,lastInner,lapack_info
+REAL    :: rc(nCoarse),yc(nCoarse)
+#if USE_MPI
+REAL    :: rcSend(nCoarse)
+#endif
+!===================================================================================================================================
+IF(.NOT.CoarseValid) RETURN
+lastInner = nSides-nMPIsides_YOUR
+
+! restrict: rc(a) = W_a^T R = sum of R over the DOFs of aggregate a (owned sides only)
+rc = 0.
+DO SideID=1,lastInner
+  a = SideToAgg(SideID)
+  IF(a.EQ.0) CYCLE
+  rc(a) = rc(a) + SUM(HDG_Surf_N(SideID)%R(iVar,:))
+END DO ! SideID
+#if USE_MPI
+rcSend = rc
+CALL MPI_ALLREDUCE(rcSend,rc,nCoarse,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_PICLAS,iError)
+#endif
+
+! coarse solve: E yc = rc  (E = U^T U already factorised)
+yc = rc
+CALL DPOTRS('U',nCoarse,1,CoarseChol,nCoarse,yc,nCoarse,lapack_info)
+
+! prolong and add: target += W yc, i.e. every DOF of a box gets its box value
+DO SideID=1,lastInner
+  a = SideToAgg(SideID)
+  IF(a.EQ.0) CYCLE
+  IF(DoV)THEN
+    HDG_Surf_N(SideID)%V(iVar,:) = HDG_Surf_N(SideID)%V(iVar,:) + yc(a)
+  ELSE
+    HDG_Surf_N(SideID)%Z(iVar,:) = HDG_Surf_N(SideID)%Z(iVar,:) + yc(a)
+  END IF ! DoV
+END DO ! SideID
+END SUBROUTINE ApplyCoarseCorrection
+
+
 SUBROUTINE ApplyPrecond(iVar,DoV)
 ! MODULES
 USE MOD_Globals
 USE MOD_HDG_Vars  ,ONLY: nGP_face,PrecondType,HDG_Surf_N,MaskedSide
+USE MOD_HDG_Vars  ,ONLY: UseCoarseCorrection,CoarseValid
 USE MOD_Mesh_Vars ,ONLY: nSides, nMPIsides_YOUR,N_SurfMesh
 IMPLICIT NONE
 !-----------------------------------------------------------------------------------------------------------------------------------
@@ -998,6 +1227,9 @@ ELSE
   END SELECT ! PrecondType
 
 END IF ! DoV
+
+! additive second level: add the coarse-space correction on the same target
+IF(UseCoarseCorrection.AND.CoarseValid) CALL ApplyCoarseCorrection(iVar,DoV)
 
 END SUBROUTINE ApplyPrecond
 

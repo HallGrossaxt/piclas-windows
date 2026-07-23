@@ -151,6 +151,21 @@ LOGICAL             :: HDGInitIsDone=.FALSE.
 INTEGER             :: HDGSkip, HDGSkipInit
 REAL                :: HDGSkip_t0
 INTEGER,ALLOCATABLE :: MaskedSide(:)          !< 1:nSides: all sides which are set to zero in matvec
+! --- Phase 5: additive two-level coarse correction (deflation by unsmoothed geometric aggregation) ---
+! The block-Jacobi / diagonal preconditioner is purely local, so it does nothing for the low-frequency
+! error modes that make the CG count scale ~1/h (measured: none 5539 -> diagonal 3932 -> block-Jacobi
+! 3941 iterations on the magnetron bench; the local preconditioner is nearly irrelevant). A coarse
+! space W (piecewise-constant over a coarse grid of side aggregates) captures exactly those modes.
+! Used as an ADDITIVE second level, M^-1 r = M_local^-1 r + W E^-1 W^T r with E = W^T A W: this is SPD
+! for any SPD E, so the CG driver is unchanged and correctness holds even if E is stale (only the
+! iteration reduction degrades). Flag-gated, default OFF.
+LOGICAL             :: UseCoarseCorrection = .FALSE. !< read-in switch HDGCoarseCorrection
+INTEGER             :: nCoarseTarget = 16       !< read-in HDGnCoarse: target aggregates along the widest dim
+INTEGER             :: nCoarse = 0              !< actual number of aggregates m (product of per-dim bin counts)
+INTEGER,ALLOCATABLE :: SideToAgg(:)            !< [1:nSides] aggregate id 1..nCoarse, or 0 if the side is
+                                               !< excluded (Dirichlet, masked, or MPIsides_YOUR)
+REAL,ALLOCATABLE    :: CoarseChol(:,:)         !< [nCoarse,nCoarse] Cholesky factor U of E = W^T A W (E=U^T U)
+LOGICAL             :: CoarseValid = .FALSE.   !< E has been built and factorised for the current operator
 !mortar variables
 INTEGER,ALLOCATABLE :: SmallMortarInfo(:)     !< 1:nSides: info on small Mortar sides:
                                               !< -1: is neighbor small mortar , 0: not a small mortar, 1: small mortar on big side
