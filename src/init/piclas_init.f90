@@ -105,9 +105,9 @@ USE MOD_Particle_MPI         ,ONLY: InitParticleMPI
 #if USE_HDG
 USE MOD_HDG                  ,ONLY: InitHDG
 USE MOD_Equation             ,ONLY: InitRefState,InitChiTens
-#if USE_SUPER_B
+#if USE_SUPER_B && defined(PARTICLES)
 USE MOD_SuperB_SoftIron      ,ONLY: SolveSoftIronRSPDeferred
-#endif /*USE_SUPER_B*/
+#endif /*USE_SUPER_B && defined(PARTICLES)*/
 #endif
 #if (PP_TimeDiscMethod==600)
 USE MOD_RadiationTrans_Init        ,ONLY: InitRadiationTransport
@@ -211,11 +211,14 @@ CALL InitSurfModelAnalyze()
 
 #if USE_HDG
 CALL InitHDG() ! Hybridizable Discontinuous Galerkin Method (HDGSEM)
-#if USE_SUPER_B
+#if USE_SUPER_B && defined(PARTICLES)
 ! SuperB ran above (from InitParticles) while HDG was not up yet, so a pending soft-magnetic-material (mu_r>1) correction of the
 ! background field is finished here. No-op unless MagneticMaterial[$]-MuR regions were defined.
+! Guarded by PARTICLES: SuperB runs internally only from InitParticles, and the SuperB source (incl. superB_softiron) is compiled
+! into the main library only for PARTICLES=ON (see src/CMakeLists.txt particlesF90 vs noparticlesF90). Without this guard a
+! PARTICLES=OFF + POSTI_BUILD_SUPERB build fails: mod_superb_softiron is only in the standalone superBlibF90, not the main lib.
 CALL SolveSoftIronRSPDeferred()
-#endif /*USE_SUPER_B*/
+#endif /*USE_SUPER_B && defined(PARTICLES)*/
 #endif
 
 #if (PP_TimeDiscMethod==600)
