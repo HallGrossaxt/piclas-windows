@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 1.0 &mdash; Unofficial Windows Port of PICLas 4.1.0 &mdash; Setup Guide</title>
+<title>piclas-win 2.1 &mdash; Unofficial Windows Port of PICLas 4.2.0 &mdash; Setup Guide</title>
 <style>
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
@@ -94,7 +94,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 
 <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• NAVIGATION â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <nav>
-  <div class="nav-title">piclas-win 1.0 Guide</div>
+  <div class="nav-title">piclas-win 2.1 Guide</div>
 
   <div class="nav-section">
     <a href="#changelog">Release History</a>
@@ -204,11 +204,11 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <main>
 
 <div class="hero">
-  <h1>piclas-win 1.0</h1>
-  <div class="subtitle">Unofficial Windows port of PICLas 4.1.0 &mdash; complete setup, build, and distribution guide for Windows 11 with MSYS2 UCRT64</div>
+  <h1>piclas-win 2.1</h1>
+  <div class="subtitle">Unofficial Windows port of PICLas 4.2.0 &mdash; complete setup, build, and distribution guide for Windows 11 with MSYS2 UCRT64</div>
   <p style="margin-top:10px;font-size:0.85rem;color:var(--yellow);">
     &#9888; This is an <strong>unofficial</strong> Windows port. It is not affiliated with or endorsed by the PICLas development team.
-    It is based on <strong>PICLas 4.1.0</strong> (commit d63756ee) with Windows-specific patches applied on top.
+    It is based on <strong>PICLas 4.2.0</strong> (commit d63756ee) with Windows-specific patches applied on top.
     For the official Linux version, see <a href="https://github.com/piclas-framework/piclas" style="color:var(--accent);">github.com/piclas-framework/piclas</a>.
   </p>
   <div class="meta">
@@ -221,10 +221,14 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 
 <!-- â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ RELEASE HISTORY â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ -->
 <h2 id="changelog">Release History</h2>
+<p style="font-size:0.85rem;color:var(--muted);margin:-6px 0 10px;">
+  Port major version tracks the upstream PICLas minor era: <strong>1.x</strong> = PICLas 4.1.0,
+  <strong>2.x</strong> = PICLas 4.2.0.
+</p>
 <table>
   <tr><th>Version</th><th>Date</th><th>Highlights</th></tr>
   <tr>
-    <td><strong>v1.2</strong></td>
+    <td><strong>v2.1</strong></td>
     <td>July 2026</td>
     <td>
       <strong>HDG (Poisson) field solve ~9.5&times; faster at 4 ranks &mdash; no physics change (&sect;16.31).</strong>
@@ -261,7 +265,23 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
       <strong>Validation:</strong> all HDG regression suites pass 0/0/0 with the full stack &mdash; <code>NIG_dielectric</code>,
       <code>NIG_poisson</code>, <code>NIG_PIC_poisson_RK3</code>/<code>_plasma_wave</code>/<code>_Leapfrog</code>,
       <code>WEK_PIC_poisson</code> &mdash; covering analytic references, PIC coupling, mortars, SEE, SuperB background field,
-      MPI up to 20, and both load-balance paths. Builds on the upstream 4.2.0 merge (&sect;16.28&ndash;16.30).
+      MPI up to 20, and both load-balance paths. Builds on the upstream 4.2.0 merge (v2.0 below).
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v2.0</strong></td>
+    <td>July 2026</td>
+    <td>
+      <strong>Rebased the Windows port onto upstream PICLas 4.2.0 (commit d63756ee).</strong> A 3-way
+      vendor-branch merge of upstream 4.1.0 &rarr; 4.2.0 with a 43-file conflict surface, followed by a
+      per-tier regression re-baseline: NIG (&sect;16.28), CHE (&sect;16.29) and WEK (&sect;16.30).
+      Highlights: PyHOPE replaces hopr for reggie externals on Windows; re-applied the
+      <code>particle_restart</code> MS-MPI fix the merge dropped; new fixes for an uninitialized
+      <code>iDOF</code> OOB write in the PIC EM-field output and a single-member-communicator
+      <code>MPI_IN_PLACE</code> zeroing in the porous BC. New open item <strong>Bug&nbsp;L</strong>
+      (4.2.0 load-balance heap use-after-free race on MS-MPI, mitigated with <code>DoLoadBalance=F</code>
+      locally). This is the <strong>2.x</strong> base &mdash; port major version now tracks the upstream
+      PICLas minor (2.x = 4.2.0).
     </td>
   </tr>
   <tr>
@@ -1147,7 +1167,7 @@ parameter file, pass <code>--NVisu=N</code> before the <code>.h5</code> file(s):
 <pre class="cmd"><code>piclas2vtk.exe --NVisu=2 magnetron2d_State_000.*.h5</code></pre>
 <p>A bare <code>piclas2vtk.exe file.h5</code> defaults to <code>NVisu=1</code> (element-mean cells). Higher
 <code>NVisu</code> resolves the DG polynomial within each cell (e.g. <code>--NVisu=2</code> roughly quadruples the
-2D output size). <span style="color:var(--green)">Fixed in v1.2 (<code>19a7487</code>):</span> the
+2D output size). <span style="color:var(--green)">Fixed in v2.1 (<code>19a7487</code>):</span> the
 <code>--NVisu=N</code> form previously aborted with "Zero width in format descriptor"; it now works, and the
 bare-<code>.h5</code> form is byte-identical to before.</p>
 
