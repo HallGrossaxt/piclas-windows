@@ -876,11 +876,16 @@ CONTAINS
                         win%MPI_VAL, ierror)
   END SUBROUTINE MPI_WIN_CREATE
 
-  ! MPI_WIN_ALLOCATE_SHARED: allocate shared-memory window.
+  ! MPI_Win_allocate_shared wrapper: allocate shared-memory window.
   ! The legacy MS-MPI binding returns BASEPTR as INTEGER(MPI_ADDRESS_KIND)
   ! (a raw pointer value).  We receive it as such and bit-transfer it to
   ! TYPE(C_PTR) so that callers can use C_F_POINTER on it.
-  SUBROUTINE MPI_WIN_ALLOCATE_SHARED(size, disp_unit, info, comm, baseptr, win, ierror)
+  ! Exported under a PICLas-internal name (not MPI_WIN_ALLOCATE_SHARED):
+  ! a real-MPI PETSc's Fortran module exports the standard name, and the
+  ! blanket re-export via MOD_Globals would make it ambiguous in every
+  ! file that also uses PETSc.  Sole caller is src/mpi/mpi_shared.f90,
+  ! which rename-imports it back to the standard name.
+  SUBROUTINE PICLAS_WIN_ALLOCATE_SHARED(size, disp_unit, info, comm, baseptr, win, ierror)
     USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_NULL_PTR
     IMPLICIT NONE
     INTEGER(KIND=MPI_ADDRESS_KIND), INTENT(IN)  :: size
@@ -894,10 +899,11 @@ CONTAINS
     CALL f90_win_allocate_shared(size, disp_unit, info%MPI_VAL, comm%MPI_VAL, &
                                  baseptr_raw, win%MPI_VAL, ierror)
     baseptr = TRANSFER(baseptr_raw, C_NULL_PTR)
-  END SUBROUTINE MPI_WIN_ALLOCATE_SHARED
+  END SUBROUTINE PICLAS_WIN_ALLOCATE_SHARED
 
-  ! MPI_WIN_SHARED_QUERY: query shared-memory window address for a given rank.
-  SUBROUTINE MPI_WIN_SHARED_QUERY(win, rank, size, disp_unit, baseptr, ierror)
+  ! MPI_Win_shared_query wrapper: query shared-memory window address for a
+  ! given rank.  PICLas-internal name for the same reason as above.
+  SUBROUTINE PICLAS_WIN_SHARED_QUERY(win, rank, size, disp_unit, baseptr, ierror)
     USE, INTRINSIC :: ISO_C_BINDING, ONLY: C_PTR, C_NULL_PTR
     IMPLICIT NONE
     TYPE(MPI_Win), INTENT(IN)   :: win
@@ -909,7 +915,7 @@ CONTAINS
     INTEGER(KIND=MPI_ADDRESS_KIND) :: baseptr_raw
     CALL f90_win_shared_query(win%MPI_VAL, rank, size, disp_unit, baseptr_raw, ierror)
     baseptr = TRANSFER(baseptr_raw, C_NULL_PTR)
-  END SUBROUTINE MPI_WIN_SHARED_QUERY
+  END SUBROUTINE PICLAS_WIN_SHARED_QUERY
 
   !==========================================================================
   ! Miscellaneous

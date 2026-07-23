@@ -135,7 +135,9 @@ IF(WIN32 AND LIBS_USE_MPI)
     ENDIF()
   ENDFOREACH()
 
-  IF(NOT _mpi_f08_mod_found AND NOT EXISTS "${_mpi_f08_dir}/mpi_f08.mod")
+  # (Re)compile if the cached .mod is missing OR older than the bundled source
+  # (IS_NEWER_THAN is also true when the right-hand file does not exist)
+  IF(NOT _mpi_f08_mod_found AND "${_mpi_f08_src}" IS_NEWER_THAN "${_mpi_f08_dir}/mpi_f08.mod")
     IF(NOT EXISTS "${_mpi_f08_src}")
       MESSAGE(FATAL_ERROR "[MPI] Bundled mpi_f08.f90 not found at ${_mpi_f08_src}")
     ENDIF()
@@ -905,19 +907,31 @@ ELSE()
 ENDIF()
 
 IF(LIBS_USE_PETSC)
-  # On Windows, MSYS2 PETSc is always a sequential (no-MPI) build.
-  # (1) Compile-time: Its mpiuni/mpiunifdef.h renames MPI_xxx symbols to PETSC_MPI_xxx,
-  #     causing fatal Fortran errors when MS-MPI headers are also included.
-  # (2) Runtime: PetscInitialize() checks MPI_COMM_WORLD size; if >1 it aborts with
-  #     "You are using an MPI-uni (sequential) install of PETSc but trying to launch
-  #     parallel jobs". This cannot be worked around without recompiling PETSc with MPI.
-  # Use either LIBS_USE_MPI=ON or LIBS_USE_PETSC=ON, never both.
+  # The MPI+PETSc conflict on Windows is specific to a SEQUENTIAL (MPIUNI) PETSc, not to Windows itself:
+  # (1) compile-time: mpiuni/mpiunifdef.h renames MPI_xxx -> PETSC_MPI_xxx, clashing with MS-MPI headers;
+  # (2) runtime: PetscInitialize() aborts at >1 rank ("MPI-uni ... trying to launch parallel jobs").
+  # BOTH vanish with a PETSc built --with-mpi (e.g. against MS-MPI: PETSC_DIR=/c/Data/PRJ/petsc-msmpi,
+  # proven to run parallel CG at -n 1/2/4 -- see plan_petsc_msmpi.md). So gate the guard on the found
+  # PETSc actually being MPIUNI (petscconf.h defines PETSC_HAVE_MPIUNI), rather than assuming.
   IF(WIN32 AND LIBS_USE_MPI)
-    MESSAGE(FATAL_ERROR
-      "LIBS_USE_PETSC=ON + LIBS_USE_MPI=ON on Windows is not supported. "
-      "MSYS2 PETSc is a sequential (no-MPI) build. Enabling both causes a "
-      "runtime abort from PetscInitialize() when launched with more than one MPI rank. "
-      "Use either LIBS_USE_MPI=ON or LIBS_USE_PETSC=ON, never both.")
+    SET(_petsc_is_mpiuni FALSE)
+    FIND_FILE(_PETSC_CONF_H petscconf.h PATHS ${PETSC_INCLUDE_DIRS} NO_DEFAULT_PATH)
+    IF(_PETSC_CONF_H)
+      FILE(STRINGS "${_PETSC_CONF_H}" _mpiuni_line REGEX "define[ \t]+PETSC_HAVE_MPIUNI([ \t]|$)")
+      IF(_mpiuni_line)
+        SET(_petsc_is_mpiuni TRUE)
+      ENDIF()
+    ENDIF()
+    UNSET(_PETSC_CONF_H CACHE)
+    IF(_petsc_is_mpiuni)
+      MESSAGE(FATAL_ERROR
+        "LIBS_USE_PETSC=ON + LIBS_USE_MPI=ON, but the found PETSc is a SEQUENTIAL (MPIUNI) build "
+        "(petscconf.h defines PETSC_HAVE_MPIUNI) -- PetscInitialize() aborts at >1 rank. "
+        "Point PETSC_DIR at an MPI-enabled PETSc built --with-mpi against MS-MPI "
+        "(see plan_petsc_msmpi.md), or enable only one of LIBS_USE_MPI / LIBS_USE_PETSC.")
+    ELSE()
+      MESSAGE(STATUS "[PETSc] MPI-enabled build (no PETSC_HAVE_MPIUNI) -- allowing LIBS_USE_MPI + LIBS_USE_PETSC (parallel PETSc).")
+    ENDIF()
   ENDIF()
   IF (LIBS_BUILD_PETSC)
     SET(LIBS_BUILD_PETSC_VERSION "3.22.5" CACHE STRING "PETSc self-built version tag")
@@ -1014,6 +1028,15 @@ IF(LIBS_USE_PETSC)
 
       INCLUDE_DIRECTORIES(${PETSC_INCLUDE_DIRS})
       LIST(APPEND linkedlibs ${PETSC_LINK_LIBRARIES})
+      # A STATIC libpetsc.a (e.g. the MS-MPI build at PETSC_DIR=/c/Data/PRJ/petsc-msmpi)
+      # needs its private dependency closure (pkg-config Libs.private: msmpi, openblas,
+      # gfortran, ...) linked AFTER it; pkg-config exposes those only via the _STATIC_
+      # variables. A shared libpetsc(.dll.a/.so) resolves them itself -- skip it there.
+      IF(PETSC_LINK_LIBRARIES MATCHES "\\.a$" AND NOT PETSC_LINK_LIBRARIES MATCHES "\\.dll\\.a$"
+         AND PETSC_STATIC_LDFLAGS)
+        LIST(APPEND linkedlibs ${PETSC_STATIC_LDFLAGS})
+        MESSAGE(STATUS "[PETSc] static library detected -- appending Libs.private closure: [${PETSC_STATIC_LDFLAGS}]")
+      ENDIF()
 
       ADD_COMPILE_DEFINITIONS(USE_PETSC=1)
       MESSAGE(STATUS "Compiling with system [PETSc] (v${PETSC_VERSION}) [${PETSC_LINK_LIBRARIES}]")

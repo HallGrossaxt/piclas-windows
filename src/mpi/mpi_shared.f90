@@ -19,6 +19,15 @@ MODULE MOD_MPI_Shared
 !----------------------------------------------------------------------------------------------------------------------------------
 ! MODULES
 USE MOD_Globals_Vars, ONLY: i2,i8
+#if USE_MPI
+! The bundled MS-MPI mpi_f08 shim (cmake/mpi_f08.f90) exports its MPI-3
+! shared-window wrappers under PICLas-internal names: a real-MPI PETSc build
+! exports the standard names too, and the blanket re-export via MOD_Globals
+! would make them ambiguous in every file that also uses PETSc. This module
+! is their only caller, so import them back under the standard names here.
+USE mpi_f08, ONLY: MPI_WIN_ALLOCATE_SHARED => PICLas_Win_allocate_shared, &
+                   MPI_WIN_SHARED_QUERY    => PICLas_Win_shared_query
+#endif /*USE_MPI*/
 IMPLICIT NONE
 PRIVATE
 
