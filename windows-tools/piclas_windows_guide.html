@@ -285,6 +285,70 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
     </td>
   </tr>
   <tr>
+    <td><strong>v1.6</strong></td>
+    <td>July 2026</td>
+    <td>
+      <strong>Per-species MacroParticleFactor (vMPF) for multi-species DSMC</strong> via a
+      split-at-collision scheme: unequal-weight pairs are split to equal weight before colliding, so the
+      exact stock collision kinematics apply. Includes uniform-weight redistribution in particle merging,
+      <code>SplitAndMerge</code> in reservoir simulations, and a fix for unset <code>PartMPF</code> in
+      constant-MPF vMPF surface-flux insertion. Usage: <code>Part-vMPF=T</code> + per-species
+      <code>Part-SpeciesX-MacroParticleFactor</code> / <code>vMPFMergeThreshold</code>.
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v1.5</strong></td>
+    <td>June 2026</td>
+    <td>
+      <strong>Fixed the broken DSMC+GPU release build from v1.4</strong> ("Could not find nvcc"): push/tag
+      builds had skipped the CUDA install while still selecting the GPU preset (null input coerced to skip;
+      inverted to a <code>cpu_only</code> truthiness input), and the space-containing nvcc path was passed
+      unquoted and word-split (now passed via a bash array). Docs now recommend the no-GPU build for almost
+      everyone &mdash; GPU only speeds the particle push, not CPU-bound DSMC collisions.
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v1.4</strong></td>
+    <td>June 2026</td>
+    <td>
+      <strong>Self-contained release zips</strong> &mdash; bundle <code>msmpi.dll</code> so the MPI build
+      runs without a separate MS-MPI runtime install, and replaced the no-MPI variant with a CPU-only
+      (no-GPU) fallback for machines without a CUDA GPU.
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v1.3</strong></td>
+    <td>June 2026</td>
+    <td>
+      <strong>Release repackaging + fat GPU binaries.</strong> Two consolidated zips (MPI and no-MPI), each
+      with per-tool self-contained folders (<code>piclas-win/</code>, <code>piclas2vtk/</code>,
+      <code>superB/</code>) plus a ready-to-run <code>example/</code>. GPU binaries are now fat
+      (sm_75/86/89 + compute_90 PTX): run natively Turing&ndash;Ada (fixes the RTX 4500 Ada CPU-fallback)
+      and JIT beyond.
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v1.2</strong></td>
+    <td>June 2026</td>
+    <td>
+      <strong>Ship <code>dsmc-cone-2D</code> as a ready-to-run release example</strong> &mdash;
+      self-contained (<code>parameter.ini</code> + <code>DSMC.ini</code> + pre-converted CGNS 5-BC mesh +
+      README), so end users need no HOPR; covered by <code>SHA256SUMS.txt</code>. The CGNS route is the
+      5-boundary mesh the stock <code>parameter.ini</code> expects (the Gmsh route yields 6 and is
+      incompatible). Verified to run to completion on the v1.1 binary.
+    </td>
+  </tr>
+  <tr>
+    <td><strong>v1.1</strong></td>
+    <td>June 2026</td>
+    <td>
+      <strong>First portable Windows release</strong> &mdash; packaged the DSMC+MPI+GPU
+      <code>piclas-win.exe</code> together with the <code>piclas2vtk</code> and <code>superB</code> tools
+      as a downloadable release; CI forces LF line endings on <code>*.sh</code> so checked-out scripts run
+      on Windows runners.
+    </td>
+  </tr>
+  <tr>
     <td><strong>v1.0</strong></td>
     <td>June 2026</td>
     <td>
