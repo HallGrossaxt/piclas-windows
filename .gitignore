@@ -81,6 +81,11 @@ commit.h
 # pre-converted CGNS mesh; regenerate this with hopr_gmsh.ini only if needed)
 /tutorials/dsmc-cone-2D/70degCone_2D.msh
 
+# self-built PETSc (MS-MPI) install/source trees — CI (build_petsc_msmpi.sh) puts
+# the install under ./petsc-msmpi; never commit these build artifacts
+/petsc-msmpi/
+/petsc-src/
+
 CMakeCache.txt
 ctags.txt
 CMakeFiles/

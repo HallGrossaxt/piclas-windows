@@ -1,0 +1,181 @@
+name: Build PIC-MC + PETSc + superB
+
+# Build the electrostatic PIC + Monte-Carlo-Collision solver: poisson (HDG) +
+# Boris-Leapfrog + PARTICLES, linked against a PARALLEL PETSc built --with-mpi
+# against MS-MPI (guide §16.32; the MSYS2 PETSc package is sequential and cannot
+# do >1 rank). POSTI_BUILD_SUPERB=ON compiles the superB B-field path into the
+# binary and builds the superB + piclas2vtk tools from the same preset, so all
+# three tools share one libpiclas.dll. GPU is intentionally OFF (the GPU push is
+# not wired for the PETSc field solve).
+#
+# PETSc from source is expensive (~25 min); it is cached (actions/cache) keyed on
+# the build script, so only the first run (or a script change) pays for it.
+
+# Not run on every push/PR: this build compiles PETSc from source (~25 min on a
+# cache miss), so it runs on release (workflow_call from release.yml) and on
+# demand (workflow_dispatch). Trigger it manually after touching the HDG/PETSc
+# code (src/hdg/**, cmake/mpi_f08.f90) or the PETSc build script to verify it.
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: 'Name for the uploaded bundle artifact'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: PIC-MC solver (poisson + Boris-Leapfrog + PETSc + superB, Windows / MSYS2-UCRT64)
+    runs-on: windows-2022
+    timeout-minutes: 120   # first run builds PETSc from source (~25 min); cached thereafter
+
+    env:
+      PRESET:        windows-poisson-boris-petsc-mpi
+      BUILD_DIR:     build-poisson-boris-petsc-mpi
+      ARTIFACT:      ${{ inputs.artifact_name || 'piclas-win-picmc-win64' }}
+      PETSC_VERSION: '3.24.5'
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      # ------------------------------------------------------------------ #
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      # ------------------------------------------------------------------ #
+      # UCRT64 toolchain + the base-MSYS python/make/curl/tar the PETSc
+      # configure needs (the ucrt64 python is unsuitable for PETSc configure).
+      - name: Install MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-gcc-libgfortran
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-hdf5
+            mingw-w64-ucrt-x86_64-openblas
+            mingw-w64-ucrt-x86_64-msmpi
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
+            python
+            make
+            diffutils
+            tar
+            curl
+
+      # ------------------------------------------------------------------ #
+      # Redistributable MS-MPI runtime so bundle_dlls.sh ships msmpi.dll
+      # (lets the bundle run single-process with no MS-MPI install).
+      - name: Install MS-MPI runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/microsoft/Microsoft-MPI/releases/download/v10.1.1/msmpisetup.exe'
+          $exe = Join-Path $env:RUNNER_TEMP 'msmpisetup.exe'
+          $ok = $false
+          for ($i = 1; $i -le 5; $i++) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -TimeoutSec 120
+              $ok = $true; break
+            } catch {
+              Write-Host "MS-MPI download attempt $i failed: $($_.Exception.Message)"
+              Start-Sleep -Seconds ($i * 10)
+            }
+          }
+          if (-not $ok) { throw "MS-MPI download failed after 5 attempts" }
+          Start-Process -FilePath $exe -ArgumentList '-unattend' -Wait
+          $dll = Join-Path $env:SystemRoot 'System32\msmpi.dll'
+          if (-not (Test-Path $dll)) { throw "msmpi.dll not found after install" }
+          Write-Host "MS-MPI runtime: $((Get-Item $dll).VersionInfo.FileVersion)"
+
+      # ------------------------------------------------------------------ #
+      # PETSc --with-mpi against MS-MPI: restore from cache, or build. The
+      # install dir (petsc-msmpi, in the workspace) is what gets cached and
+      # what PETSC_DIR points at during the piclas configure.
+      - name: Cache PETSc (MS-MPI build)
+        id: petsc-cache
+        uses: actions/cache@v4
+        with:
+          path: petsc-msmpi
+          key: petsc-msmpi-${{ env.PETSC_VERSION }}-ucrt64-${{ hashFiles('.github/scripts/build_petsc_msmpi.sh') }}
+
+      - name: Build PETSc --with-mpi (cache miss only)
+        if: steps.petsc-cache.outputs.cache-hit != 'true'
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          export PETSC_PREFIX="$(cygpath -u "$GITHUB_WORKSPACE")/petsc-msmpi"
+          export PETSC_SRC="$(cygpath -u "$RUNNER_TEMP")/petsc-src"
+          bash .github/scripts/build_petsc_msmpi.sh
+
+      # ------------------------------------------------------------------ #
+      # Configure. The preset hardcodes C:/msys64/ucrt64 for local dev; override
+      # every path with the runner's $MINGW_PREFIX (as build-dsmc-gpu-mpi does),
+      # and point PETSC_DIR at the PETSc built/restored above.
+      - name: CMake configure
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          PREFIX=$(cygpath -m "$MINGW_PREFIX")
+          export PETSC_DIR="$(cygpath -u "$GITHUB_WORKSPACE")/petsc-msmpi"
+          echo "PETSC_DIR=$PETSC_DIR"
+          test -f "$PETSC_DIR/lib/pkgconfig/petsc.pc" || { echo "ERROR: petsc.pc missing at $PETSC_DIR"; ls -la "$PETSC_DIR/lib" || true; exit 1; }
+          cmake --preset "$PRESET" \
+            -DCMAKE_MAKE_PROGRAM="$PREFIX/bin/ninja.exe"        \
+            -DCMAKE_C_COMPILER="$PREFIX/bin/gcc.exe"            \
+            -DCMAKE_CXX_COMPILER="$PREFIX/bin/g++.exe"          \
+            -DCMAKE_Fortran_COMPILER="$PREFIX/bin/gfortran.exe" \
+            -DCMAKE_PREFIX_PATH="$PREFIX"                       \
+            -DHDF5_ROOT="$PREFIX"                               \
+            -DHDF5_DIR="$PREFIX/lib/cmake/hdf5"                 \
+            -DHDF5_Fortran_INCLUDE_DIR="$PREFIX/include"        \
+            -DLAPACK_ROOT="$PREFIX"                             \
+            -DMPI_HOME="$PREFIX"                                \
+            -DMPI_C_COMPILER="$PREFIX/bin/mpicc"                \
+            -DMPI_CXX_COMPILER="$PREFIX/bin/mpicxx"             \
+            -DMPI_Fortran_COMPILER="$PREFIX/bin/mpifort"
+
+      # ------------------------------------------------------------------ #
+      - name: Build piclas + POSTI tools (piclas2vtk, superB)
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          cmake --build "$BUILD_DIR" --target piclas piclas2vtk superB -j
+
+      # ------------------------------------------------------------------ #
+      - name: Verify binaries exist
+        shell: cmd
+        run: |
+          dir %BUILD_DIR%\bin
+          if not exist %BUILD_DIR%\bin\piclas-win.exe (exit /b 1)
+          if not exist %BUILD_DIR%\bin\libpiclas.dll (exit /b 1)
+          if not exist %BUILD_DIR%\bin\piclas2vtk.exe (exit /b 1)
+          if not exist %BUILD_DIR%\bin\superB.exe (exit /b 1)
+
+      # ------------------------------------------------------------------ #
+      # One self-contained folder with all three tools. They come from the SAME
+      # preset, so they share one libpiclas.dll — bundle the solver's DLL closure
+      # once, then drop the other two exes alongside it.
+      - name: Bundle runtime DLLs
+        run: |
+          export PATH="/ucrt64/bin:/usr/bin:$PATH"
+          bash .github/scripts/bundle_dlls.sh \
+            "$BUILD_DIR/bin/piclas-win.exe" \
+            dist/piclas-win-picmc
+          cp -f "$BUILD_DIR/bin/piclas2vtk.exe" "$BUILD_DIR/bin/superB.exe" dist/piclas-win-picmc/
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: dist/piclas-win-picmc
+          if-no-files-found: error
+          retention-days: 14

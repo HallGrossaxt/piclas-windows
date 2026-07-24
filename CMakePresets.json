@@ -221,6 +221,21 @@
       }
     },
     {
+      "name": "windows-poisson-boris-petsc-mpi",
+      "displayName": "Windows - poisson + Boris-Leapfrog + PETSc(MS-MPI) + superB (PIC-MC)",
+      "inherits": "windows-ucrt64-mpi",
+      "binaryDir": "${sourceDir}/build-poisson-boris-petsc-mpi",
+      "cacheVariables": {
+        "PICLAS_EQNSYSNAME":     "poisson",
+        "PICLAS_TIMEDISCMETHOD": "Boris-Leapfrog",
+        "LIBS_USE_PETSC":        "ON",
+        "LIBS_BUILD_PETSC":      "OFF",
+        "PICLAS_BUILD_POSTI":    "ON",
+        "POSTI_BUILD_SUPERB":    "ON",
+        "PICLAS_UNITTESTS":      "OFF"
+      }
+    },
+    {
       "name": "windows-poisson-rk3-mpi-gpu",
       "displayName": "Windows - poisson + RK3 + MPI + GPU",
       "inherits": "windows-ucrt64-mpi",
@@ -529,6 +544,11 @@
     {
       "name": "windows-poisson-boris-mpi-gpu",
       "configurePreset": "windows-poisson-boris-mpi-gpu",
+      "jobs": 0
+    },
+    {
+      "name": "windows-poisson-boris-petsc-mpi",
+      "configurePreset": "windows-poisson-boris-petsc-mpi",
       "jobs": 0
     },
     {

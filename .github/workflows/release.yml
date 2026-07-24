@@ -40,6 +40,12 @@ jobs:
   build-superb:
     uses: ./.github/workflows/build-superb.yml
 
+  # PIC-MC bundle: poisson + Boris-Leapfrog + PARALLEL PETSc (MS-MPI) + superB,
+  # with piclas2vtk + superB built from the same preset (shared libpiclas.dll)
+  # -> piclas-win-picmc-<TAG>-win64.zip
+  build-picmc:
+    uses: ./.github/workflows/build-picmc-petsc.yml
+
   # CPU-only fallback bundle -> piclas-win-nogpu-<TAG>-win64.zip
   # Only the solver is rebuilt without GPU (cpu_only=true, no CUDA dll) for machines
   # the GPU dll can't run on; piclas2vtk + superB are reused from above.
@@ -57,6 +63,7 @@ jobs:
       - build-piclas
       - build-piclas2vtk
       - build-superb
+      - build-picmc
       - build-piclas-nogpu
     runs-on: ubuntu-latest
     steps:
@@ -162,6 +169,45 @@ jobs:
             "piclas2vtk=artifacts/piclas2vtk-win64" \
             "superB=artifacts/superB-win64"
 
+          # PIC-MC variant: poisson + Boris-Leapfrog + parallel PETSc + superB.
+          # Its artifact already holds all three tools sharing ONE libpiclas.dll
+          # (built from a single preset), so they ship together in bin/ rather
+          # than in per-tool folders.
+          PICMC="piclas-win-picmc-${TAG}-win64"
+          rm -rf "$PICMC"; mkdir -p "$PICMC/bin"
+          cp -a artifacts/piclas-win-picmc-win64/. "$PICMC/bin/"
+          test -f "$PICMC/bin/piclas-win.exe" || { echo "ERROR: missing piclas-win.exe in picmc"; exit 1; }
+          test -f "$PICMC/bin/piclas2vtk.exe" || { echo "ERROR: missing piclas2vtk.exe in picmc"; exit 1; }
+          test -f "$PICMC/bin/superB.exe"     || { echo "ERROR: missing superB.exe in picmc"; exit 1; }
+          [ -n "$LIC" ] && cp -f "$LIC" "$PICMC/"
+          printf '%s\n' \
+            "piclas-win — PIC-MC + PETSc build  (release $TAG)" \
+            "" \
+            "Electrostatic particle-in-cell + Monte-Carlo-Collision solver: poisson" \
+            "(HDG) + Boris-Leapfrog, linked against a PARALLEL PETSc built --with-mpi" \
+            "against MS-MPI, so the PETSc/HDG field solve — including floating" \
+            "conductors (FPC) — runs at MPI>1. GAMG algebraic multigrid is available" \
+            "at runtime via PrecondType=4 (see the guide). superB's B-field path is" \
+            "compiled in." \
+            "" \
+            "  bin\\piclas-win.exe   PIC + Poisson (HDG/PETSc) + DSMC/MCC collisions" \
+            "  bin\\piclas2vtk.exe   HDF5 State/DSMCState -> VTK for ParaView" \
+            "  bin\\superB.exe       magnetic-field (B-field) POSTI pre-processor" \
+            "  (all three share one libpiclas.dll)" \
+            "" \
+            "Self-contained: msmpi.dll + the UCRT64 runtime DLLs are bundled, so" \
+            "SINGLE-PROCESS runs work with no MSYS2 / MS-MPI install. Parallel runs" \
+            "(mpiexec -n N ...) need the full Microsoft MPI runtime (msmpisetup.exe)." \
+            "" \
+            "Example cases: see the pic-poisson-* tutorials in the source tree" \
+            "(tutorials/pic-poisson-mcc-verification-parodi is a PIC-MCC benchmark)." \
+            "A ready-to-run bundled PIC example is a planned follow-up." \
+            "" \
+            "Source and license (GPLv3): https://github.com/HallGrossaxt/piclas-windows" \
+            > "$PICMC/README.txt"
+          ( cd "$PICMC" && zip -qr "$GITHUB_WORKSPACE/out/${PICMC}.zip" . )
+          echo "  packaged ${PICMC}.zip"
+
           ( cd out && sha256sum *.zip > SHA256SUMS.txt )
           echo "=== release assets ==="
           ls -l out
@@ -182,11 +228,13 @@ jobs:
 
             | Asset | For | Contents |
             |-------|-----|----------|
-            | `piclas-win-nogpu-*-win64.zip` | **Recommended — start here.** Best choice for almost everyone, including all DSMC cases | Three tools, solver built **CPU-only (no CUDA/GPU dll)**, each self-contained, plus ready-to-run `example/` |
-            | `piclas-win-*-win64.zip` | Only if you have a specific reason to want the GPU push (see note below) | `piclas-win/` (DSMC + MPI + **GPU**), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-nogpu-*-win64.zip` | **DSMC — recommended start here.** Best choice for rarefied-gas / DSMC cases | Three tools, solver built **CPU-only (no CUDA/GPU dll)**, each self-contained, plus ready-to-run `example/` |
+            | `piclas-win-picmc-*-win64.zip` | **Electrostatic plasma / PIC** — magnetrons, Hall/ion thrusters, CCP, and MCC | poisson (HDG) + Boris-Leapfrog + **parallel PETSc** (floating conductors / FPC + **GAMG**) + `superB`, all three tools sharing one `libpiclas.dll` in `bin/` |
+            | `piclas-win-*-win64.zip` | Only if you have a specific reason to want the DSMC GPU push (see note below) | `piclas-win/` (DSMC + MPI + **GPU**), `piclas2vtk/` (HDF5 → VTK), `superB/` (B-field POSTI), each self-contained, plus ready-to-run `example/` |
 
             **Which build should I download?**
-            - **Pick `-nogpu` unless you know you need the GPU.** The GPU build currently accelerates only the particle **push** (position update). DSMC runtime is dominated by **CPU-side** collision/pairing, tracking and sampling, so the GPU gives **no meaningful speedup for DSMC** — and these release binaries are DSMC builds. GPU push acceleration is presently only worthwhile for **PIC / Poisson** field-push workloads, which are not shipped in these release zips. So for what's in this release, `-nogpu` is the right choice for essentially everyone; the GPU build needs an NVIDIA driver and adds startup/transfer overhead with no payback for DSMC.
+            - **DSMC / rarefied gas → `-nogpu`.** **Electrostatic plasma / particle-in-cell → `-picmc`** (the new PIC + Poisson + Monte-Carlo-Collision build with parallel PETSc, so the HDG field solve and floating conductors run at MPI>1).
+            - **The GPU (`piclas-win-*`) build is rarely worth it.** It accelerates only the particle **push**; DSMC runtime is dominated by **CPU-side** collision/pairing, tracking and sampling, so the GPU gives **no meaningful speedup for DSMC**. It needs an NVIDIA driver and adds overhead with no payback for the DSMC binary shipped here.
 
             **Runtime notes**
             - **No install needed for single-process runs:** `msmpi.dll` is bundled, so the tools run on a machine with no Microsoft MPI installed. Parallel runs (`mpiexec -n N`) still need the full MS-MPI runtime (`msmpisetup.exe`).
