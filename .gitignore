@@ -69,6 +69,13 @@ commit.h
 # local helper scripts / personal working notes (not part of the project)
 /gitpush.bat
 /windows-tools/tracks.txt
+# internal Bug G investigation runbooks / instrumentation plans (kept local only)
+/windows-tools/bugG_linux_valgrind_investigation.md
+/windows-tools/bugG_must_mpich_runbook.md
+/windows-tools/bugG_windows_instrumentation_plan.md
+# superseded / verbose internal notes (guide + guide_summary are the public docs)
+/windows-tools/piclas-win-summary.md
+/windows-tools/piclas_bugs_summary.md
 
 # gmsh mesh source for the dsmc-cone-2D tutorial (the shipped example uses the
 # pre-converted CGNS mesh; regenerate this with hopr_gmsh.ini only if needed)
