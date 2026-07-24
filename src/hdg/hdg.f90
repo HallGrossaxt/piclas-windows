@@ -835,6 +835,9 @@ LOGICAL,INTENT(IN),OPTIONAL :: RecomputeLambda_opt        ! Is set true during r
 #if defined(PARTICLES)
 LOGICAL :: ForceCGSolverIteration_loc
 INTEGER :: iUniqueEPCBC
+#if USE_MPI
+REAL    :: tmpChargeEPC ! separate send buffer (MS-MPI corrupts MPI_IN_PLACE reduces)
+#endif /*USE_MPI*/
 #endif /*defined(PARTICLES)*/
 LOGICAL :: RecomputeLambda_loc
 !===================================================================================================================================
@@ -875,11 +878,10 @@ END IF
     ! Communicate the accumulated charged on each BC to all processors on the communicator
     DO iUniqueEPCBC = 1, EPC%nUniqueEPCBounds
       IF(EPC%COMM(iUniqueEPCBC)%UNICATOR.NE.MPI_COMM_NULL)THEN
-        IF(MPIRoot)THEN
-          CALL MPI_REDUCE(MPI_IN_PLACE, EPC%ChargeProc(iUniqueEPCBC), 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, EPC%COMM(iUniqueEPCBC)%UNICATOR, IERROR)
-        ELSE
-          CALL MPI_REDUCE(EPC%ChargeProc(iUniqueEPCBC), 0           , 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, EPC%COMM(iUniqueEPCBC)%UNICATOR, IERROR)
-        END IF ! MPIRoot
+        ! MS-MPI corrupts MPI_IN_PLACE collectives on this port: reduce via an explicit
+        ! send buffer instead (the recv buffer is ignored on non-root ranks)
+        tmpChargeEPC = EPC%ChargeProc(iUniqueEPCBC)
+        CALL MPI_REDUCE(tmpChargeEPC, EPC%ChargeProc(iUniqueEPCBC), 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, EPC%COMM(iUniqueEPCBC)%UNICATOR, IERROR)
         EPC%Charge(iUniqueEPCBC) = EPC%Charge(iUniqueEPCBC) + EPC%ChargeProc(iUniqueEPCBC)
       END IF ! EPC%COMM(iUniqueEPCBC)%UNICATOR.NE.MPI_COMM_NULL
     END DO ! iUniqueEPCBC = 1, EPC%nUniqueEPCBounds

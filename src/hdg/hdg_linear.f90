@@ -133,6 +133,9 @@ REAL                 :: timeStartPiclas,timeEndPiclas
 INTEGER              :: jLocSide
 REAL                 :: Smatloc(nGP_face(NMax),nGP_face(NMax))
 INTEGER              :: iUniqueFPCBC
+#if USE_MPI
+REAL                 :: tmpChargeFPC ! separate send buffer (MS-MPI corrupts MPI_IN_PLACE reduces)
+#endif /*USE_MPI*/
 INTEGER              :: iMortar,iType
 #endif /*USE_PETSC*/
 REAL                 :: chitens_face(3,3),DCBiasVoltage(1:PP_nVar)
@@ -246,7 +249,9 @@ DO iVar = 1, PP_nVar
     DO iUniqueFPCBC = 1, FPC%nUniqueFPCBounds
       ASSOCIATE( COMM => FPC%COMM(iUniqueFPCBC)%UNICATOR)
         IF(FPC%COMM(iUniqueFPCBC)%UNICATOR.NE.MPI_COMM_NULL)THEN
-          CALL MPI_ALLREDUCE(MPI_IN_PLACE, FPC%ChargeProc(iUniqueFPCBC), 1, MPI_DOUBLE_PRECISION, MPI_SUM, COMM, IERROR)
+          ! MS-MPI corrupts MPI_IN_PLACE collectives on this port: use an explicit send buffer
+          tmpChargeFPC = FPC%ChargeProc(iUniqueFPCBC)
+          CALL MPI_ALLREDUCE(tmpChargeFPC, FPC%ChargeProc(iUniqueFPCBC), 1, MPI_DOUBLE_PRECISION, MPI_SUM, COMM, IERROR)
           FPC%Charge(iUniqueFPCBC) = FPC%Charge(iUniqueFPCBC) + FPC%ChargeProc(iUniqueFPCBC)
         END IF ! FPC%COMM(iUniqueFPCBC)%UNICATOR.NE.MPI_COMM_NULL
       END ASSOCIATE
