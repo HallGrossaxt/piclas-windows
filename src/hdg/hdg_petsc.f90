@@ -62,6 +62,7 @@ IMPLICIT NONE
 PetscErrorCode      :: ierr
 PC                  :: pc
 Mat                 :: F
+Mat                 :: PETScSystemMatrixAIJ  ! AIJ copy of the SBAIJ operator, for GAMG (PrecondType=4)
 CHARACTER(LEN=100)  :: ksp_type, pc_type, mat_type
 !===================================================================================================================================
 PetscCallA(KSPCreate(PETSC_COMM_WORLD,PETScSolver,ierr))
@@ -131,6 +132,29 @@ CASE(3)
   ! ===  Preconditioner: Block Jacobi
   PetscCallA(PCSetType(pc,PCBJACOBI,ierr))
 #endif /*PETSC_HAVE_HYPRE*/
+CASE(4)
+  ! ====== Iterative solver: CG preconditioned with native smoothed-aggregation algebraic multigrid.
+  ! PCGAMG is built into PETSc (needs neither Hypre nor MUMPS), so it is the algebraic-multigrid
+  ! path available on the MS-MPI Windows build (Phase 7 of plan_petsc_msmpi.md). The HDG Poisson
+  ! trace system is SPD, which GAMG(AGG)+CG is designed for. -pc_gamg_* / -mg_* options can be
+  ! tuned at runtime via the PETSC_OPTIONS environment variable (PCSetFromOptions below).
+  !
+  ! GAMG's aggregation + Galerkin coarsening need operations SBAIJ does not provide (it stores only
+  ! the upper triangle), which aborts with PETSC_ERR_SUP. Unlike PCHYPRE, GAMG does not convert
+  ! internally. The system matrix is constant (assembled once above, preconditioner reused every
+  ! solve), so convert it to a full AIJ matrix ONCE here and hand that to the KSP. MatConvert from
+  ! SBAIJ expands the symmetric storage to the full matrix, so this is correct regardless of how the
+  ! assembly filled it. KSPSetOperators takes its own reference, so the local handle is dropped after.
+  PetscCallA(MatConvert(PETScSystemMatrix,MATAIJ,MAT_INITIAL_MATRIX,PETScSystemMatrixAIJ,ierr))
+  PetscCallA(KSPSetOperators(PETScSolver,PETScSystemMatrixAIJ,PETScSystemMatrixAIJ,ierr))
+  PetscCallA(MatDestroy(PETScSystemMatrixAIJ,ierr))
+  PetscCallA(KSPSetType(PETScSolver,KSPCG,ierr))
+  PetscCallA(KSPSetInitialGuessNonzero(PETScSolver,PETSC_TRUE, ierr))
+  PetscCallA(KSPSetNormType(PETScSolver, KSP_NORM_UNPRECONDITIONED, ierr))
+  PetscCallA(KSPSetTolerances(PETScSolver,rtol,atol,PETSC_DEFAULT_REAL,MaxIterCG,ierr))
+  ! ===  Preconditioner: GAMG (smoothed aggregation)
+  PetscCallA(PCSetType(pc,PCGAMG,ierr))
+  PetscCallA(PCSetFromOptions(pc,ierr))
 #ifdef PETSC_HAVE_MUMPS
 CASE(10)
   ! ====== Direct solver: Cholesky
