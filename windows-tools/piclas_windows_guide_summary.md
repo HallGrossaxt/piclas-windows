@@ -1,4 +1,4 @@
-# piclas-win 2.1 — Summary
+# piclas-win 2.2 — Summary
 
 **Unofficial Windows port of PICLas 4.2.0** (commit d63756ee) for Windows 11 with MSYS2 UCRT64 / GCC 15.  
 Documentation date: July 2026. Guide file: `piclas_windows_guide.html`.  
@@ -26,6 +26,8 @@ Port major version tracks the upstream PICLas minor era: **1.x** = PICLas 4.1.0,
 | Landau damping tutorial (MPI×4) | **Verified working** |
 | GPU particle push (DSMC-cone-2D) | **Verified working** (v0.9.2) |
 | superB pre-processor | **Working** |
+| **Parallel PETSc (MS-MPI) + FPC at MPI>1** | **Working (v2.2, §16.32)** — PETSc `--with-mpi` build; `WEK_poisson_PETSC` green at MPI≤12; the "MPI+PETSc cannot be combined" limit is retired |
+| **HDG GAMG preconditioner (`PrecondType=4`)** | **Working (v2.2, §16.32)** — native algebraic multigrid; ~27× fewer field-solve iterations, ~1.4× total run speedup on the magnetron |
 | NIG_ regression suite (35 suites) | **14+ fully clean (emission_gyrotron + 3D_periodic_CVWM added §16.20), 17 PASSED* (internal errors), 3 Skipped** |
 | WEK_Reservoir | **0 analyze failures** after §16.14 fix |
 | CHE_DSMC adaptive BC | **Fixed** — no more OS freezes |
@@ -45,6 +47,7 @@ Port major version tracks the upstream PICLas minor era: **1.x** = PICLas 4.1.0,
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **v2.2** | July 2026 | **§16.32 — parallel PETSc on Windows (the "MPI + PETSc cannot be combined" limitation is retired).** Built **PETSc 3.24.5 `--with-mpi` against MS-MPI** (separate prefix `C:\Data\PRJ\petsc-msmpi`, `--with-mpi-f90module-visibility=0`); the old wall was a *packaging* fact (the MSYS2 PETSc is `--with-mpi=0`/MPIUNI), not a Windows limit. Three enabling fixes (`c3ba181`): rename the bundled `mpi_f08` shim's MPI-3 window wrappers to PICLas-internal names (they clashed with real-MPI PETSc), a static-`libpetsc.a` `Libs.private` link closure, and an MPIUNI-gated `FATAL_ERROR`. Found+fixed a real bug (`5211887`): EPC/FPC charge reduces used `MPI_IN_PLACE` → MS-MPI zeroed the root's share. **`WEK_poisson_PETSC` suite now green at MPI≤12** (FPC floating-conductor cases run in parallel for the first time). Added **`PrecondType=4` = CG + native GAMG** (`5e65f20`; algebraic multigrid without Hypre/MUMPS, via a one-time SBAIJ→AIJ `MatConvert`): on the magnetron, **~27× fewer field-solve iterations and ~7–8× faster steady-state solves** vs block-Jacobi; measured **~1.4× total run speedup** at production `HDGSkip=100` (field solve stays ~55–60 % of each step). Default GAMG tuning is best. |
 | **v2.1** | July 2026 | **§16.31**: HDG (Poisson) field solve **~9.5× faster at 4 ranks, no physics change** — element-major MatVec (`7d75c55`, 1.52×), inlined 4×4 Cholesky preconditioner (`067c18e`, bit-identical, 1.13×), flat contiguous CG trace vectors (`b0297f5`, 2.03×), optional additive coarse-space correction (`46653d8`, `HDGCoarseCorrection` default off, 3.76× fewer iters). GPU (Phase 6) measured then dropped (field solve now only ~45% of wall clock → ~1.8× ceiling). **Three fixes surfaced:** piclas2vtk `--NVisu=N` crash (`19a7487`), HDG load-balance SIGSEGV from the flat-vector pointers (`390797d`, distinct from Bug L), SuperB `PARTICLES=OFF` clean-build failure (`4698581`). All HDG suites 0/0/0 (dielectric, poisson, PIC_poisson RK3/plasma_wave/Leapfrog, WEK_PIC_poisson); both LB paths, mortars, SEE, SuperB BG field, MPI≤20. |
 | **v2.0** | July 2026 | **§16.28–16.30**: rebased the port onto **upstream PICLas 4.2.0** (commit d63756ee) — a 3-way vendor-branch merge (43-file conflict surface) with a per-tier regression re-baseline (NIG §16.28, CHE §16.29, WEK §16.30). PyHOPE replaces hopr for reggie externals; re-applied the merge-dropped `particle_restart` MS-MPI fix; fixed an uninitialized `iDOF` OOB write (PIC EM-field output) and a single-member-communicator `MPI_IN_PLACE` zeroing (porous BC). New open **Bug L** (4.2.0 LB heap use-after-free race on MS-MPI; mitigated `DoLoadBalance=F` locally). **This is the 2.x base — port major now tracks upstream PICLas minor (2.x = 4.2.0).** |
 | **v1.6** | July 2026 | Per-species MacroParticleFactor (vMPF) for multi-species DSMC via a split-at-collision scheme (unequal-weight pairs split to equal weight before colliding → stock kinematics); uniform-weight redistribution in merging, `SplitAndMerge` in reservoirs, and a fix for unset `PartMPF` in constant-MPF surface-flux insertion. `Part-vMPF=T` + per-species `MacroParticleFactor`/`vMPFMergeThreshold`. |
@@ -284,10 +287,10 @@ Many suites define multiple build variants; running with a single pre-built bina
 
 | Blocker | Affected suites |
 |---------|----------------|
-| MPI + PETSc cannot be combined (MSYS2 PETSc is sequential) | `NIG_PIC_poisson_PETSc_*`, `WEK_PIC_poisson_HDG_*`, `CHE_PIC_poisson_HDG_*` |
 | AddressSanitizer not available in GFortran/MinGW | `Sanitize` build type suites |
 | gprof not supported | `Profile` build type suites |
-| `drift_diffusion` needs MPI + PETSc (both simultaneously) | `NIG_drift_diffusion_explicit-FV` — currently runs as best-effort |
+
+> **RETIRED (v2.2, §16.32): "MPI + PETSc cannot be combined."** This was never a Windows limitation, only a packaging fact (the MSYS2 PETSc is `--with-mpi=0`). Building PETSc 3.24.5 `--with-mpi` against MS-MPI removes it: the PETSc/HDG suites (`NIG/WEK_poisson_PETSC`, FPC floating-conductor cases) now run at MPI>1. `NIG_drift_diffusion_explicit-FV` is no longer blocked *in principle* — it still needs a dedicated `drift_diffusion + PETSc + MPI` binary to be built.
 
 ---
 
@@ -338,7 +341,7 @@ Many suites define multiple build variants; running with a single pre-built bina
 | NIG_convtest_maxwell | ✅ reggie RC=0 — all h/p examples pass (§16.22 TERadius + §16.23 L2-error fixes) |
 | NIG_SuperB | ✅ reggie RC=0 — magnet h5diffs + LinearConductor/SphericalMagnet convergence (§16.23 L2-error fix) |
 | NIG_poisson | ✅ reggie RC=0 — CODE_ANALYZE+MPI binary (§16.23) |
-| NIG_poisson_PETSC | ⚠ MPI=1 runs pass on serial PETSc binary (§16.22); MPI>1 permanently blocked |
+| NIG_poisson_PETSC | ✅ **runs at MPI>1** on the parallel MS-MPI PETSc build (v2.2, §16.32); the sibling `WEK_poisson_PETSC` suite is green 0/0/0 at MPI≤12 |
 | NIG_code_analyze | ✅ FieldIonization fixed (§16.24 venv reggie excludeBuild; RK4 sub-run passes RC=0); ⚠ Semicircle 17% integrate_line still open |
 | NIG_DVM_plasma | ❌ needs PLOESMA+PETSc coupled-field build (DG_Solution); blocked |
 
@@ -352,13 +355,14 @@ Many suites define multiple build variants; running with a single pre-built bina
 - **GCC/GFortran 15.x**, CMake 4.2.x, Ninja 1.12.x
 - **HDF5 2.1.0** (serial — no parallel MPI support in MSYS2 package)
 - **MS-MPI 10.1** via `mingw-w64-ucrt-x86_64-msmpi`
-- **PETSc 3.24.5** (sequential only — cannot be combined with MPI)
+- **PETSc 3.24.5** — two builds: the MSYS2 package (sequential, `--with-mpi=0`) *and* a self-built **`--with-mpi` build against MS-MPI** at `C:\Data\PRJ\petsc-msmpi` (v2.2, §16.32) for parallel PETSc/HDG/FPC
 - **CUDA Toolkit 12.x** + VS Build Tools 2022 (GPU build only)
 
 ### 7.2 Key Constraints
 
-- **MPI + PETSc cannot be combined:** MSYS2 PETSc is sequential; `PetscInitialize()` aborts with >1 MPI rank. §16.22 adds a serial PETSc binary `build-poisson-rk3-petsc-serial` (`LIBS_USE_MPI=OFF` + `LIBS_USE_PETSC=ON` + RK3 + CODE_ANALYZE) which runs the MPI=1 PETSc/HDG cases (e.g. NIG_poisson_PETSC/poisson_box_Dirichlet_Mortar); MPI>1 PETSc runs remain permanently blocked.
-  - **HDG has an internal MPI-capable CG solver (used when PETSc is OFF):** `src/hdg/hdg.f90` selects "Method for HDG solver: CG" without PETSc, and that CG solver runs in parallel (NIG_poisson runs it at MPI=1,2,4,8). So **standard HDG Poisson (Dirichlet/Neumann/Mortar) is NOT blocked at MPI>1** — it can run with a non-PETSc MPI build (demonstrated: NIG_poisson_PETSC/poisson runs at MPI=2 with CG). What is genuinely PETSc-only is **FPC (Floating Boundary Condition / floating conductor)**: `hdg_init.f90:111` aborts "FPC model requires LIBS_USE_PETSC=ON" (and `ExactFunc=600` likewise) — the floating-potential Lagrange-multiplier system is implemented only in the PETSc path. *Decision: leave the `*_PETSc` suites as-is.* They aren't re-pointed at the CG binary because their analyze references (`HDGIterations.csv` iteration counts) are solver-specific — CG and PETSc converge in different iteration counts (the physical solution matches, only the iteration count differs).
+- **MPI + PETSc — now combinable (v2.2, §16.32).** The old blocker was the *MSYS2 PETSc package* being `--with-mpi=0` (MPIUNI: `PetscInitialize()` aborts at >1 rank), NOT Windows. A self-built **PETSc 3.24.5 `--with-mpi` against MS-MPI** (`--with-mpi-f90module-visibility=0`, prefix `C:\Data\PRJ\petsc-msmpi`) runs parallel PETSc/HDG. Point PICLas at it via `PETSC_DIR=/c/Data/PRJ/petsc-msmpi`; `LIBS_USE_MPI=ON + LIBS_USE_PETSC=ON` builds and runs (`build-poisson-rk3-petsc-mpi`, `build-poisson-boris-petsc-mpi`). Three fixes were needed (`c3ba181`): rename the `mpi_f08` shim's MPI-3 window wrappers to PICLas-internal names (clashed with real-MPI PETSc's), a static-`libpetsc.a` `Libs.private` link closure, and gating the codified `FATAL_ERROR` on an *MPIUNI* PETSc only. The `WEK_poisson_PETSC` suite is green at MPI≤12. The earlier serial-only `build-poisson-rk3-petsc-serial` (§16.22) is superseded for MPI>1.
+  - **FPC (Floating Boundary Condition / floating conductor)** is PETSc-only (`hdg_init.f90:111` aborts "FPC model requires LIBS_USE_PETSC=ON"); it **now runs at MPI>1** on the parallel PETSc build (the magnetron's `BC_SHIELD`/`BC_TOP`/`BC_SUBSTRATE` FPCs and the multi-FPC reggie case are parallel-validated). PICLas *also* still has an internal MPI-capable CG solver (used when PETSc is OFF) for standard HDG Poisson; and a hand-rolled FPC-via-CG path exists for FPC without PETSc. The `*_PETSc` reggie references (`HDGIterations.csv` iteration counts) remain solver-specific — CG and PETSc converge in different iteration counts (same physical solution).
+  - **GAMG (`PrecondType=4`, v2.2, §16.32):** native algebraic-multigrid preconditioner added to `hdg_petsc.f90` (no Hypre/MUMPS needed; GAMG can't use the `MATSBAIJ` operator so the branch `MatConvert`s the constant matrix to AIJ once). On the magnetron: ~27× fewer field-solve iterations, ~7–8× faster steady-state solves, ~1.4× total run speedup at production `HDGSkip=100`. Default GAMG options are best (a `PETSC_OPTIONS` `-pc_gamg_*` tuning sweep found no improvement).
 - **HDF5 is serial:** `USE_MPI_HDF5=0` always. Only MPIRoot opens HDF5 files; non-root ranks use `GatheredWriteArray`.
 - **`HDF5_USE_FILE_LOCKING=FALSE` required** for all MPI runs.
 - **GPU build:** `PICLAS_USE_GPU=OFF` recommended for regression testing to avoid Bug G and eliminate Bug B FP divergence from GPU references. Concretely (§16.21): `NIG_PIC_poisson_Leapfrog` and `NIG_Radiation` are driven by CPU binaries in `run_nig_all.sh`; a non-GPU `build-maxwell-radiation-cpu` (`PICLAS_TIMEDISCMETHOD=Radiation`, `PICLAS_USE_GPU=OFF`) was added because the GPU radiation binary cannot link in this environment (CUDA `libpiclasGPU.dll` step fails) and the GPU leapfrog binary deadlocks at high MPI.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>piclas-win 1.0 Build Configurator</title>
+<title>piclas-win 2.2 Build Configurator</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Segoe UI", Tahoma, sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; display: flex; flex-direction: column; }
@@ -52,8 +52,8 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
 <body>
 
 <header>
-  <h1>piclas-win 1.0 Build Configurator</h1>
-  <span style="font-size:0.78rem;color:#8892b0;">Unofficial Windows port of PICLas 4.1.0 &mdash; standalone HTML, works in any browser, no server needed</span>
+  <h1>piclas-win 2.2 Build Configurator</h1>
+  <span style="font-size:0.78rem;color:#8892b0;">Unofficial Windows port of PICLas 4.2.0 &mdash; standalone HTML, works in any browser, no server needed</span>
 </header>
 <div class="note-bar">
   <b>Workflow:</b> Select options &rarr; click <b>Download Build Script</b> &rarr; double-click the <b>.bat</b> file to build.
@@ -189,7 +189,7 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-mpi" onchange="onMpiChange()">
         <label for="chk-mpi">LIBS_USE_MPI (MS-MPI)</label>
       </div>
-      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. <b>Not compatible with PETSc</b> — the MSYS2 PETSc package is sequential-only and will crash at runtime when launched with more than one MPI rank.</div>
+      <div class="desc">Enable multi-process parallel builds using Microsoft MPI. Requires <code>mingw-w64-ucrt-x86_64-msmpi</code> installed via pacman. Uses the <code>windows-ucrt64-mpi</code> preset. HDF5 I/O remains serial. <b>Can now be combined with PETSc (v2.2):</b> when both are on, the configurator points PETSc at the self-built <b>MS-MPI PETSc</b> (see the PETSc option below) instead of the sequential MSYS2 package.</div>
       <div class="check-row" id="row-loadbalance" style="display:none;">
         <input type="checkbox" id="chk-loadbalance" checked onchange="updateAll()">
         <label for="chk-loadbalance">PICLAS_LOADBALANCE</label>
@@ -204,7 +204,13 @@ input[type=text]:focus { outline: none; border-color: #64ffda; }
         <input type="checkbox" id="chk-petsc" onchange="onPetscChange()">
         <label for="chk-petsc">LIBS_USE_PETSC</label>
       </div>
-      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (e.g. GMRES, CG with preconditioners). Required for tutorials that use the HDG Poisson solver with PETSc backend. Needs <code>mingw-w64-ucrt-x86_64-petsc</code> installed via pacman. <b>Not compatible with MPI</b> — the MSYS2 PETSc package is built without MPI support; enabling both causes a runtime abort ("MPI-uni install") when launched with more than one process.</div>
+      <div class="desc">Link against the PETSc library for advanced iterative linear solvers (CG/GMRES with preconditioners, direct solvers, and <b>GAMG algebraic multigrid</b> via runtime <code>PrecondType=4</code>), and for <b>FPC</b> (floating-conductor) HDG cases. Two PETSc builds are used automatically:
+        <ul style="margin:4px 0 0 16px;">
+          <li><b>PETSc OFF+MPI, or PETSc + no MPI (sequential):</b> the MSYS2 package (<code>mingw-w64-ucrt-x86_64-petsc</code>, <code>--with-mpi=0</code>) at <code>C:/msys64/ucrt64</code>.</li>
+          <li><b>PETSc + MPI (parallel, v2.2):</b> a self-built <b>PETSc 3.24.5 <code>--with-mpi</code> against MS-MPI</b> at <code>C:/Data/PRJ/petsc-msmpi</code> &mdash; you must build it first (guide &sect;16.32). The old "MPI+PETSc can't be combined" limit is retired.</li>
+        </ul>
+      </div>
+      <div class="compat info" id="compat-petsc"></div>
       <div class="check-row" id="row-fv2d" style="display:none;">
         <input type="checkbox" id="chk-fv2d" onchange="updateAll()">
         <label for="chk-fv2d">PICLAS_FV_2D</label>
@@ -366,6 +372,8 @@ var SOURCE_ROOT = 'C:/Data/PRJ/piclas-win/piclas-win-master';
 var BUILD_ROOT  = 'C:/Data/PRJ/piclas-win';
 var CMAKE_WIN   = 'C:\\msys64\\ucrt64\\bin\\cmake.exe';  // UCRT64 cmake - used directly in .bat (no bash needed)
 var BASH_WIN    = 'C:\\msys64\\usr\\bin\\bash.exe';       // kept for "Copy Both Commands" (bash/MSYS2 terminal use)
+var PETSC_SEQ_DIR   = 'C:/msys64/ucrt64';        // sequential MSYS2 PETSc package (--with-mpi=0)
+var PETSC_MPI_DIR   = 'C:/Data/PRJ/petsc-msmpi'; // self-built PETSc --with-mpi against MS-MPI (v2.2, guide §16.32)
 
 // ── Option buttons ────────────────────────────────────────────────────────────
 function sel(group, btn) {
@@ -435,11 +443,12 @@ function getOpts() {
 
 function onOff(b) { return b ? 'ON' : 'OFF'; }
 
-// MPI and PETSc are mutually exclusive: MSYS2 PETSc is sequential-only and crashes with >1 MPI rank.
-// Sanitize and MPI are mutually exclusive on Windows: AddressSanitizer fires inside the MS-MPI library itself.
+// MPI + PETSc CAN be combined since v2.2: with MPI on, PETSc points at the self-built MS-MPI PETSc
+// (C:/Data/PRJ/petsc-msmpi) instead of the sequential MSYS2 package.
+// Sanitize and MPI remain mutually exclusive on Windows: AddressSanitizer fires inside the MS-MPI library itself.
+// GPU + PETSc remain mutually exclusive (the GPU path is not wired for the PETSc field solver).
 function onMpiChange() {
   if (document.getElementById('chk-mpi').checked) {
-    document.getElementById('chk-petsc').checked = false;
     // If user enabled MPI while CMAKE_BUILD_TYPE=Sanitize, switch back to Release
     if (getActive('grp-buildtype') === 'Sanitize') {
       var btns = document.getElementById('grp-buildtype').getElementsByTagName('button');
@@ -452,9 +461,7 @@ function onMpiChange() {
 }
 function onPetscChange() {
   if (document.getElementById('chk-petsc').checked) {
-    // PETSc is incompatible with MPI (sequential-only MSYS2 package)
-    document.getElementById('chk-mpi').checked = false;
-    // GPU + PETSc: PETSc is CPU-only anyway
+    // GPU + PETSc: the GPU push is not wired for the PETSc field solve
     document.getElementById('chk-gpu').checked = false;
     document.getElementById('gpu-arch-row').style.display = 'none';
   }
@@ -535,7 +542,9 @@ function updateAll() {
     (o.mpi && o.mpiwait)      ? '-DPICLAS_MEASURE_MPI_WAIT=ON' : null,
     '-DLIBS_USE_PETSC='          + onOff(o.petsc),
     o.petsc ? '-DLIBS_BUILD_PETSC=OFF' : null,
-    o.petsc ? '-DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : null,
+    // Sequential MSYS2 PETSc needs the explicit dso import lib; the MS-MPI PETSc (petsc+mpi) is
+    // resolved by FindPETSc via pkg-config (PETSC_DIR/lib/pkgconfig) incl. its static Libs.private closure.
+    (o.petsc && !o.mpi) ? '-DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : null,
     // FV_2D is dependent on PICLAS_FV which is only available for discrete_velocity FV time methods
     (o.fv2d && (o.eqnsys === 'discrete_velocity')) ? '-DPICLAS_FV_2D=ON' : null,
     // GPU: when using gpu preset the defaults are already set; but explicit flags are
@@ -551,7 +560,9 @@ function updateAll() {
     '"-DPICLAS_INSTRUCTION='     + o.instruction + '"'
   ].filter(function(x) { return x !== null; }).join(' \\\n        ');
 
-  var petscEnv = o.petsc ? "export PETSC_DIR=/c/msys64/ucrt64 && " : "";
+  var petscEnv = o.petsc
+    ? ("export PETSC_DIR=" + (o.mpi ? "/c/Data/PRJ/petsc-msmpi" : "/c/msys64/ucrt64") + " && ")
+    : "";
   document.getElementById('cmd-configure').textContent =
     petscEnv + "cd '" + o.srcroot + "' && cmake --preset " + getPreset(o) + " \\\n" +
     "        -B " + bp + " \\\n        " + defs;
@@ -575,6 +586,20 @@ function updateAll() {
   var showFV2D = (o.eqnsys === 'discrete_velocity');
   document.getElementById('row-fv2d').style.display  = showFV2D ? 'flex'  : 'none';
   document.getElementById('desc-fv2d').style.display = showFV2D ? 'block' : 'none';
+
+  // PETSc compatibility / build-source hint
+  var petscEl  = document.getElementById('compat-petsc');
+  var petscMsg = '';
+  if (o.petsc && o.mpi) {
+    petscMsg = 'ℹ Parallel PETSc: this build points at the MS-MPI PETSc at ' + PETSC_MPI_DIR +
+               '. Build that first (PETSc 3.24.5 --with-mpi against MS-MPI; guide §16.32). FPC and GAMG (runtime PrecondType=4) run at MPI>1.';
+  } else if (o.petsc && !o.mpi) {
+    petscMsg = 'ℹ Sequential PETSc: uses the MSYS2 package at ' + PETSC_SEQ_DIR +
+               ' (--with-mpi=0). Runs at 1 rank only — enable MPI to use the parallel MS-MPI PETSc.';
+  }
+  petscEl.textContent   = petscMsg;
+  petscEl.style.display = petscMsg ? 'block' : 'none';
+  petscEl.className     = 'compat info';
 
   // GPU compatibility hint
   var gpuEl  = document.getElementById('compat-gpu');
@@ -681,7 +706,7 @@ function downloadBat() {
     (o.mpi && o.mpiwait      ? ' -DPICLAS_MEASURE_MPI_WAIT=ON' : '') +
     ' -DLIBS_USE_PETSC=' + onOff(o.petsc) +
     (o.petsc ? ' -DLIBS_BUILD_PETSC=OFF' : '') +
-    (o.petsc ? ' -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : '') +
+    (o.petsc && !o.mpi ? ' -DPETSC_LINK_LIBRARIES=C:/msys64/ucrt64/lib/petsc/dso/libpetsc.dll.a' : '') +
     (o.fv2d && o.eqnsys === 'discrete_velocity' ? ' -DPICLAS_FV_2D=ON' : '') +
     (o.gpu && o.mpi  ? ' -DPICLAS_USE_GPU=ON' : '') +
     (o.gpu && o.mpi  ? ' -DCMAKE_CUDA_ARCHITECTURES=' + o.cudaarch : '') +
@@ -701,10 +726,11 @@ function downloadBat() {
     '  echo Install MSYS2 UCRT64 and run: pacman -S mingw-w64-ucrt-x86_64-cmake\r\n' +
     '  pause ^& exit /b 1\r\n' +
     ')\r\n' +
-    // PETSC_DIR is needed by the cmake find scripts when PETSc is enabled
-    (o.petsc ? 'set PETSC_DIR=C:\\msys64\\ucrt64\r\n' : '') +
+    // PETSC_DIR is needed by the cmake find scripts when PETSc is enabled.
+    // MPI+PETSc → self-built MS-MPI PETSc; PETSc-only → sequential MSYS2 package.
+    (o.petsc ? 'set PETSC_DIR=' + (o.mpi ? 'C:\\Data\\PRJ\\petsc-msmpi' : 'C:\\msys64\\ucrt64') + '\r\n' : '') +
     'echo.\r\n' +
-    'echo  piclas-win 1.0 Build Script  ^(unofficial Windows port of PICLas 4.1.0^)\r\n' +
+    'echo  piclas-win 2.2 Build Script  ^(unofficial Windows port of PICLas 4.2.0^)\r\n' +
     'echo  Config : ' + dir + '\r\n' +
     'echo  Source : ' + srcWin + '\r\n' +
     'echo  Binary : ' + bpWin + '\r\n' +

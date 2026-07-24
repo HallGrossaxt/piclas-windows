@@ -228,6 +228,42 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
 <table>
   <tr><th>Version</th><th>Date</th><th>Highlights</th></tr>
   <tr>
+    <td><strong>v2.2</strong></td>
+    <td>July 2026</td>
+    <td>
+      <strong>Parallel PETSc on Windows &mdash; the "MPI + PETSc cannot be combined" limitation is retired (&sect;16.32).</strong>
+      The wall was never a Windows limit, only a <em>packaging</em> fact: the MSYS2 PETSc is built <code>--with-mpi=0</code>
+      (MPIUNI, which aborts <code>PetscInitialize()</code> above one rank). Building <strong>PETSc 3.24.5
+      <code>--with-mpi</code> against MS-MPI</strong> (separate prefix <code>C:\Data\PRJ\petsc-msmpi</code>,
+      <code>--with-mpi-f90module-visibility=0</code>) removes it, so <code>LIBS_USE_MPI=ON + LIBS_USE_PETSC=ON</code>
+      now builds and runs.
+      <ul style="margin-top:4px;">
+        <li><b>Three enabling fixes</b> (<code>c3ba181</code>): rename the bundled <code>mpi_f08</code> shim's MPI-3
+            shared-window wrappers to PICLas-internal names (they collided with real-MPI PETSc's exports &mdash;
+            <code>src/mpi/mpi_shared.f90</code> rename-imports them back); append a static <code>libpetsc.a</code>'s
+            pkg-config <code>Libs.private</code> link closure; and gate the codified <code>FATAL_ERROR</code> in
+            <code>cmake/SetLibraries.cmake</code> on an <em>MPIUNI</em> PETSc only (detected via <code>PETSC_HAVE_MPIUNI</code>).</li>
+        <li><b>Real bug fixed</b> (<code>5211887</code>): the EPC and FPC charge reductions used <code>MPI_IN_PLACE</code>,
+            which MS-MPI corrupts &mdash; the root rank's charge share was zeroed. Replaced with the explicit
+            send-buffer idiom. Symptom was the EPC-discharge current reading 0 at low rank counts and climbing toward
+            the reference as ranks increased.</li>
+        <li><b><code>WEK_poisson_PETSC</code> suite green 0/0/0 at MPI&le;12</b> &mdash; FPC floating-conductor cases
+            run in parallel for the first time on Windows.</li>
+        <li><b>Native GAMG preconditioner</b> (<code>PrecondType=4</code>, <code>5e65f20</code>): CG + PCGAMG algebraic
+            multigrid, which needs neither Hypre nor MUMPS. GAMG cannot build its hierarchy on the <code>MATSBAIJ</code>
+            HDG operator (upper-triangle only), so the branch <code>MatConvert</code>s the constant matrix to full AIJ
+            once. On the 2D magnetron: <b>~27&times; fewer field-solve iterations</b> and <b>~7&ndash;8&times; faster
+            steady-state solves</b> vs block-Jacobi, giving a measured <b>~1.4&times; total run speedup</b> at production
+            <code>HDGSkip=100</code> (the field solve stays ~55&ndash;60% of each step; the plasma density is roughly
+            constant, so this holds for the whole run). A <code>PETSC_OPTIONS</code> <code>-pc_gamg_*</code> tuning sweep
+            found the default settings are already best.</li>
+      </ul>
+      <strong>Validation:</strong> <code>WEK_poisson_PETSC</code> (poisson/turner2013, mortar box, EPC discharge MPI=1&ndash;12,
+      multi-FPC, FPC p-convergence) all 0/0/0; GAMG and block-Jacobi give identical per-step particle counts. Non-PETSc
+      builds rebuild unchanged. Builds on v2.1.
+    </td>
+  </tr>
+  <tr>
     <td><strong>v2.1</strong></td>
     <td>July 2026</td>
     <td>
@@ -408,7 +444,8 @@ hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
         <li>Serial PETSc binary <code>build-poisson-rk3-petsc-serial</code> (<code>LIBS_USE_MPI=OFF</code> +
             <code>LIBS_USE_PETSC=ON</code>): unblocks the MPI=1 runs of <code>NIG_poisson_PETSC</code>
             (<code>poisson_box_Dirichlet_Mortar</code> passes RC=0). Wired <code>EXE_PETSC_SER</code> into
-            <code>run_nig_all.sh</code>. MPI&gt;1 PETSc remains permanently blocked.</li>
+            <code>run_nig_all.sh</code>. <em>(At the time, MPI&gt;1 PETSc was believed permanently blocked &mdash;
+            superseded in v2.2 (&sect;16.32): a <code>--with-mpi</code> MS-MPI PETSc build now runs it in parallel.)</em></li>
         <li><b>TERadius <code>MPI_IN_PLACE</code> fix</b> in <code>GetWaveGuideRadius</code>
             (<code>equation.f90</code>): <code>MPI_ALLREDUCE(MPI_IN_PLACE,TERadius,MPI_MAX,&hellip;)</code> left
             ranks without inlet faces at 0 &rarr; <code>TERadius&le;0</code> abort at MPI=4. Explicit-buffer fix;
@@ -1098,20 +1135,25 @@ mpiexec -n 4 bin/piclas-win.exe parameter.ini DSMC.ini</code></pre>
   and State HDF5 files at each analysis interval.
 </div>
 
-<div class="danger">
-  <b>MPI and PETSc cannot be combined on Windows</b>
-  MSYS2's PETSc is built without MPI (sequential/serial variant). Two separate failures occur:
+<div class="note">
+  <b>MPI + PETSc &mdash; combinable since v2.2 (&sect;16.32)</b>
+  This was long believed impossible on Windows, but the blocker was the <em>MSYS2 PETSc package</em> being built
+  <code>--with-mpi=0</code> (a sequential/MPIUNI variant), not Windows itself. With the <strong>packaged (sequential)
+  PETSc</strong>, two failures occur and cmake still emits a <code>FATAL_ERROR</code> when both flags are set:
   <ul style="margin-top:8px;">
-    <li><b>Compile-time:</b> Its headers include <code>petsc/mpiuni/mpiunifdef.h</code> which
-    redefines <code>MPI_WTIME</code> â†’ <code>PETSC_MPI_WTIME</code>. Fortran sees this redefined
-    symbol with no type declaration, causing a fatal compile error in <code>hdg.f90</code>.
-    cmake emits a <code>FATAL_ERROR</code> if both flags are set.</li>
-    <li><b>Runtime:</b> Even if the header conflict is patched around, PETSc's runtime library
-    calls <code>PetscInitialize()</code> which checks <code>MPI_COMM_WORLD</code> size and aborts
-    with <em>"You are using an MPI-uni (sequential) install of PETSc but trying to launch parallel
-    jobs"</em> when launched with more than one MPI rank. All processes crash with SIGABRT.</li>
+    <li><b>Compile-time:</b> its headers include <code>petsc/mpiuni/mpiunifdef.h</code>, which redefines
+    <code>MPI_WTIME</code> &rarr; <code>PETSC_MPI_WTIME</code> &mdash; Fortran sees a redefined symbol with no type
+    declaration, a fatal compile error in <code>hdg.f90</code>.</li>
+    <li><b>Runtime:</b> even if patched around, <code>PetscInitialize()</code> aborts with <em>"You are using an
+    MPI-uni (sequential) install of PETSc but trying to launch parallel jobs"</em> above one rank.</li>
   </ul>
-  Use either <code>LIBS_USE_MPI=ON</code> <em>or</em> <code>LIBS_USE_PETSC=ON</code>, never both.
+  <b>The fix (v2.2):</b> build <strong>PETSc 3.24.5 <code>--with-mpi</code> against MS-MPI</strong> into a separate
+  prefix (<code>C:\Data\PRJ\petsc-msmpi</code>, configured <code>--with-mpi-f90module-visibility=0</code>), point PICLas
+  at it with <code>PETSC_DIR=/c/Data/PRJ/petsc-msmpi</code>, and set <code>LIBS_USE_MPI=ON + LIBS_USE_PETSC=ON</code>.
+  The <code>FATAL_ERROR</code> now fires only for a genuinely sequential (MPIUNI) PETSc, so this configuration builds and
+  runs in parallel. See the Release History (v2.2) and &sect;16.32 for the shim/link fixes and the GAMG preconditioner
+  (<code>PrecondType=4</code>). The MSYS2 package build remains sequential &mdash; the rule "never both" applies only to
+  <em>that</em> PETSc, not the MS-MPI build.
 </div>
 
 <div class="note">
@@ -3069,10 +3111,10 @@ $mpi    = "C:\Program Files\Microsoft MPI\Bin\mpiexec.exe"
   <tr><td>WEK_PIC_maxwell</td><td>PIC-Maxwell weekly</td><td>yes</td><td class="ok">Expected PASS after rebuild</td><td>mpi</td></tr>
   <tr><td>WEK_DSMC</td><td>DSMC weekly</td><td>yes</td><td class="ok">Expected PASS after rebuild</td><td>mpi</td></tr>
 
-  <tr><td colspan="5" style="background:#2a1a00;color:#d4a84b;padding:4px 8px"><b>Blocked â€” MPI + PETSc required simultaneously</b></td></tr>
-  <tr><td>NIG_PIC_poisson_PETSc_*</td><td>PIC-Poisson + PETSc HDG solver</td><td>yes</td><td class="warn">BLOCKED â€” MSYS2 PETSc is sequential-only; MPI+PETSc aborts at runtime</td><td>n/a</td></tr>
-  <tr><td>WEK_PIC_poisson_HDG_*</td><td>PIC-HDG, PETSc</td><td>yes</td><td class="warn">BLOCKED â€” same PETSc constraint</td><td>n/a</td></tr>
-  <tr><td>CHE_PIC_poisson_HDG_*</td><td>PIC-HDG chemistry</td><td>yes</td><td class="warn">BLOCKED â€” same PETSc constraint</td><td>n/a</td></tr>
+  <tr><td colspan="5" style="background:#0d2a12;color:#5fc27e;padding:4px 8px"><b>Unblocked in v2.2 (&sect;16.32) &mdash; MPI + PETSc now combinable via the MS-MPI PETSc build</b></td></tr>
+  <tr><td>NIG_PIC_poisson_PETSc_* / NIG_poisson_PETSC</td><td>PIC-Poisson + PETSc HDG solver</td><td>yes</td><td class="ok">Runs at MPI&gt;1 on the <code>--with-mpi</code> MS-MPI PETSc build</td><td>mpi</td></tr>
+  <tr><td>WEK_poisson_PETSC (incl. FPC)</td><td>PETSc HDG + floating conductors</td><td>yes</td><td class="ok">Green 0/0/0 at MPI&le;12</td><td>mpi</td></tr>
+  <tr><td>CHE_PIC_poisson_HDG_*</td><td>PIC-HDG chemistry</td><td>yes</td><td class="ok">Unblocked in principle (PETSc constraint retired); needs the matching PETSc+MPI binary</td><td>mpi</td></tr>
 
   <tr><td colspan="5" style="background:#2a1a00;color:#d4a84b;padding:4px 8px"><b>Blocked â€” external pre-processing tool required</b></td></tr>
   <tr><td>WEK_PIC_poisson (HEMPT case)</td><td>PIC-Poisson + superB pre-run</td><td>yes</td><td class="warn">Needs superB.exe to generate BGField.h5 first; run manually (Â§15.4)</td><td>mpi + superB</td></tr>
@@ -5455,9 +5497,15 @@ regressioncheck/NIG_PIC_maxwell_RK4/emission_gyrotron/parameter.ini
   <code>PICLAS_CODE_ANALYZE=ON</code>; PETSc 3.24.5 <code>dso</code> variant). <code>poisson_box_Dirichlet_Mortar</code>
   (MPI=1 only) passes reggie RC=0 incl. the restart post-externals + <code>HDGIterations.csv</code> compare; the MPI=1
   runs of the other examples pass. Wired <code>EXE_PETSC_SER</code> into <code>run_nig_all.sh</code>. MPI&gt;1 PETSc
-  runs remain a permanent Windows limitation (the shared <code>command_line.ini</code> files were left unchanged so
+  runs were believed a permanent Windows limitation (the shared <code>command_line.ini</code> files were left unchanged so
   Linux coverage is preserved).
 </p>
+<div class="note" style="border-color:var(--green)">
+  <b>Superseded by v2.2 / &sect;16.32 (2026-07-24):</b> MPI&gt;1 PETSc is <em>not</em> a permanent limitation. A self-built
+  PETSc 3.24.5 <code>--with-mpi</code> against MS-MPI runs the PETSc/HDG suites in parallel (<code>WEK_poisson_PETSC</code>
+  green at MPI&le;12), including FPC. The serial binary here is superseded for MPI&gt;1; the nuance below (FPC is the
+  PETSc-only feature) still holds &mdash; FPC now simply runs in parallel too.
+</div>
 <div class="note">
   <b>Nuance (2026-05-28): MPI&gt;1 is blocked only for the PETSc <em>backend</em>, not for HDG itself.</b> PICLas's HDG
   Poisson selects an <strong>internal MPI-capable CG solver</strong> when PETSc is OFF ("Method for HDG solver: CG",
