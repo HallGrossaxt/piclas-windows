@@ -113,12 +113,43 @@ whole linear solve (`MatMult`, `PCApply`, the GAMG hierarchy, `VecDot`) therefor
 an `-O1` library, which also explains why tuning PICLas' *Fortran* flags barely moved
 anything — the time isn't in PICLas' Fortran, it's in PETSc's C.
 
-**Status: unmeasured.** The decisive test is a PETSc rebuild with
-`COPTFLAGS='-O3 -march=native'` into a separate prefix, then relink and re-run the 1-rank PIC
-point. Until that is done, treat the PIC row as **not** a clean OS-vs-OS comparison:
-`/home/alopp/petsc/3.24.5` on the Linux side was hand-built and its `COPTFLAGS` were never
-recorded, so the PIC numbers may be comparing an `-O1` PETSc against an optimised one. The
-**DSMC** rows are unaffected by all of this (no PETSc) and remain a clean OS comparison.
+### Measured: PETSc `-O3` fixes GAMG, does nothing for block-Jacobi
+
+PETSc 3.24.5 was rebuilt with `COPTFLAGS/FOPTFLAGS='-O3 -march=native -mtune=native'` into a
+separate prefix (`/c/Data/PRJ/petsc-msmpi-O3`, configure script `petsc-src/arch-msmpi-gnu-o3.py`;
+the working `petsc-msmpi` install is untouched) and PICLas relinked against it with every other
+option identical. 1 rank, 3 repeats:
+
+| | PETSc `-g -O` | PETSc `-O3 -march=native` | change | vs Linux |
+|---|---|---|---|---|
+| P2 block-Jacobi | 37.67 s | 37.05 s | **1.6%** | 0.66x → **0.65x** |
+| P4 GAMG | 46.95 s | 40.47 s | **13.8%** | 0.76x → **0.84x** |
+
+So the hypothesis is **half right, and wrong about the headline number**. GAMG spends
+substantial time in PETSc's own C (aggregation, the multigrid hierarchy, multilevel smoothing)
+and gains 13.8%. Block-Jacobi does not — `pipecg` + a block-Jacobi `PCApply` is thin, so most
+of its 37 s is evidently *not* inside PETSc, and rebuilding PETSc cannot touch it.
+
+**Keep the `-O3` PETSc regardless** — 13.8% on the GAMG path is free, and GAMG is the
+production-relevant preconditioner.
+
+### Where that leaves it: the block-Jacobi gap is still unexplained
+
+Two hypotheses tested, two refuted for the largest gap. `-fstack-arrays` gave 3%, PETSc `-O3`
+gave 1.6%; the block-Jacobi point is still **0.65x** (37.05 s vs 23.99 s). What the elimination
+does establish is *where the time is not*: not in PETSc (rebuilding it changed nothing here),
+not in BLAS, not in the MPI layer, and not meaningfully in Fortran heap-vs-stack temporaries.
+By elimination the remaining ~13 s sits in **PICLas' own Fortran on the Windows toolchain** —
+candidates are GCC 15.2/MinGW codegen, the Win64 ABI's costlier calling convention on
+call-heavy code, and UCRT `malloc` vs glibc `malloc`.
+
+**Do not guess further — profile.** The next step is a sampling profile or a `-pg` build of the
+1-rank PIC case on both OSes to find which routines actually carry the delta. Also still worth
+one cheap check: `grep '^CC_FLAGS' $PETSC_DIR/lib/petsc/conf/petscvariables` on the Linux box,
+since `/home/alopp/petsc/3.24.5` was hand-built and its `COPTFLAGS` were never recorded — if it
+is also `-O1`, the GAMG row was never comparing like with like either.
+
+The **DSMC** rows are unaffected by all of this (no PETSc) and remain a clean OS comparison.
 
 Raw data: `results/linux_timings.csv`. Regenerate the comparison with
 `python3 parse_timings.py --compare results/win_timings.csv results/linux_timings.csv`.

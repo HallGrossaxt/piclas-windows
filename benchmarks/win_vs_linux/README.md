@@ -164,22 +164,44 @@ Produces `results/linux_timings.csv`.
   (**-O1**, generic arch), which is what the Windows install currently has.
 * **Determinism.** DSMC uses GFortran's xoshiro256** RNG, which is platform-independent, so
   Windows and Linux march the *identical* particle population — the DSMC comparison is doing
-  exactly the same work on both. HDG is iterative (`epsCG=5e-5`): solutions agree to
-  tolerance, iteration counts may differ by ±1.
+  exactly the same work on both.
+* **The PIC case is chaotic — do not expect matching final states.** A given binary is
+  bit-reproducible run to run (verified: two runs of the same exe give a byte-identical
+  `DG_Solution`), but *any* perturbation of the solver diverges over 2000 steps. Measured on
+  the 1-rank point, final `DG_Solution` L2 relative difference:
+  `bjacobi` vs `GAMG` on one PETSc **1.2e-1**; PETSc `-O1` vs `-O3` with one preconditioner
+  **1.1e-1**; and `PartData` differs in particle *count* (12 vs 15). The two preconditioners
+  the benchmark itself sweeps already disagree by ~12%, and both are accepted — so this is a
+  property of the case, not a defect. It does mean the timing comparison is valid (identical
+  algorithm, identical inputs) while a **state-file diff is not a meaningful cross-check here**.
 
 ---
 
 ## Correctness cross-check
 
-Timing means nothing if the two builds computed different things. After running both OSes,
-diff the final state files (they should agree to round-off / solver tolerance):
+Timing means nothing if the two builds computed different things — but *how* you check differs
+per case.
+
+**DSMC** marches an identical particle population on both OSes (platform-independent RNG), so a
+state diff is a valid check:
 
 ```bash
-h5diff -r -d 1e-8 win/.../HEMPT_90deg_State_000.00000002000000000.h5 \
-                  linux/.../HEMPT_90deg_State_000.00000002000000000.h5
 h5diff -r -d 1e-10 win/.../periodic_State_000.02000000000000000.h5 \
                    linux/.../periodic_State_000.02000000000000000.h5
 ```
+
+**PIC: do not diff the state file.** As measured above, this case diverges chaotically over
+2000 steps — even the two preconditioners the benchmark itself sweeps end ~12% apart in L2, and
+particle counts differ. `h5diff -d 1e-8` will always fail and tells you nothing. Check instead
+that both sides ran the same algorithm on the same inputs:
+
+```bash
+grep -a "Iterative solver\|#Procs\|PICLAS FINISHED" .../std.out   # same solver, ranks, and it finished
+```
+
+plus the `analyze.ini` in-domain guard that reggie already applies. For a genuine PIC
+cross-platform *correctness* check, use a short run (tens of steps, before divergence
+amplifies) rather than the 2000-step timing configuration.
 
 (The `analyze.ini` in each case is only a cheap "particles still in the domain" guard so
 reggie is happy; the benchmark times are read from `std.out`, not from the analyze result,
