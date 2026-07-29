@@ -1,0 +1,13 @@
+os,case,solver,ranks,sec
+linux,dsmc,-,1,388.740
+linux,dsmc,-,2,210.610
+linux,dsmc,-,4,121.390
+linux,dsmc,-,6,91.270
+linux,pic,BJACOBI,1,23.990
+linux,pic,BJACOBI,2,20.450
+linux,pic,BJACOBI,4,13.240
+linux,pic,BJACOBI,6,12.950
+linux,pic,GAMG,1,33.980
+linux,pic,GAMG,2,18.470
+linux,pic,GAMG,4,12.560
+linux,pic,GAMG,6,10.020
