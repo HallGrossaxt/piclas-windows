@@ -53,7 +53,13 @@ at 6 ranks) to hide MPI overhead.
 Done — see **[`LINUX_RESULTS.md`](LINUX_RESULTS.md)** for the OS-vs-OS numbers (same physical
 machine, dual boot, PICLas 4.2.0 + the GAMG patch on GCC 11.2 / OpenMPI 4.1.1). Short version:
 Linux is faster on every case, most on the PIC field solve (0.66× block-Jacobi serially), while
-Windows edges ahead on multi-rank DSMC (~1.07–1.09×). Regenerate that table with
+Windows edges ahead on multi-rank DSMC (~1.07–1.09×).
+
+> ⚠️ The PIC gap is **not** established as an OS effect — the Windows PETSc is built `-g -O`
+> (-O1, no `COPTFLAGS`), and the PIC solve runs inside PETSc. See the investigation section in
+> `LINUX_RESULTS.md`. The DSMC rows use no PETSc and are unaffected.
+
+Regenerate that table with
 
 ```bash
 python3 parse_timings.py --compare results/win_timings.csv results/linux_timings.csv

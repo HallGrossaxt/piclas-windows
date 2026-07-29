@@ -152,7 +152,16 @@ Produces `results/linux_timings.csv`.
   **1-rank point** as the vendor-neutral anchor. (reggie auto-caps MPICH to the physical
   core count to avoid its oversubscription cliff.)
 * **Same binary, same flags, Release.** Both sides `CMAKE_BUILD_TYPE=Release`, same
-  `PICLAS_TIMEDISCMETHOD`/`EQNSYSNAME`/`LIBS_USE_PETSC` per case.
+  `PICLAS_TIMEDISCMETHOD`/`EQNSYSNAME`/`LIBS_USE_PETSC` per case. Note that
+  `cmake/SetCompiler.cmake` drops **`-fstack-arrays`** on `WIN32` (gfortran ICE with LTO on
+  MinGW), so the Fortran flags are *not* identical out of the box; measured at ~3% on the
+  PIC case (see `LINUX_RESULTS.md`).
+* **Third-party library flags.** `PICLAS_INSTRUCTION` only reaches PICLas' own sources — it
+  does **not** touch PETSc, HDF5 or OpenBLAS. For the PIC case most of the time is spent
+  *inside* PETSc, so **PETSc's own `COPTFLAGS` must match on both OSes**. Check with
+  `grep '^CC_FLAGS' $PETSC_DIR/lib/petsc/conf/petscvariables` before comparing: PETSc built
+  with `--with-debugging=0` but no explicit `COPTFLAGS` silently falls back to `-g -O`
+  (**-O1**, generic arch), which is what the Windows install currently has.
 * **Determinism.** DSMC uses GFortran's xoshiro256** RNG, which is platform-independent, so
   Windows and Linux march the *identical* particle population — the DSMC comparison is doing
   exactly the same work on both. HDG is iterative (`epsCG=5e-5`): solutions agree to
