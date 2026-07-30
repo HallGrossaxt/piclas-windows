@@ -61,7 +61,8 @@ shipped binary and never recompiles.
 win_vs_linux/
 ├── README.md               <- this file
 ├── RESULTS.md               <- Windows (MS-MPI) baseline numbers
-├── LINUX_RESULTS.md         <- Linux vs Windows comparison (same machine, dual boot)
+├── LINUX_RESULTS.md         <- Linux vs Windows comparison + the open-gap investigation
+├── NEXT_ON_LINUX.md         <- runbook: how to continue the investigation on the Linux boot
 ├── run_benchmark.ps1        <- Windows/MS-MPI driver
 ├── run_benchmark.sh         <- Linux driver (mirror of the .ps1)
 ├── bench_env.sh             <- Linux toolchain env (GCC/OpenMPI/HDF5/PETSc/reggie paths)

@@ -239,7 +239,11 @@ irregular gather in MatMult walks several thousand pages and puts real pressure 
 where 2 MB pages would need a handful.
 
 **This is a hypothesis, not a result — two earlier ones were refuted, so treat it accordingly.**
-It is cheap to test on the Linux box, and that test is the next step:
+It is cheap to test on the Linux box, and that test is the next step. **A full runbook for
+continuing on the Linux boot is in [`NEXT_ON_LINUX.md`](NEXT_ON_LINUX.md)** — including the
+`epsCG` decomposition to repeat there (which says *which* term of `T = C + k·iters` differs, and
+is more diagnostic than the THP test alone) and a `perf` recipe, since Linux can profile what
+gprof could not on MinGW.
 
 ```bash
 cat /sys/kernel/mm/transparent_hugepage/enabled          # likely [always] or [madvise]
