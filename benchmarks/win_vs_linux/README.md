@@ -61,13 +61,23 @@ shipped binary and never recompiles.
 win_vs_linux/
 ├── README.md               <- this file
 ├── RESULTS.md               <- Windows (MS-MPI) baseline numbers
-├── LINUX_RESULTS.md         <- Linux vs Windows comparison + the open-gap investigation
-├── NEXT_ON_LINUX.md         <- runbook: how to continue the investigation on the Linux boot
+├── LINUX_RESULTS.md         <- Linux vs Windows comparison + the (now closed) gap investigation
+├── NEXT_ON_LINUX.md         <- runbook for the Linux boot — COMPLETED 2026-07-30
+├── NEXT_ON_WINDOWS.md       <- runbook for the Windows boot — COMPLETED 2026-07-30, gap resolved
 ├── run_benchmark.ps1        <- Windows/MS-MPI driver
 ├── run_benchmark.sh         <- Linux driver (mirror of the .ps1)
 ├── bench_env.sh             <- Linux toolchain env (GCC/OpenMPI/HDF5/PETSc/reggie paths)
 ├── parse_timings.py         <- reads each run's std.out -> CSV + scaling/GAMG tables
-├── results/                 <- *_timings.csv are tracked; run_pic/ run_dsmc/ output is not
+│   # investigation scripts — Windows side
+├── blas_threads_win.sh      <- ** the test that resolved the gap ** (OPENBLAS_NUM_THREADS=1)
+├── logview_win.sh           <- PETSc -log_view capture; the drift-free per-kernel instrument
+├── petsc_opt_ab_win.sh      <- interleaved -O3 vs -O1 PETSc (static lib -> pick the binary)
+│   # investigation scripts — Linux side
+├── decomp_linux.sh          <- epsCG sweep + HDGSkip split -> the T = C + k*iters fit
+├── thp_linux.sh, thpon.c    <- huge-pages test (refuted; see the traps section of NEXT_ON_WINDOWS.md)
+├── build_petsc_o1.sh        <- PETSc 3.24.5 with the Windows flags (-g -O), for a fair swap
+├── petsc_opt_swap.sh        <- interleaved -O3 vs -O1 PETSc via soname swap
+├── results/                 <- *_timings.csv and logview_*.txt are tracked; run_*/ output is not
 ├── pic_hempt_hdg/           <- PIC case (frozen mesh + BGField, GAMG sweep)
 │   ├── command_line.ini     <- MPI = 1,2,4,6
 │   ├── parameter.ini        <- PrecondType = 2,4 ; tEnd = 2e-8 ; DoLoadBalance = F
@@ -157,12 +167,29 @@ Produces `results/linux_timings.csv`.
   `cmake/SetCompiler.cmake` drops **`-fstack-arrays`** on `WIN32` (gfortran ICE with LTO on
   MinGW), so the Fortran flags are *not* identical out of the box; measured at ~3% on the
   PIC case (see `LINUX_RESULTS.md`).
+* **BLAS threading — the big one on Windows.** ⚠️ **Set `OPENBLAS_NUM_THREADS=1` for the PIC
+  case at low rank counts.** MSYS2's OpenBLAS (which the Windows PETSc links) is built
+  multithreaded; Ubuntu's reference netlib BLAS is not. PETSc calls `BLASaxpy` ~110k times per
+  run on vectors just large enough to trip OpenBLAS's parallelisation threshold, so it forks and
+  joins a thread team 110,000 times — **54.7 µs per call against 4.1 µs on Linux.** At 1 rank
+  this alone was **1.35x**, i.e. the whole of what used to be the unexplained PIC gap
+  (36.70 s → 27.26 s, versus Linux's 27.47 s). It is a **low-rank effect only**: by 2 ranks it is
+  within noise and by 4 ranks OpenBLAS keeps `daxpy` serial on its own, because decomposition has
+  dropped each rank's vectors below its threshold. See `blas_threads_win.sh` and
+  `LINUX_RESULTS.md` → "Windows-side session".
 * **Third-party library flags.** `PICLAS_INSTRUCTION` only reaches PICLas' own sources — it
   does **not** touch PETSc, HDF5 or OpenBLAS. For the PIC case most of the time is spent
   *inside* PETSc, so **PETSc's own `COPTFLAGS` must match on both OSes**. Check with
   `grep '^CC_FLAGS' $PETSC_DIR/lib/petsc/conf/petscvariables` before comparing: PETSc built
   with `--with-debugging=0` but no explicit `COPTFLAGS` silently falls back to `-g -O`
-  (**-O1**, generic arch), which is what the Windows install currently has.
+  (**-O1**, generic arch), which is what the Windows install at `petsc-msmpi` has;
+  `petsc-msmpi-O3` is the `-O3 -march=native` counterpart.
+  **Confirmed 2026-07-30: this asymmetry is real** — Windows PETSc is `-g -O`, Linux PETSc is
+  `-O3 -march=native -mtune=native`. It is worth **11.4%** on Linux (`petsc_opt_swap.sh`) but only
+  **3.2–3.6%** on Windows, because a sixth of the Windows runtime sat inside OpenBLAS where PETSc's
+  flags have no reach. Note the Windows PETSc is a **static `libpetsc.a`**, so which PETSc you get
+  is fixed at link time — there is no DLL search order to worry about, and the two builds
+  `build-poisson-boris-petsc-mpi` / `-o3petsc` are the way to switch.
 * **Determinism.** DSMC uses GFortran's xoshiro256** RNG, which is platform-independent, so
   Windows and Linux march the *identical* particle population — the DSMC comparison is doing
   exactly the same work on both.

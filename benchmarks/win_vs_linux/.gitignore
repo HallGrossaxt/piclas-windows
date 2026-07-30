@@ -19,3 +19,19 @@ driver_full.log
 # Re-run CSVs (2026-07-29 repeatability session) are tracked alongside the baseline.
 !results/win_timings_rerun_o1.csv
 !results/win_timings_rerun_o3.csv
+
+# PETSc -log_view dumps, 2026-07-30. These are the per-kernel Count/Flop/Mflop/s tables.
+# Count and Flop are algorithmic and match across OSes, so the Mflop/s column is a
+# drift-free per-kernel speed comparison — this is what identified VecAXPY (OpenBLAS) as
+# the PIC gap. `git check-ignore -v` verified on the Windows side: all six are trackable.
+# Do not delete these; the whole conclusion rests on them.
+!results/logview_linux_bjacobi_1rank.txt
+!results/logview_linux_bjacobi_1rank_petscO1.txt
+!results/logview_win_bjacobi_1rank.txt
+!results/logview_win_bjacobi_1rank_petscO3.txt
+!results/logview_win_bjacobi_1rank_blas1thread.txt
+!results/logview_win_bjacobi_4rank.txt
+
+# Compiled Linux helper from the THP test: build with `gcc -O2 -o thpon thpon.c` on Linux.
+# The source is tracked, the ELF binary is not.
+thpon

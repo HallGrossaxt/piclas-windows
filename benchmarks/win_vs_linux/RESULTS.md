@@ -51,13 +51,30 @@ at 6 ranks) to hide MPI overhead.
 
 ## Linux comparison
 Done — see **[`LINUX_RESULTS.md`](LINUX_RESULTS.md)** for the OS-vs-OS numbers (same physical
-machine, dual boot, PICLas 4.2.0 + the GAMG patch on GCC 11.2 / OpenMPI 4.1.1). Short version:
-Linux is faster on every case, most on the PIC field solve (0.66× block-Jacobi serially), while
-Windows edges ahead on multi-rank DSMC (~1.07–1.09×).
+machine, dual boot, PICLas 4.2.0 + the GAMG patch on GCC 11.2 / OpenMPI 4.1.1).
 
-> ⚠️ The PIC gap is **not** established as an OS effect — the Windows PETSc is built `-g -O`
-> (-O1, no `COPTFLAGS`), and the PIC solve runs inside PETSc. See the investigation section in
-> `LINUX_RESULTS.md`. The DSMC rows use no PETSc and are unaffected.
+> ⚠️ **The PIC numbers in the table above are obsolete as an OS comparison, and the table's
+> 1-rank point is the worst affected.** Two build asymmetries, both on our side, were found and
+> fixed. Neither is a property of Windows:
+>
+> 1. **Multithreaded OpenBLAS** (the big one, **1-rank only**). MSYS2's OpenBLAS spawns a thread
+>    team per `daxpy`, and PETSc calls it ~110k times per run; Ubuntu's reference netlib BLAS is
+>    single-threaded. `OPENBLAS_NUM_THREADS=1` takes the 1-rank block-Jacobi point from
+>    **36.70 s to 27.26 s** against Linux's flag-matched 27.47 s — **parity**. Within noise by
+>    2 ranks, gone by 4.
+> 2. **PETSc built `-g -O`** (i.e. -O1, generic) on Windows against `-O3 -march=native` on Linux.
+>    Worth 3.2–3.6% on Windows, 11.4% on Linux.
+>
+> With both equalised, PIC at 1 rank is **0.99×** — the once-headline "0.66× block-Jacobi" was
+> our own configuration. The DSMC rows link no PETSc, never hit this, and were at parity all
+> along. Full account: `LINUX_RESULTS.md` → "Windows-side session, 2026-07-30".
+>
+> The **GAMG-vs-block-Jacobi** columns above are same-session ratios and remain valid.
+> Re-running the sweep with `OPENBLAS_NUM_THREADS=1` and the `-o3petsc` binary would refresh the
+> absolute PIC numbers; it has not been done.
+
+Also note: "Windows edges ahead on multi-rank DSMC (~1.07–1.09×)" **did not reproduce** — see the
+Repeatability section in `LINUX_RESULTS.md`. Treat it as a tie within scatter.
 
 Regenerate that table with
 

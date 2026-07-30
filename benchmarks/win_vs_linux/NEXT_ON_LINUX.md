@@ -1,4 +1,26 @@
-# Continue here on the Linux boot
+# Continue here on the Linux boot — ✅ COMPLETED 2026-07-30
+
+> **All five steps in this runbook were executed on the Linux boot on 2026-07-30.**
+> Results are in [`LINUX_RESULTS.md`](LINUX_RESULTS.md) → "Linux-side session, 2026-07-30".
+> **The work now continues on Windows: see [`NEXT_ON_WINDOWS.md`](NEXT_ON_WINDOWS.md).**
+>
+> Outcomes in brief:
+> - **§3 Step 1** — Linux PETSc is `-O3 -march=native -mtune=native`. The PIC comparison was
+>   `-O1` vs `-O3` all along. Recorded permanently in `LINUX_RESULTS.md`.
+> - **§4 Step 2** — done. `T = 5.91 s + 1.179 s·iters` on Linux vs `6.94 + 2.134` on Windows;
+>   iteration counts match. The **slope** differs 1.81x while the **fixed per-solve HDG Fortran
+>   cost is at exact parity** (4.67 vs 4.65 s) — outcome row 1 of the table below.
+> - **§5 Step 3** — **THP refuted (~2%)**. Note the test as written here would *not* have worked:
+>   THP is `[madvise]` on this box, not `[always]`, so the baseline is already on 4 KB pages, and
+>   an inherited `prctl(PR_SET_THP_DISABLE)` silently no-ops `madvise`/glibc tunables. See
+>   `thp_linux.sh` and `thpon.c`.
+> - **§6 Step 4** — done. IPC **3.50**, dTLB miss **0.02%** → **not memory-bound**, refuting this
+>   file's framing. **64%** of runtime is `MatSolve_SeqSBAIJ_1_NaturalOrdering` +
+>   `MatMult_SeqSBAIJ_1_ushort`.
+> - **Extra** — PETSc `-O1` vs `-O3` measured on Linux by soname swap: **11.4%**, which
+>   contradicts the Windows session's 1.6% and reopens that measurement.
+>
+> Residual gap after equalising PETSc flags: **1.37x**, down from 1.53x.
 
 Handoff for the open question in this benchmark, written 2026-07-30 from the Windows side.
 Everything below runs on the **Linux boot of the same dual-boot machine** (i5-13400F).
