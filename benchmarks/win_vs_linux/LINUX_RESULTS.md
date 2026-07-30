@@ -180,11 +180,78 @@ By elimination the remaining ~13 s sits in **PICLas' own Fortran on the Windows 
 candidates are GCC 15.2/MinGW codegen, the Win64 ABI's costlier calling convention on
 call-heavy code, and UCRT `malloc` vs glibc `malloc`.
 
-**Do not guess further — profile.** The next step is a sampling profile or a `-pg` build of the
-1-rank PIC case on both OSes to find which routines actually carry the delta. Also still worth
-one cheap check: `grep '^CC_FLAGS' $PETSC_DIR/lib/petsc/conf/petscvariables` on the Linux box,
-since `/home/alopp/petsc/3.24.5` was hand-built and its `COPTFLAGS` were never recorded — if it
-is also `-O1`, the GAMG row was never comparing like with like either.
+### Profiled (2026-07-30): it is PETSc's CG iterations, and the work is identical
+
+**gprof is a dead end on this platform.** Two structural obstacles: all of PICLas lives in
+`libpiclas.dll`, and `monstartup` sets the sampling histogram to the *executable's* text range,
+so every sample inside the DLL is discarded; and linking the exe against both the DLL import lib
+and `libgmon.a` duplicates `monstartup`/`_mcleanup` outright. A statically linked `-pg` exe does
+build (drop whole-archive — the archive carries superB's `PROGRAM` — and add `piclaslib.f90`,
+which is otherwise compiled only into the DLL), but it still produced an **empty histogram with
+no call arcs**. Do not spend more time on gprof here.
+
+Decomposition by parameter sweep works better. Two independent cuts, 1 rank, PrecondType=2:
+
+**1. What fraction is the field solve?** `HDGSkip=100` gates both the HDG solve and the
+deposition (`hdg.f90:858`, `pic_depo.f90:1346`):
+
+| | time |
+|---|---|
+| full | 39.85 / 39.58 s |
+| `HDGSkip=100` | 2.23 / 2.31 s |
+
+→ **~94% is HDG solve + deposition**; push, tracking, interpolation and I/O together are ~2 s.
+This case carries only ~12 particles, so deposition is negligible — it is essentially all solve.
+
+**2. Iterations vs fixed cost?** Sweeping `epsCG` changes the CG iteration count while leaving
+the per-solve assembly/post-processing untouched:
+
+| `epsCG` | avg iters | time |
+|---|---:|---:|
+| 1e-1 | 2.1 | 11.42 s |
+| 1e-3 | 8.5 | 25.45 s |
+| 5e-5 (benchmark) | 15.5 | 40.01 s |
+
+A linear fit on the outer two points gives `T = 6.9 s + 2.13 s x iters`, which predicts
+**25.07 s** at 8.5 iterations against **25.45 s** measured (1.5% error) — the model holds. At the
+benchmark's 15.5 iterations that is:
+
+- **~33 s (83%) iteration-proportional work inside PETSc's CG** (MatMult, PCApply, dots)
+- ~4.7 s fixed per-solve HDG Fortran (assembly, trace post-processing)
+- ~2.2 s everything else
+
+**3. Is Windows doing more work?** No. Per-solve iteration counts against the preserved Linux
+run are effectively identical — 36/17/15/14/14/14/14/11/10/10 on Windows vs
+36/19/15/14/14/12/11/12/12/10 on Linux, both summing to **155** over the first ten analyze
+points. Same algorithm, same convergence, ~1.5x the wall time.
+
+### Conclusion and the remaining hypothesis
+
+The gap is **inside PETSc's sparse CG kernels**, executing identical work on identical silicon.
+That is consistent with `-O3` buying only 1.6% here: sparse MatMult is **memory-bound**, not
+compute-bound, so optimisation level barely moves it.
+
+The leading explanation is therefore the **memory subsystem**, most plausibly **transparent huge
+pages** — Linux backs large heap allocations with 2 MB pages by default, Windows uses 4 KB pages
+unless a process explicitly requests large pages (which needs `SeLockMemoryPrivilege`). The trace
+system here is ~17k DOFs and the operator is on the order of 10–20 MB, so with 4 KB pages the
+irregular gather in MatMult walks several thousand pages and puts real pressure on the L2 TLB,
+where 2 MB pages would need a handful.
+
+**This is a hypothesis, not a result — two earlier ones were refuted, so treat it accordingly.**
+It is cheap to test on the Linux box, and that test is the next step:
+
+```bash
+cat /sys/kernel/mm/transparent_hugepage/enabled          # likely [always] or [madvise]
+echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+./run_benchmark.sh                                        # re-run the 1-rank PIC point
+```
+
+If Linux's block-Jacobi time rises from ~24 s toward the Windows ~37 s with THP off, it is
+confirmed. Also still worth one cheap check there:
+`grep '^CC_FLAGS' $PETSC_DIR/lib/petsc/conf/petscvariables` — `/home/alopp/petsc/3.24.5` was
+hand-built and its `COPTFLAGS` were never recorded; if it is also `-O1`, the GAMG row was never
+comparing like with like either.
 
 The **DSMC** rows are unaffected by all of this (no PETSc) and remain a clean OS comparison.
 
