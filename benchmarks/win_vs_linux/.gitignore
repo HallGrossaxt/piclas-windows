@@ -15,3 +15,7 @@ driver_full.log
 !pic_hempt_hdg/HEMPT_90deg_BGField.h5
 !pic_hempt_hdg/pre-hopr/90_deg_segment_mesh.h5
 !dsmc_periodic3d/pre-hopr/periodic_mesh.h5
+
+# Re-run CSVs (2026-07-29 repeatability session) are tracked alongside the baseline.
+!results/win_timings_rerun_o1.csv
+!results/win_timings_rerun_o3.csv

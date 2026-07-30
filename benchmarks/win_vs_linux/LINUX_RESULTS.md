@@ -63,11 +63,37 @@ Same qualitative story on both OSes: GAMG is slower serially (multigrid setup co
 
 - **Linux is faster on every case**, most on the PIC field solve: block-Jacobi 0.66x and
   GAMG 0.76x serially (Linux ~30% faster), DSMC within 2% at the 1-rank anchor.
-- **Multi-rank DSMC is the one place Windows edges ahead** (~1.07–1.09x) — the MPI-vendor
-  variable (OpenMPI 4.1.1 vs MS-MPI); Linux parEff 71% vs 78% at 6 ranks.
+- ~~**Multi-rank DSMC is the one place Windows edges ahead** (~1.07–1.09x)~~ — **this did not
+  reproduce**; see "Repeatability" below. A re-run gives 1.00x/1.03x/0.93x at 2/4/6 ranks, i.e.
+  Linux ahead at 6. Treat multi-rank DSMC as **a tie within measurement scatter**.
 - Since it's the **same CPU (dual boot)**, hardware is excluded. But that does **not** make
   these numbers pure "OS" effects — see the next section: at least part of the PIC gap is a
   **build asymmetry on our side**, not a property of Windows.
+
+## Repeatability (full Windows sweep re-run 2026-07-29)
+
+The entire Windows sweep was re-run with the **same binaries** on the **same machine**, two days
+after the baseline. It does not reproduce to better than a few percent:
+
+| | 1 rank | 2 | 4 | 6 |
+|---|---:|---:|---:|---:|
+| DSMC (rerun/July) | 1.05x | 1.06x | 1.05x | **1.15x** |
+| PIC bjacobi | 1.03x | 1.03x | 1.04x | **1.12x** |
+| PIC GAMG | 1.04x | 1.04x | 1.03x | **1.08x** |
+
+Everything is slower on the re-run, systematically, and **worst at 6 ranks** (cause not
+established — background load or thermal behaviour under sustained all-core load are the
+obvious candidates). Consequences:
+
+- **Single-run differences below ~5% (below ~15% at 6 ranks) are not meaningful.** The
+  Windows-vs-Linux ratios in the tables above are single runs taken in *different sessions*, so
+  they inherit this drift. Only the large PIC gap (0.64–0.66x, reproduced in both sessions)
+  survives it comfortably.
+- **Same-session ratios are far more trustworthy**, because the drift cancels. The GAMG-vs-
+  block-Jacobi speedup — measured within one session — reproduced almost exactly
+  (July 0.81/1.11/1.19/1.23 vs re-run 0.80/1.11/1.20/1.27 at 1/2/4/6 ranks).
+- To make the OS comparison solid, both sides need **repeats**, ideally interleaved, rather than
+  one run per point.
 
 ## Why is PIC 0.66x? (investigation 2026-07-29 — partly open)
 
@@ -130,8 +156,19 @@ substantial time in PETSc's own C (aggregation, the multigrid hierarchy, multile
 and gains 13.8%. Block-Jacobi does not — `pipecg` + a block-Jacobi `PCApply` is thin, so most
 of its 37 s is evidently *not* inside PETSc, and rebuilding PETSc cannot touch it.
 
-**Keep the `-O3` PETSc regardless** — 13.8% on the GAMG path is free, and GAMG is the
-production-relevant preconditioner.
+**But the 13.8% is a 1-rank effect only.** The full rank sweep, both binaries run in the same
+session (so drift cancels), gives `-O3`/`-O1`:
+
+| ranks | 1 | 2 | 4 | 6 |
+|---|---:|---:|---:|---:|
+| GAMG | **0.86x** | 0.95x | 0.99x | 1.03x |
+| block-Jacobi | 1.01x | 0.97x | 0.97x | 0.97x |
+
+The GAMG win decays to nothing by 4 ranks and is inside the noise at 6. Plausibly the serial
+compute fraction `-O3` accelerates (setup, smoothing) shrinks as it is divided across ranks
+while communication does not. So: **`-O3` PETSc is worth having for serial/low-rank work and is
+never a loss, but it is not a meaningful production win at MPI=4+** — which is where the
+magnetron work actually runs. Do not expect it to move those numbers.
 
 ### Where that leaves it: the block-Jacobi gap is still unexplained
 
