@@ -69,6 +69,7 @@ win_vs_linux/
 ├── bench_env.sh             <- Linux toolchain env (GCC/OpenMPI/HDF5/PETSc/reggie paths)
 ├── parse_timings.py         <- reads each run's std.out -> CSV + scaling/GAMG tables
 │   # investigation scripts — Windows side
+├── sweep_repeats_win.sh     <- the sweep WITH repeats + both fixes -> win_timings_fixed*.csv
 ├── blas_threads_win.sh      <- ** the test that resolved the gap ** (OPENBLAS_NUM_THREADS=1)
 ├── logview_win.sh           <- PETSc -log_view capture; the drift-free per-kernel instrument
 ├── petsc_opt_ab_win.sh      <- interleaved -O3 vs -O1 PETSc (static lib -> pick the binary)
@@ -112,6 +113,16 @@ Produces `logs\pic.log`, `logs\dsmc.log`, and `results\win_timings.csv`, and pri
 scaling and GAMG-speedup tables. Edit the `$*_BIN`, `$REGGIE`, `$PYTHON` variables at the
 top of the script if your paths differ. Needs a machine with **≥ 6 physical cores** for the
 6-rank point (MS-MPI does not oversubscribe by default).
+
+> ⚠️ `run_benchmark.ps1` runs **one** run per point and does **not** apply the two fixes found on
+> 2026-07-30. Single runs on this box are worth ±3–6% (±15% at 6 ranks) and two published claims
+> died to that. For numbers you intend to quote, use the repeat sweep instead — it pins
+> `OPENBLAS_NUM_THREADS=1`, uses the `-o3petsc` PIC binary, and reports medians:
+>
+> ```bash
+> ./sweep_repeats_win.sh 3          # -> results/win_timings_fixed{,_raw}.csv, ~65 min
+> RANKS=6 CASES=pic ./sweep_repeats_win.sh 1 /tmp/smoke   # cheap mechanics check first
+> ```
 
 ---
 

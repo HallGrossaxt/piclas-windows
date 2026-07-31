@@ -5,6 +5,10 @@ Binaries: PIC = `build-poisson-boris-petsc-mpi` (PETSc 3.24.5, `-march=native`);
 DSMC = `build-maxwell-dsmc-release-mpi` (`-march=x86-64-v2`). Release, both MPI=ON.
 Wall time = PICLas' own `PICLAS FINISHED! [ … sec ]` (pure solve). Raw data: `results/win_timings.csv`.
 
+> **⚠️ Read [the fixed-configuration sweep](#fixed-configuration-sweep-2026-07-30-current-numbers)
+> at the bottom first — it supersedes the single-run tables below.** They were taken before the
+> OpenBLAS-threading and PETSc-`-O3` fixes and at one run per point, on a box with 3–6% drift.
+
 ## PIC — HDG-Poisson HEMP thruster (2000 steps)
 
 | ranks | block-Jacobi [s] | GAMG [s] | GAMG speedup |
@@ -81,3 +85,68 @@ Regenerate that table with
 ```bash
 python3 parse_timings.py --compare results/win_timings.csv results/linux_timings.csv
 ```
+
+---
+
+# Fixed-configuration sweep, 2026-07-30 (current numbers)
+
+**These supersede every table above.** `sweep_repeats_win.sh`, **3+ repeats per point, medians**,
+with both build fixes applied: the **`-o3petsc` PIC binary** and **`OPENBLAS_NUM_THREADS=1`**.
+Raw data with every repetition: `results/win_timings_fixed_raw.csv`; medians:
+`results/win_timings_fixed.csv`.
+
+## PIC — HDG-Poisson HEMP thruster (2000 steps)
+
+| ranks | block-Jacobi [s] | GAMG [s] | GAMG speedup | old BJ | old GAMG |
+|------:|-----------------:|---------:|-------------:|-------:|---------:|
+| 1 | **27.09** | **34.97** | 0.77× | 36.30 | 44.70 |
+| 2 | 22.77 | 20.38 | 1.12× | 23.52 | 21.22 |
+| 4 | 16.03 | 14.02 | 1.14× | 16.38 | 13.72 |
+| 6 | 15.19 | 12.56 | 1.21× | 15.05 | 12.28 |
+
+Repeat spread 1–3% (against 3–6% for the old single runs). The **1-rank points drop 25% / 22%**;
+everything from 2 ranks up is unchanged, exactly as the OpenBLAS diagnosis predicts — see
+`LINUX_RESULTS.md` → "Windows-side session", Step 5.
+
+Strong scaling (speedup vs 1 rank / parallel efficiency):
+
+| ranks | block-Jacobi | GAMG |
+|------:|-------------:|-----:|
+| 1 | 1.00× (100%) | 1.00× (100%) |
+| 2 | 1.19× (59%)  | 1.72× (86%) |
+| 4 | 1.69× (42%)  | 2.49× (62%) |
+| 6 | 1.78× (30%)  | 2.78× (46%) |
+
+> **PIC scaling now looks *worse* than the old table (BJ 1.78× vs 2.41× at 6 ranks). That is a
+> correction, not a regression.** The old 1-rank baseline was inflated by the OpenBLAS thread-team
+> penalty, which flattered every speedup measured against it. The absolute times at 2/4/6 ranks are
+> unchanged; only the reference point moved. The real lesson is that this 1275-element case simply
+> does not have enough work to scale past ~4 ranks.
+
+The **GAMG-vs-block-Jacobi** ratios are essentially identical to before
+(0.77/1.12/1.14/1.21 vs 0.81/1.11/1.19/1.23) — as expected, since those were always
+same-session ratios, where drift cancels.
+
+## DSMC — fully-periodic 3D box (27000 elems, 810k particles, 1000 steps, triatracking)
+
+| ranks | time [s] | reps | spread | speedup | parEff | July |
+|------:|---------:|-----:|-------:|--------:|-------:|-----:|
+| 1 | 404.79 | 3 | 0.03% | 1.00× | 100% | 397.77 |
+| 2 | 204.24 | 3 | 1.2% | 1.98× | 99% | 197.55 |
+| 4 | 123.04 | 6 | 24% ⚠️ | 3.29× | 82% | 111.73 |
+| 6 | 109.73 | 5 | 1.6% | 3.69× | 61% | 85.52 |
+
+DSMC links no PETSc, has **no OpenMP** (checked: no `GOMP_`/`omp_get` symbols) and does not call
+BLAS in its hot path, so neither fix can touch it — and indeed 1 and 2 ranks reproduce July to
+within 2%.
+
+> **⚠️ The 6-rank DSMC point has degraded across sessions on this machine, and it is not a code
+> change.** Same binary, same inputs: **85.52 s (Jul 28) → 97.94 s (Jul 29) → 109.73 s (Jul 30)**,
+> roughly −13% per session, while 1-rank moved only +1.8%. The 6-rank spread *within* today's
+> session is only 1.6% (n=5), so this is reproducible now — it is the machine's all-core behaviour
+> that has changed, not measurement noise. Thermal state is the obvious suspect. **Treat
+> high-rank-count absolute times on this box as untrustworthy across days**, and do not read the
+> declining parallel efficiency (78% → 61%) as a property of PICLas.
+>
+> The 4-rank point also produced one clear outlier (143.14 s against a 115–127 s cluster), which
+> is why it carries 6 repeats.

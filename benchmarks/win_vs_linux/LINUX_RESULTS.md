@@ -652,6 +652,40 @@ MinGW — worth ~1 s on a 27 s run. That is the whole remaining story, and it is
 > netlib BLAS — installing OpenBLAS there (single-threaded!) would move its number too, so 1.11x
 > is not a settled figure.
 
+## The corrected OS comparison
+
+The full Windows sweep was re-run in the fixed configuration (`-o3petsc` +
+`OPENBLAS_NUM_THREADS=1`, 3+ repeats per point, medians — `sweep_repeats_win.sh`,
+`results/win_timings_fixed.csv`). Against the Linux numbers from 2026-07-28:
+
+| case | ranks | Linux | Win (old) | Win (fixed) | linux/win old | **linux/win fixed** |
+|---|---:|---:|---:|---:|---:|---:|
+| PIC BJ | 1 | 23.99 | 36.30 | **27.09** | 0.66x | **0.89x** |
+| PIC BJ | 2 | 20.45 | 23.52 | 22.77 | 0.87x | 0.90x |
+| PIC BJ | 4 | 13.24 | 16.38 | 16.03 | 0.81x | 0.83x |
+| PIC BJ | 6 | 12.95 | 15.05 | 15.19 | 0.86x | 0.85x |
+| PIC GAMG | 1 | 33.98 | 44.70 | **34.97** | 0.76x | **0.97x** |
+| PIC GAMG | 2 | 18.47 | 21.22 | 20.38 | 0.87x | 0.91x |
+| PIC GAMG | 4 | 12.56 | 13.72 | 14.02 | 0.92x | 0.90x |
+| PIC GAMG | 6 | 10.02 | 12.28 | 12.56 | 0.82x | 0.80x |
+
+The two outlying 1-rank points are gone; what remains is a fairly uniform **0.80–0.97 band**,
+consistent with the residual MatMult codegen difference plus cross-session drift.
+
+**Three caveats, all of which cut against over-reading this table:**
+
+1. **These ratios are still cross-session** (Linux ran 2026-07-28, Windows 2026-07-30) and
+   therefore inherit 3–6% drift — up to 15% at 6 ranks. The drift-free evidence is the
+   `-log_view` Mflop/s comparison in Step 2, not this table.
+2. **Linux was never re-run in its own best configuration.** It is still on Ubuntu's reference
+   netlib BLAS (~12% of its profile). Installing OpenBLAS there — single-threaded! — would move
+   the Linux column too.
+3. **The DSMC rows are deliberately omitted here.** The Windows box's 6-rank behaviour has
+   degraded ~13% per session since the Linux run (85.52 → 97.94 → 109.73 s on the same binary),
+   so a DSMC OS ratio measured across those days would be reporting the machine's thermal state,
+   not the OS. See the warning in `RESULTS.md`. The 1- and 2-rank DSMC anchors still reproduce
+   July to within 2%, and those remain at parity.
+
 ## What this means for the rest of the project
 
 - **`OPENBLAS_NUM_THREADS=1` is worth setting for any serial or low-rank PICLas run on Windows

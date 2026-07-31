@@ -1,0 +1,13 @@
+os,case,solver,ranks,sec
+win,dsmc,-,1,404.79
+win,dsmc,-,2,204.24
+win,dsmc,-,4,123.04
+win,dsmc,-,6,109.73
+win,pic,BJACOBI,1,27.09
+win,pic,BJACOBI,2,22.77
+win,pic,BJACOBI,4,16.03
+win,pic,BJACOBI,6,15.19
+win,pic,GAMG,1,34.97
+win,pic,GAMG,2,20.38
+win,pic,GAMG,4,14.02
+win,pic,GAMG,6,12.56
