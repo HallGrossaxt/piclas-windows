@@ -1,0 +1,17 @@
+os,case,arm,ranks,rep,sec
+win,dsmc,cpu,1,1,408.64
+win,dsmc,gpu,1,1,444.97
+win,dsmc,cpu,2,1,201.04
+win,dsmc,gpu,2,1,227.41
+win,dsmc,cpu,4,1,126.86
+win,dsmc,gpu,4,1,132.37
+win,dsmc,cpu,6,1,91.63
+win,dsmc,gpu,6,1,100.21
+win,dsmc,gpu,1,2,440.90
+win,dsmc,cpu,1,2,416.39
+win,dsmc,gpu,2,2,232.59
+win,dsmc,cpu,2,2,204.42
+win,dsmc,gpu,4,2,128.48
+win,dsmc,cpu,4,2,124.62
+win,dsmc,gpu,6,2,122.41
+win,dsmc,cpu,6,2,103.28

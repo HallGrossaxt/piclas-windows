@@ -680,11 +680,13 @@ consistent with the residual MatMult codegen difference plus cross-session drift
 2. **Linux was never re-run in its own best configuration.** It is still on Ubuntu's reference
    netlib BLAS (~12% of its profile). Installing OpenBLAS there — single-threaded! — would move
    the Linux column too.
-3. **The DSMC rows are deliberately omitted here.** The Windows box's 6-rank behaviour has
-   degraded ~13% per session since the Linux run (85.52 → 97.94 → 109.73 s on the same binary),
-   so a DSMC OS ratio measured across those days would be reporting the machine's thermal state,
-   not the OS. See the warning in `RESULTS.md`. The 1- and 2-rank DSMC anchors still reproduce
-   July to within 2%, and those remain at parity.
+3. **The DSMC rows are deliberately omitted here.** The Windows multi-rank DSMC points are
+   **thermally throttled** — five consecutive identical 6-rank runs climb 88.24 → 109.05 s
+   (+24%), and where a point falls in a long sweep decides its value. A DSMC OS ratio built from
+   those would report the machine's thermal state, not the OS. See the warning in `RESULTS.md`.
+   The 1- and 2-rank DSMC anchors are unaffected, reproduce July to within 2%, and remain at
+   parity. (This also retires the earlier "the box is degrading per session" reading, which was
+   this effect misdiagnosed.)
 
 ## What this means for the rest of the project
 

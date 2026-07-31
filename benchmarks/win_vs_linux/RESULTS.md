@@ -140,13 +140,100 @@ DSMC links no PETSc, has **no OpenMP** (checked: no `GOMP_`/`omp_get` symbols) a
 BLAS in its hot path, so neither fix can touch it — and indeed 1 and 2 ranks reproduce July to
 within 2%.
 
-> **⚠️ The 6-rank DSMC point has degraded across sessions on this machine, and it is not a code
-> change.** Same binary, same inputs: **85.52 s (Jul 28) → 97.94 s (Jul 29) → 109.73 s (Jul 30)**,
-> roughly −13% per session, while 1-rank moved only +1.8%. The 6-rank spread *within* today's
-> session is only 1.6% (n=5), so this is reproducible now — it is the machine's all-core behaviour
-> that has changed, not measurement noise. Thermal state is the obvious suspect. **Treat
-> high-rank-count absolute times on this box as untrustworthy across days**, and do not read the
-> declining parallel efficiency (78% → 61%) as a property of PICLas.
+> ## ⚠️ These DSMC multi-rank numbers are thermally throttled — read this before quoting them
 >
-> The 4-rank point also produced one clear outlier (143.14 s against a 115–127 s cluster), which
-> is why it carries 6 repeats.
+> An earlier version of this file claimed the box had "degraded ~13% per session" at 6 ranks
+> (85.52 s Jul 28 → 97.94 Jul 29 → 109.73 Jul 30). **That was wrong and is retracted.** The real
+> effect is **within-session thermal throttling under sustained all-core load.** Five consecutive
+> identical 6-rank DSMC runs, same binary, same inputs, back to back:
+>
+> | run | 1 | 2 | 3 | 4 | 5 |
+> |---|---:|---:|---:|---:|---:|
+> | sec | 88.24 | 91.78 | 92.31 | 105.16 | 109.05 |
+>
+> A monotonic **+24% in five runs.** That single trend explains everything the "degradation"
+> story was invented for: the sweep above runs DSMC **last**, so its 6-rank point (109.73 s) is
+> the fully-heated value and coincides with run 5; July's 85.52 s is a cold-start value and
+> coincides with run 1. Nothing about the machine changed between days — only how much load
+> preceded the measurement.
+>
+> Consequences, which apply to any future benchmarking on this box:
+>
+> - **The DSMC 4- and 6-rank rows above are hot-state numbers.** Cold-state 6-rank is ~88 s. The
+>   4-rank outlier (143.14 s against a 115–127 s cluster) is the same effect, not a glitch.
+> - **Parallel efficiency at 4/6 ranks is understated** and must not be read as a property of
+>   PICLas. The 1- and 2-rank rows are unaffected (short enough, fewer cores) and reproduce to
+>   0.03% / 1.2%.
+> - **Never compare two arms in a fixed order.** The second one is the hot one. Interleave with
+>   **ABBA ordering** (see `gpu_ab_win.sh`), which cancels a linear thermal trend; a fixed A-then-B
+>   order manufactures a 5–20% difference out of nothing.
+> - The previously documented "±15% drift at 6 ranks" is very likely this same effect rather than
+>   independent session noise.
+
+---
+
+# GPU support: measured, and it is a 4–14% **loss** on this benchmark
+
+`gpu_ab_win.sh`, ABBA-ordered with cooldowns, 2 repetitions per arm per rank count, medians.
+Raw data: `results/win_timings_gpu_raw.csv`. GPU is an **RTX 3060** (12 GB, compute 8.6,
+driver 591.86).
+
+## DSMC — the only case that can be measured
+
+`build-maxwell-dsmc-release-mpi` vs `build-maxwell-dsmc-release-mpi-gpu` differ in **exactly one
+CMake option** (`PICLAS_USE_GPU`) and agree on eqnsys, timedisc, `LIBS_USE_PETSC=OFF`, Release and
+`-march=x86-64-v2 -mtune=generic`. A clean single-variable A/B.
+
+| ranks | CPU [s] | GPU [s] | **speedup** | GPU util | VRAM |
+|------:|--------:|--------:|------------:|---------:|-----:|
+| 1 | 412.51 | 442.94 | **0.93×** | 0 % | 870 MiB |
+| 2 | 202.73 | 230.00 | **0.88×** | 1 % | 1156 MiB |
+| 4 | 125.74 | 130.43 | **0.96×** | 6 % | 1706 MiB |
+| 6 |  97.45 | 111.31 | **0.88×** | 6 % | 2264 MiB |
+
+**The GPU build is slower at every rank count**, and the losses are paired and repeatable — in
+every one of the eight pairs the GPU arm was the slower one, including the reps where the GPU ran
+*first* (i.e. on the cooler machine), so this is not the thermal ordering artefact.
+
+**GPU utilisation of 0–6% is the whole story.** The device is idle almost the entire run.
+
+### Why — and why this is not a tuning problem
+
+PICLas' CUDA support offloads the **particle push** (`particle_push.cu`; `lserk_push.cu` for the
+field-coupled PIC push). **Collision, pairing, tracking, sampling and the field solve all stay on
+the CPU.** So every timestep pays a host→device→host copy of particle state to run one cheap
+kernel, while the expensive stages never leave the CPU. This case is dominated by **tracking**,
+which is the hardest PICLas stage to port (per-particle ray/cell-face intersection, mesh
+connectivity, mortar, halo, MPI).
+
+Independent corroboration from the AgNozzle study: there the push measured ~14% of runtime in the
+GPU build versus ~2–4% on CPU — i.e. moving the push to the GPU made the push *itself* more
+expensive, exactly the transfer overhead seen here.
+
+At 1 rank the GPU is uncontended and still 0.93×, so single-GPU sharing across ranks is **not**
+the explanation either (though the binary does warn that VRAM is partitioned per rank and
+suggests NVIDIA MPS for many-rank runs).
+
+## PIC — cannot be measured without a new build
+
+Every GPU build on this machine is `LIBS_USE_PETSC=OFF`, so none can run the benchmark's
+`PrecondType=2/4` PETSc solvers (without PETSc, `PrecondType` selects the internal-CG
+preconditioner and GAMG is unavailable). `build-poisson-boris-mpi-gpu` also lacks superB and
+aborts immediately on the frozen background field:
+
+```
+init_BGField.f90:422   'Activate SuperB.'
+```
+
+A number would need a fresh build with `PICLAS_USE_GPU=ON` + `POSTI_BUILD_SUPERB=ON` +
+`LIBS_USE_PETSC=ON` at `-march=native`. **Expect ~1.00× from it**: this case carries only ~12
+particles and ~94% of its runtime is the HDG field solve, which stays on the CPU. There is
+essentially no push to offload.
+
+## Verdict
+
+**Do not use the GPU builds for this class of work.** On DSMC they cost 4–14%; on the PIC case
+they cannot run at all, and would be neutral if they could. A GPU port only pays here once the
+**collision** stage (dense/collision-dominated regimes) or **tracking** is on the device — see the
+AgNozzle Phase-0 measurement, which put the Amdahl ceiling for a GPU collision kernel at ~1.03×
+in the rarefied regime.

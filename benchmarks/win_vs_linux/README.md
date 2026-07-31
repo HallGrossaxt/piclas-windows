@@ -47,7 +47,13 @@ shipped binary and never recompiles.
 | case | build dir (Windows) | key cmake options |
 |------|---------------------|-------------------|
 | PIC  | `build-poisson-boris-petsc-mpi` | `PICLAS_EQNSYSNAME=poisson`, `PICLAS_TIMEDISCMETHOD=Boris-Leapfrog`, `LIBS_USE_PETSC=ON`, `LIBS_USE_MPI=ON`, `CMAKE_BUILD_TYPE=Release`, `PICLAS_POLYNOMIAL_DEGREE=N`, `PICLAS_INSTRUCTION="-march=native -mtune=native"`, PETSc **3.24.5** (no Hypre, no MUMPS) |
+| PIC (fair PETSc) | `build-poisson-boris-petsc-mpi-o3petsc` | identical, but links `petsc-msmpi-O3` (PETSc at `-O3 -march=native` instead of the `-g -O` default). Use this one. |
 | DSMC | `build-maxwell-dsmc-release-mpi` | `PICLAS_EQNSYSNAME=maxwell`, `PICLAS_TIMEDISCMETHOD=DSMC`, `LIBS_USE_PETSC=OFF`, `LIBS_USE_MPI=ON`, `CMAKE_BUILD_TYPE=Release`, `PICLAS_INSTRUCTION="-march=x86-64-v2 -mtune=generic"` |
+| DSMC (GPU) | `build-maxwell-dsmc-release-mpi-gpu` | as above **+ `PICLAS_USE_GPU=ON`** (CUDA arch 86). One-option delta, so a clean A/B — measured **4–14% slower**, see `RESULTS.md`. Needs `C:\msys64\ucrt64\bin` on `PATH` or it fails to load with no output. |
+
+> **GPU builds cannot run the PIC case.** All of them are `LIBS_USE_PETSC=OFF` (so no
+> `PrecondType=2/4`), and `build-poisson-boris-mpi-gpu` also lacks superB, aborting at
+> `init_BGField.f90:422 'Activate SuperB.'` on the frozen background field.
 
 > ⚠️ The two Windows builds were configured with **different `-march`** (PIC=`native`,
 > DSMC=`x86-64-v2`). That's fine for the *per-case* OS-vs-OS comparison as long as **each
@@ -70,6 +76,7 @@ win_vs_linux/
 ├── parse_timings.py         <- reads each run's std.out -> CSV + scaling/GAMG tables
 │   # investigation scripts — Windows side
 ├── sweep_repeats_win.sh     <- the sweep WITH repeats + both fixes -> win_timings_fixed*.csv
+├── gpu_ab_win.sh            <- CPU vs GPU on DSMC, ABBA-ordered (GPU loses 4-14%; see RESULTS.md)
 ├── blas_threads_win.sh      <- ** the test that resolved the gap ** (OPENBLAS_NUM_THREADS=1)
 ├── logview_win.sh           <- PETSc -log_view capture; the drift-free per-kernel instrument
 ├── petsc_opt_ab_win.sh      <- interleaved -O3 vs -O1 PETSc (static lib -> pick the binary)

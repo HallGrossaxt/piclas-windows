@@ -42,3 +42,6 @@ driver_full.log
 # Compiled Linux helper from the THP test: build with `gcc -O2 -o thpon thpon.c` on Linux.
 # The source is tracked, the ELF binary is not.
 thpon
+
+# CPU-vs-GPU A/B (gpu_ab_win.sh, ABBA-ordered). Raw only — medians live in RESULTS.md.
+!results/win_timings_gpu_raw.csv
