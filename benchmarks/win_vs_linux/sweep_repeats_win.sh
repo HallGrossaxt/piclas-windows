@@ -16,7 +16,8 @@
 #         results/win_timings_fixed_raw.csv    (every repetition)
 #
 # Usage:  ./sweep_repeats_win.sh [reps] [work_dir]
-# Runtime: ~65 min at reps=3 (DSMC 1-rank alone is ~400 s). Keep the box otherwise idle.
+# Runtime: ~65 min at reps=3, plus WARMUP=2 discarded runs per point (DSMC 1-rank alone is
+# ~400 s, so budget ~2 h for the full sweep). Keep the box otherwise idle.
 set -u
 ROOT=${PICLAS_ROOT:-/c/Data/PRJ/piclas-win/piclas-win-master}
 HERE=$ROOT/benchmarks/win_vs_linux
@@ -66,11 +67,21 @@ timed_run() { # $1=dir $2=bin $3=ranks $4=tag -> echoes seconds, or FAIL
   [ -n "$t" ] && echo "$t" || echo FAIL
 }
 
+# Warm-up runs, discarded. This box throttles ~20% from cold to plateau, and 12% of that lands
+# by the *second* run (~20 s of load); the plateau is then flat to 1.9% and is the only
+# reproducible regime. A cold run is faster but you get one per five idle minutes, so it is
+# neither repeatable nor representative. Measured curve: results/thermal_probe_win.csv.
+WARMUP=${WARMUP:-2}
+
 sweep() { # $1=case  $2=solver-label  $3=bin  $4=setup-fn  $5=PrecondType(pic only)
   local case=$1 solver=$2 bin=$3 setupfn=$4 pt=${5:-}
   for n in $RANKS; do
     local d=$WORK/${case}_${solver}_r$n
     if [ "$case" = pic ]; then $setupfn "$d" "$pt"; else $setupfn "$d"; fi
+    local w
+    for w in $(seq 1 $WARMUP); do
+      timed_run "$d" "$bin" "$n" "warmup$w" > /dev/null
+    done
     local vals=""
     for r in $(seq 1 $REPS); do
       local t; t=$(timed_run "$d" "$bin" "$n" "rep$r")

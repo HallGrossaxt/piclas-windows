@@ -45,3 +45,7 @@ thpon
 
 # CPU-vs-GPU A/B (gpu_ab_win.sh, ABBA-ordered). Raw only — medians live in RESULTS.md.
 !results/win_timings_gpu_raw.csv
+
+# Thermal characterisation of the box (thermal_probe_win.csv): the cold-to-plateau curve that
+# the warm-up discipline in sweep_repeats_win.sh is based on.
+!results/thermal_probe_win.csv

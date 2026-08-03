@@ -157,18 +157,51 @@ within 2%.
 > coincides with run 1. Nothing about the machine changed between days — only how much load
 > preceded the measurement.
 >
-> Consequences, which apply to any future benchmarking on this box:
+> ### The throttle curve, measured
 >
-> - **The DSMC 4- and 6-rank rows above are hot-state numbers.** Cold-state 6-rank is ~88 s. The
->   4-rank outlier (143.14 s against a 115–127 s cluster) is the same effect, not a glitch.
-> - **Parallel efficiency at 4/6 ranks is understated** and must not be read as a property of
->   PICLas. The 1- and 2-rank rows are unaffected (short enough, fewer cores) and reproduce to
->   0.03% / 1.2%.
-> - **Never compare two arms in a fixed order.** The second one is the hot one. Interleave with
->   **ABBA ordering** (see `gpu_ab_win.sh`), which cancels a linear thermal trend; a fixed A-then-B
->   order manufactures a 5–20% difference out of nothing.
-> - The previously documented "±15% drift at 6 ranks" is very likely this same effect rather than
->   independent session noise.
+> A 20-second all-core probe (the same DSMC case shortened to 200 steps), 22 runs back-to-back
+> from a cold start, then 5 minutes idle, then 5 more. Raw data: `results/thermal_probe_win.csv`.
+>
+> | run | 1 | 2 | 3 | 4–7 | 8–10 | 11–22 (plateau) |
+> |---|---:|---:|---:|---:|---:|---:|
+> | sec | **16.30** | 18.25 | 18.91 | ~19.0–19.2 | ~19.0–19.4 | **19.52** avg |
+>
+> | after 5 min idle | C1 | C2 | C3 | C4 | C5 |
+> |---|---:|---:|---:|---:|---:|
+> | sec | **16.17** | 18.03 | 18.77 | 19.42 | 19.20 |
+>
+> - **Cold-to-plateau penalty: +20%** (16.30 → 19.52 s).
+> - **Most of it lands immediately** — 12% is gone by the *second* run, i.e. after ~20 s of load.
+> - **Plateau reached after ~2–3 minutes** of continuous load, and it is **stable to 1.9%**
+>   (19.36–19.73 s across runs 11–22).
+> - **Recovery is complete after 5 minutes idle** — C1 (16.17 s) matches A1 (16.30 s), and the
+>   curve then repeats identically.
+>
+> ### Protocol: warm up, don't cool down
+>
+> This inverts the obvious advice. A cold run is ~20% faster, but you only get **one per five
+> idle minutes**, so cold numbers are neither reproducible nor representative of a production run
+> that lasts minutes. The reproducible regime is the **plateau**, which is flat to 1.9%.
+>
+> 1. **Discard the first 2–3 runs** at any new rank count, then measure. Never quote a first run.
+> 2. Report the **median of ≥3 plateau runs**.
+> 3. **Still use ABBA ordering** when comparing two arms (`gpu_ab_win.sh`). It costs nothing and
+>    protects against residual drift; a fixed A-then-B order manufactures a 5–20% difference out
+>    of nothing when either arm is still on the steep part of the curve.
+> 4. 1- and 2-rank points barely show this (fewer cores, and they reproduce to 0.03% / 1.2%), so
+>    the effect is specific to 4+ ranks.
+>
+> ### What that means for the numbers above
+>
+> - **The DSMC 4-/6-rank rows are plateau values** — the sweep ran DSMC last, so they are the
+>   *reproducible* ones, not the broken ones. July's 85.52 s was the un-repeatable cold outlier.
+>   The 4-rank outlier (143.14 s against a 115–127 s cluster) is a different, larger excursion.
+> - **Parallel efficiency at 4/6 ranks is understated** relative to a cold machine and must not be
+>   read as a property of PICLas.
+> - The previously documented "±15% drift at 6 ranks" is this effect, not independent session
+>   noise — it depended entirely on where in a sweep the 6-rank point happened to fall.
+> - Windows-vs-Linux DSMC ratios across sessions remain untrustworthy unless both sides used the
+>   same warm-up discipline, which the Linux run did not.
 
 ---
 
