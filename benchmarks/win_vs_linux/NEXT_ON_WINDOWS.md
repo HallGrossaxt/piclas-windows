@@ -7,7 +7,7 @@
 > **Cause: MSYS2's OpenBLAS is built multithreaded.** PETSc calls `BLASaxpy` ~110k times on
 > ~15.7k-element vectors, just above OpenBLAS's threshold for going parallel, so it forks and
 > joins a thread team 110,000 times — a fixed ~50 µs per call against ~4 µs on Linux, whose
-> reference netlib BLAS is single-threaded. **`OPENBLAS_NUM_THREADS=1` takes the 1-rank case
+> reference netlib BLAS is single-threaded. **`OMP_NUM_THREADS=1` takes the 1-rank case
 > from 36.70 s to 27.26 s against Linux's 27.47 s: parity.**
 >
 > Outcomes against this runbook's expectations:
@@ -25,13 +25,13 @@
 >   instructions with the base pointers spilled to stack, versus 8 with FMA at `-O3`. But
 >   Windows `-O1` already beats Linux `-O1` on that kernel, so MinGW codegen was never the
 >   problem. GCC 15.2 vs 11.2 is off the hook except for a residual 1.14x on MatMult at `-O3`.
-> - **§5 Step 4 — the tables are corrected**, with the new `OPENBLAS_NUM_THREADS=1` row.
+> - **§5 Step 4 — the tables are corrected**, with the new `OMP_NUM_THREADS=1` row.
 > - **Scope:** the penalty is **1-rank only**. By 2 ranks it is within noise and by 4 ranks
 >   `-log_view` shows VecAXPY already at 24335 Mflop/s with default OpenBLAS — decomposition
 >   drops each rank's vectors below OpenBLAS's parallelisation threshold. This retro-explains
 >   why the original table showed 0.66x at 1 rank but 0.81–0.87x at 2/4/6.
 >
-> **Recommended Windows PIC configuration:** `petsc-msmpi-O3` + `OPENBLAS_NUM_THREADS=1`.
+> **Recommended Windows PIC configuration:** `petsc-msmpi-O3` + `OMP_NUM_THREADS=1`.
 > Do **not** expect it to move the magnetron numbers — that runs at MPI=4–6, past the threshold.
 
 Original handoff, written 2026-07-30 from the **Linux** side, after executing every step of

@@ -118,6 +118,15 @@ INTERFACE
   END SUBROUTINE setstacksizeunlimited
 END INTERFACE
 
+! Pin OpenBLAS to one thread per rank (Windows/MSYS2 only; see src/globals/blasthreads.c).
+! Returns 1 if it took effect, 0 if there is no OpenBLAS or the user set OPENBLAS_NUM_THREADS.
+INTERFACE
+  FUNCTION piclas_set_blas_threads_serial() BIND(C, name='piclas_set_blas_threads_serial')
+    USE ISO_C_BINDING, ONLY : c_int
+    INTEGER(c_int) :: piclas_set_blas_threads_serial
+  END FUNCTION piclas_set_blas_threads_serial
+END INTERFACE
+
 INTERFACE
   SUBROUTINE processmemusage(memUsed,memAvail,memTotal) BIND(C, name='processmemusage')
     USE ISO_C_BINDING,   ONLY : c_double
@@ -190,6 +199,7 @@ INTERFACE ISFINITE
 END INTERFACE
 
 PUBLIC :: setstacksizeunlimited
+PUBLIC :: piclas_set_blas_threads_serial
 PUBLIC :: processmemusage
 PUBLIC :: WarningMemusage
 PUBLIC :: CollectMemUsage

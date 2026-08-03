@@ -10,7 +10,7 @@
 #
 # Result (7 pairs, 2026-07-30): median 37.81 s -> 36.49 s = 3.6%, of which ~1 point is the
 # `-O3` build averaging 15.30 CG iterations instead of 15.50 (FMA changes the rounding, hence
-# the convergence path) rather than running faster. With OPENBLAS_NUM_THREADS=1 set on both
+# the convergence path) rather than running faster. With OMP_NUM_THREADS=1 set on both
 # arms it is 28.21 s -> 27.34 s = 3.2%.
 #
 # Beware: the paired spread is wide (0.14 s to 2.94 s). A single pair is worthless here —

@@ -13,10 +13,10 @@
 #   results/logview_linux_bjacobi_1rank.txt          (Linux, PETSc -O3)
 #   results/logview_linux_bjacobi_1rank_petscO1.txt  (Linux, PETSc -g -O — flag-matched to o1)
 #   results/logview_win_bjacobi_1rank.txt            (Windows o1, default OpenBLAS)
-#   results/logview_win_bjacobi_1rank_blas1thread.txt(Windows o1, OPENBLAS_NUM_THREADS=1)
+#   results/logview_win_bjacobi_1rank_blas1thread.txt(Windows o1, 1 BLAS thread)
 #   results/logview_win_bjacobi_4rank.txt            (Windows o1, 4 ranks — no BLAS penalty)
 #
-# Set OPENBLAS_NUM_THREADS=1 in the environment to capture the fixed configuration.
+# Set OMP_NUM_THREADS=1 in the environment to capture the fixed configuration.
 set -e
 ROOT=${PICLAS_ROOT:-/c/Data/PRJ/piclas-win/piclas-win-master}
 CASE=$ROOT/benchmarks/win_vs_linux/pic_hempt_hdg

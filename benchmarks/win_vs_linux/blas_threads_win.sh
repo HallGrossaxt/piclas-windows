@@ -11,7 +11,7 @@
 # thousand doubles, where the synchronisation dwarfs the work. Ubuntu's reference netlib
 # BLAS on the Linux side is single-threaded, so it never pays this.
 #
-# Result: OPENBLAS_NUM_THREADS=1 takes the 1-rank block-Jacobi case from 36.70 s to
+# Result: OMP_NUM_THREADS=1 takes the 1-rank block-Jacobi case from 36.70 s to
 # 27.26 s (median of 3 interleaved pairs) against Linux's 27.47 s — i.e. parity. The whole
 # 1.37x "residual gap" was this.
 #

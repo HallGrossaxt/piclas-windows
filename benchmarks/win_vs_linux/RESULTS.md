@@ -63,7 +63,7 @@ machine, dual boot, PICLas 4.2.0 + the GAMG patch on GCC 11.2 / OpenMPI 4.1.1).
 >
 > 1. **Multithreaded OpenBLAS** (the big one, **1-rank only**). MSYS2's OpenBLAS spawns a thread
 >    team per `daxpy`, and PETSc calls it ~110k times per run; Ubuntu's reference netlib BLAS is
->    single-threaded. `OPENBLAS_NUM_THREADS=1` takes the 1-rank block-Jacobi point from
+>    single-threaded. `OMP_NUM_THREADS=1` takes the 1-rank block-Jacobi point from
 >    **36.70 s to 27.26 s** against Linux's flag-matched 27.47 s — **parity**. Within noise by
 >    2 ranks, gone by 4.
 > 2. **PETSc built `-g -O`** (i.e. -O1, generic) on Windows against `-O3 -march=native` on Linux.
@@ -74,7 +74,7 @@ machine, dual boot, PICLas 4.2.0 + the GAMG patch on GCC 11.2 / OpenMPI 4.1.1).
 > along. Full account: `LINUX_RESULTS.md` → "Windows-side session, 2026-07-30".
 >
 > The **GAMG-vs-block-Jacobi** columns above are same-session ratios and remain valid.
-> Re-running the sweep with `OPENBLAS_NUM_THREADS=1` and the `-o3petsc` binary would refresh the
+> Re-running the sweep with `OMP_NUM_THREADS=1` and the `-o3petsc` binary would refresh the
 > absolute PIC numbers; it has not been done.
 
 Also note: "Windows edges ahead on multi-rank DSMC (~1.07–1.09×)" **did not reproduce** — see the
@@ -91,7 +91,7 @@ python3 parse_timings.py --compare results/win_timings.csv results/linux_timings
 # Fixed-configuration sweep, 2026-07-30 (current numbers)
 
 **These supersede every table above.** `sweep_repeats_win.sh`, **3+ repeats per point, medians**,
-with both build fixes applied: the **`-o3petsc` PIC binary** and **`OPENBLAS_NUM_THREADS=1`**.
+with both build fixes applied: the **`-o3petsc` PIC binary** and **`OMP_NUM_THREADS=1`**.
 Raw data with every repetition: `results/win_timings_fixed_raw.csv`; medians:
 `results/win_timings_fixed.csv`.
 

@@ -77,7 +77,7 @@ win_vs_linux/
 │   # investigation scripts — Windows side
 ├── sweep_repeats_win.sh     <- the sweep WITH repeats + both fixes -> win_timings_fixed*.csv
 ├── gpu_ab_win.sh            <- CPU vs GPU on DSMC, ABBA-ordered (GPU loses 4-14%; see RESULTS.md)
-├── blas_threads_win.sh      <- ** the test that resolved the gap ** (OPENBLAS_NUM_THREADS=1)
+├── blas_threads_win.sh      <- ** the test that resolved the gap ** (OMP_NUM_THREADS=1)
 ├── logview_win.sh           <- PETSc -log_view capture; the drift-free per-kernel instrument
 ├── petsc_opt_ab_win.sh      <- interleaved -O3 vs -O1 PETSc (static lib -> pick the binary)
 │   # investigation scripts — Linux side
@@ -124,7 +124,7 @@ top of the script if your paths differ. Needs a machine with **≥ 6 physical co
 > ⚠️ `run_benchmark.ps1` runs **one** run per point and does **not** apply the two fixes found on
 > 2026-07-30. Single runs on this box are worth ±3–6% (±15% at 6 ranks) and two published claims
 > died to that. For numbers you intend to quote, use the repeat sweep instead — it pins
-> `OPENBLAS_NUM_THREADS=1`, uses the `-o3petsc` PIC binary, and reports medians:
+> `OMP_NUM_THREADS=1`, uses the `-o3petsc` PIC binary, and reports medians:
 >
 > ```bash
 > ./sweep_repeats_win.sh 3          # -> results/win_timings_fixed{,_raw}.csv, ~65 min
@@ -185,16 +185,25 @@ Produces `results/linux_timings.csv`.
   `cmake/SetCompiler.cmake` drops **`-fstack-arrays`** on `WIN32` (gfortran ICE with LTO on
   MinGW), so the Fortran flags are *not* identical out of the box; measured at ~3% on the
   PIC case (see `LINUX_RESULTS.md`).
-* **BLAS threading — the big one on Windows.** ⚠️ **Set `OPENBLAS_NUM_THREADS=1` for the PIC
-  case at low rank counts.** MSYS2's OpenBLAS (which the Windows PETSc links) is built
-  multithreaded; Ubuntu's reference netlib BLAS is not. PETSc calls `BLASaxpy` ~110k times per
-  run on vectors just large enough to trip OpenBLAS's parallelisation threshold, so it forks and
-  joins a thread team 110,000 times — **54.7 µs per call against 4.1 µs on Linux.** At 1 rank
-  this alone was **1.35x**, i.e. the whole of what used to be the unexplained PIC gap
-  (36.70 s → 27.26 s, versus Linux's 27.47 s). It is a **low-rank effect only**: by 2 ranks it is
-  within noise and by 4 ranks OpenBLAS keeps `daxpy` serial on its own, because decomposition has
-  dropped each rank's vectors below its threshold. See `blas_threads_win.sh` and
-  `LINUX_RESULTS.md` → "Windows-side session".
+* **BLAS threading — the big one on Windows, now fixed in the source.** MSYS2's OpenBLAS (which
+  the Windows PETSc links) is built multithreaded; Ubuntu's reference netlib BLAS is not. PETSc
+  calls `BLASaxpy` ~110k times per run on vectors just large enough to trip the parallelisation
+  threshold, so it forks and joins a thread team 110,000 times — **54.7 µs per call against
+  4.1 µs on Linux.** At 1 rank this alone was **1.35x**, i.e. the whole of what used to be the
+  unexplained PIC gap (36.70 s → 27.26 s, versus Linux's 27.47 s). It is a **low-rank effect
+  only**: by 2 ranks it is within noise and by 4 ranks the threshold is no longer tripped, because
+  decomposition has shrunk each rank's vectors.
+
+  PICLas now pins one BLAS thread per rank at startup (`src/globals/blasthreads.c`), so **no
+  environment variable is needed** — rebuild to pick it up. Override with `OMP_NUM_THREADS`.
+
+  > ⚠️ **`OPENBLAS_NUM_THREADS` does nothing here.** MSYS2's OpenBLAS uses the **OpenMP** backend
+  > (`libopenblas.dll` imports `libgomp-1.dll`), and an OpenMP-backend OpenBLAS ignores both
+  > `OPENBLAS_NUM_THREADS` and `openblas_set_num_threads()`. Measured one variable at a time:
+  > `OPENBLAS_NUM_THREADS=1` → 37.54 s (no effect); `OMP_NUM_THREADS=1` → 27.97 s. The obvious
+  > variable is the inert one.
+
+  See `blas_threads_win.sh` and `LINUX_RESULTS.md` → "Windows-side session".
 * **Third-party library flags.** `PICLAS_INSTRUCTION` only reaches PICLas' own sources — it
   does **not** touch PETSc, HDF5 or OpenBLAS. For the PIC case most of the time is spent
   *inside* PETSc, so **PETSc's own `COPTFLAGS` must match on both OSes**. Check with

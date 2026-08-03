@@ -598,7 +598,9 @@ SET_TARGET_PROPERTIES(userblocklib PROPERTIES LANGUAGE C LINKER_LANGUAGE C
                                               COMPILE_OPTIONS "-fPIC"
                                               CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-ADD_LIBRARY(stacksizelib STATIC ./src/globals/stacksize.c)
+# blasthreads.c rides along in stacksizelib: both are small C startup/runtime-environment
+# helpers, and this way it is available to every target that already links stacksizelib.
+ADD_LIBRARY(stacksizelib STATIC ./src/globals/stacksize.c ./src/globals/blasthreads.c)
 SET_TARGET_PROPERTIES(stacksizelib PROPERTIES LANGUAGE C LINKER_LANGUAGE C
                                               COMPILE_OPTIONS "-fPIC"
                                               CMAKE_POSITION_INDEPENDENT_CODE ON)

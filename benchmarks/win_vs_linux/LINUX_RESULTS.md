@@ -481,7 +481,7 @@ Raw data: `results/linux_timings.csv`. Regenerate the comparison with
 # Windows-side session, 2026-07-30 — ✅ RESOLVED: it was multithreaded OpenBLAS
 
 The 1.37x residual is **explained and fixable**. One environment variable —
-`OPENBLAS_NUM_THREADS=1` — takes the 1-rank block-Jacobi PIC case from **36.70 s to 27.26 s**
+`OMP_NUM_THREADS=1` — takes the 1-rank block-Jacobi PIC case from **36.70 s to 27.26 s**
 against Linux's 27.47 s, i.e. **parity**. Nothing about Windows, MinGW, MS-MPI or the Win64 ABI
 was ever the problem.
 
@@ -570,7 +570,7 @@ it forks and joins a thread team **110,000 times** to do ~31 kflop of work each 
 reference netlib BLAS on the Linux side is single-threaded and never pays it — which is why Linux
 wins *despite* having the objectively worse BLAS library.
 
-`OPENBLAS_NUM_THREADS=1`, drift-free per kernel
+`OMP_NUM_THREADS=1`, drift-free per kernel
 (`results/logview_win_bjacobi_1rank_blas1thread.txt`):
 
 | kernel | Win default | Win **1 BLAS thread** | Linux `-O1` |
@@ -582,7 +582,7 @@ wins *despite* having the objectively worse BLAS library.
 Both BLAS-1 rows end up **faster than Linux**, as they should — OpenBLAS is the better library once
 it stops synchronising. And wall clock, interleaved so drift cancels:
 
-| pair | default OpenBLAS | `OPENBLAS_NUM_THREADS=1` |
+| pair | default OpenBLAS | `OMP_NUM_THREADS=1` |
 |---|---:|---:|
 | 1 | 38.44 s | 27.26 s |
 | 2 | 36.18 s | 26.89 s |
@@ -591,11 +591,52 @@ it stops synchronising. And wall clock, interleaved so drift cancels:
 
 **1.35x — the entire 1.37x residual.** Against Linux's flag-matched 27.47 s that is **0.99x**.
 
+### Which knob — `OPENBLAS_NUM_THREADS` does *nothing* here
+
+The experiments above set `OPENBLAS_NUM_THREADS=1` **and** `OMP_NUM_THREADS=1` together, so they
+never established which one mattered. Changing one at a time (1 rank, PETSc `-O3`):
+
+| environment | wall clock | VecAXPY |
+|---|---:|---:|
+| neither | 38.15 s | 6.34 s / 552 Mflop/s |
+| `OPENBLAS_NUM_THREADS=1` | 37.54 s | 6.14 s / 570 Mflop/s — **no effect** |
+| `OMP_NUM_THREADS=1` | **27.97 s** | **0.46 s / 7530 Mflop/s** |
+
+**MSYS2's OpenBLAS is built with the OpenMP threading backend** — `libopenblas.dll` imports
+`libgomp-1.dll`. An OpenMP-backend OpenBLAS **ignores `OPENBLAS_NUM_THREADS` and
+`openblas_set_num_threads()` entirely**; its thread count comes from OpenMP. So the only knob that
+works is `OMP_NUM_THREADS` / `omp_set_num_threads()`.
+
+This is worth stating loudly because `OPENBLAS_NUM_THREADS` is the variable everyone reaches for,
+it is the one OpenBLAS's own README documents first, and here it is silently inert. All timings in
+this document remain valid — every script set both variables — but the *attribution* was wrong
+until this was checked, and an earlier draft of these notes named the wrong variable throughout.
+
+### Now fixed in the binary — no environment variable needed
+
+`src/globals/blasthreads.c` calls `omp_set_num_threads(1)` at startup (from `piclaslib.f90`,
+beside `SetStackSizeUnlimited`). It resolves `libgomp-1.dll` via `GetModuleHandle`/`GetProcAddress`
+rather than linking it, so there is no new build dependency and it degrades to a no-op if no
+OpenMP runtime is present; `openblas_set_num_threads` is attempted afterwards to cover a
+pthread-backend OpenBLAS elsewhere. An explicit `OMP_NUM_THREADS`/`OPENBLAS_NUM_THREADS` in the
+environment always wins. Non-Windows builds are a deliberate no-op.
+
+Verified on the `-o3petsc` binary with **no environment variables set at all**:
+
+```
+BLAS pinned to 1 thread per rank (override with OMP_NUM_THREADS)
+PICLAS FINISHED! [ 27.28 sec ]
+VecAXPY   0.466 s / 7503 Mflop/s      KSPSolve  18.91 s / 4758 Mflop/s
+```
+
+38.15 s → **27.28 s** from the source change alone, and `KSPSolve` at 18.91 s now essentially
+matches Linux's 18.03 s. Rebuild any other PETSc-linked build to pick it up.
+
 ## Step 5 — scope: it is a 1-rank effect, and it disappears on its own
 
 The same interleaved A/B repeated at 2 and 4 ranks (medians of 3 pairs):
 
-| ranks | default OpenBLAS | `OPENBLAS_NUM_THREADS=1` | ratio |
+| ranks | default OpenBLAS | `OMP_NUM_THREADS=1` | ratio |
 |---:|---:|---:|---:|
 | **1** | 36.70 s | **27.26 s** | **1.35x** |
 | 2 | 25.97 s | 25.65 s | 1.01x |
@@ -624,14 +665,14 @@ at multi-rank is the PETSc `-O1`-vs-`-O3` asymmetry plus session drift.
 ## Step 6 — best Windows configuration, and the honest residual
 
 With BLAS threading fixed, PETSc's optimisation level still earns its keep at 1 rank
-(interleaved, 3 pairs, both arms `OPENBLAS_NUM_THREADS=1`):
+(interleaved, 3 pairs, both arms `OMP_NUM_THREADS=1`):
 
 | | PETSc `-g -O` | PETSc `-O3 -march=native` |
 |---|---:|---:|
 | runs | 28.07 / 28.62 / 28.21 | 27.99 / 27.19 / 27.34 |
 | **median** | **28.21 s** | **27.34 s** (**3.2%**) |
 
-**Recommended Windows PIC configuration: `petsc-msmpi-O3` + `OPENBLAS_NUM_THREADS=1`.**
+**Recommended Windows PIC configuration: `petsc-msmpi-O3` + `OMP_NUM_THREADS=1`.**
 
 The one genuine codegen difference left is drift-free from `log_view` and small: at `-O3`,
 **MatMult** runs 5579 Mflop/s on Windows vs 6352 on Linux (**1.14x**), while MatSolve is at parity
@@ -644,7 +685,7 @@ MinGW — worth ~1 s on a 27 s run. That is the whole remaining story, and it is
 |---|---:|---:|---:|
 | as originally reported (Win `-O1` / Linux `-O3`) | 37.67 s | 24.65 s | 1.53x |
 | PETSc flags equalised at `-g -O` | 37.81 s | 27.47 s | 1.37x |
-| **+ `OPENBLAS_NUM_THREADS=1`** | **27.26 s** | 27.47 s | **0.99x** |
+| **+ `OMP_NUM_THREADS=1`** | **27.26 s** | 27.47 s | **0.99x** |
 | both sides' best (`-O3` PETSc; Win also 1 BLAS thread) | 27.34 s | 24.65 s | 1.11x |
 
 > The last row still favours Linux by 11%, but Linux's `-O3` gain (11.4%) is larger than Windows'
@@ -655,7 +696,7 @@ MinGW — worth ~1 s on a 27 s run. That is the whole remaining story, and it is
 ## The corrected OS comparison
 
 The full Windows sweep was re-run in the fixed configuration (`-o3petsc` +
-`OPENBLAS_NUM_THREADS=1`, 3+ repeats per point, medians — `sweep_repeats_win.sh`,
+`OMP_NUM_THREADS=1`, 3+ repeats per point, medians — `sweep_repeats_win.sh`,
 `results/win_timings_fixed.csv`). Against the Linux numbers from 2026-07-28:
 
 | case | ranks | Linux | Win (old) | Win (fixed) | linux/win old | **linux/win fixed** |
@@ -690,7 +731,7 @@ consistent with the residual MatMult codegen difference plus cross-session drift
 
 ## What this means for the rest of the project
 
-- **`OPENBLAS_NUM_THREADS=1` is worth setting for any serial or low-rank PICLas run on Windows
+- **`OMP_NUM_THREADS=1` is worth setting for any serial or low-rank PICLas run on Windows
   that uses PETSc.** It is free, and at high rank counts it is a no-op.
 - The **magnetron** work runs at MPI=4–6, so it is already past the threshold — do not expect this
   to move those numbers (same conclusion as the earlier `-O3` finding, for the same reason).

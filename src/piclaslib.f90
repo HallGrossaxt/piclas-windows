@@ -33,6 +33,7 @@ USE MOD_Globals_Vars           ,ONLY: InitializationWallTime,MajorVersion,MinorV
 USE MOD_Commandline_Arguments
 USE MOD_Globals                ,ONLY: iError,Logging,MPIroot,StartTime,UNIT_stdOut,PiclasTime,doPrintHelp,abort
 USE MOD_Globals                ,ONLY: SetStackSizeUnlimited,CollectiveStop,ReOpenLogFile
+USE MOD_Globals                ,ONLY: piclas_set_blas_threads_serial
 USE MOD_Globals_Init           ,ONLY: InitGlobals
 USE MOD_Globals_Vars           ,ONLY: ParameterFile,ParameterDSMCFile,InitializationWallTime
 USE MOD_ReadInTools            ,ONLY: prms,PrintDefaultparameterFile,ExtractparameterFile
@@ -60,9 +61,16 @@ IMPLICIT NONE
 ! LOCAL VARIABLES
 REAL                        :: SystemTime
 LOGICAL                     :: userblockFound
+INTEGER                     :: BlasSetToSerial
 CHARACTER(LEN=20),PARAMETER :: BuildType=BT_REPLACE
 !===================================================================================================================================
 CALL SetStackSizeUnlimited()
+
+! One BLAS thread per MPI rank. MSYS2's OpenBLAS is multithreaded (OpenMP backend) and pays a
+! ~50 us thread-team wakeup per call, which dominates PETSc's ~110k small BLASaxpy calls and
+! PICLas' 4x4 HDG DGEMVs. Must happen before any BLAS call. No-op off Windows, or if the user
+! set OMP_NUM_THREADS / OPENBLAS_NUM_THREADS.
+BlasSetToSerial = piclas_set_blas_threads_serial()
 
 CALL InitMPI()
 
@@ -88,6 +96,10 @@ SWRITE(UNIT_stdOut,'(A)')"piclas version "&
     //TRIM(int2strf(MajorVersion))//"."//TRIM(int2strf(MinorVersion))//"."//TRIM(int2strf(PatchVersion))&
     //" with commit "//TRIM(GIT_CURRENT_COMMIT)//" and build type "//TRIM(BuildType)
 SWRITE(UNIT_stdOut,'(A)')"piclas-win 2.0 -- unofficial Windows port, based on PICLas 4.2.0 (https://github.com/piclas-framework/piclas)"
+! Block form: SWRITE expands to `IF(MPIRoot) WRITE(...)`, so it cannot follow a one-line IF.
+IF(BlasSetToSerial.EQ.1)THEN
+  SWRITE(UNIT_stdOut,'(A)')"BLAS pinned to 1 thread per rank (override with OMP_NUM_THREADS)"
+END IF
 SWRITE(UNIT_stdOut,'(132("="))')
 FLUSH(UNIT_stdOut)
 

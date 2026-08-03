@@ -6,7 +6,7 @@
 # that. This script runs every point N times and reports all reps plus the median, and it bakes
 # in the two fixes found on 2026-07-30:
 #
-#   * OPENBLAS_NUM_THREADS=1 -- MSYS2's OpenBLAS is multithreaded and PETSc calls BLASaxpy ~110k
+#   * OMP_NUM_THREADS=1 -- MSYS2's OpenBLAS is multithreaded and PETSc calls BLASaxpy ~110k
 #     times per PIC run on vectors just above its parallelisation threshold. Worth 1.35x at
 #     1 rank; a no-op from 2 ranks up. See blas_threads_win.sh.
 #   * the -o3petsc PIC binary -- PETSc built -O3 -march=native instead of the -g -O default
