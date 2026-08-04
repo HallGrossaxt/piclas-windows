@@ -1,0 +1,3 @@
+# Re-include the measured results against the repo-root `*.csv` rule. Without this they vanish
+# silently — always `git check-ignore -v` a data file before assuming it is tracked.
+!results_*.csv
