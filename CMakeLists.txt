@@ -122,6 +122,13 @@ INCLUDE(GNUInstallDirs)
 SET(commit_header "${CMAKE_CURRENT_SOURCE_DIR}/src/commit.h")
 
 # Write an inline CMake update script to a temporary file.
+#
+# NOTE ON THE CI FALLBACKS BELOW. `git` is NOT installed in the release workflow's MSYS2
+# environment (setup-msys2 installs only gcc/cmake/ninja/hdf5/openblas/msmpi), so both git
+# calls fail there and ERROR_QUIET swallows the failure. Up to and including v2.3 that shipped
+# binaries printing "piclas version 4.2.0 with commit  and build type release" — an empty hash,
+# leaving no way to tie a released binary back to a source revision. GitHub Actions always
+# exports GITHUB_SHA / GITHUB_REF_NAME, so use those rather than adding a git dependency.
 FILE(WRITE "${CMAKE_CURRENT_BINARY_DIR}/update_commit.cmake"
 "EXECUTE_PROCESS(
   COMMAND git rev-parse HEAD
@@ -131,9 +138,28 @@ FILE(WRITE "${CMAKE_CURRENT_BINARY_DIR}/update_commit.cmake"
   ERROR_QUIET
 )
 IF(NOT GIT_COMMIT)
+  SET(GIT_COMMIT \"\$ENV{GITHUB_SHA}\")
+ENDIF()
+IF(NOT GIT_COMMIT)
   SET(GIT_COMMIT \"\")
 ENDIF()
-FILE(WRITE \"\${commit_header}\" \"! Define the current commit hash. The default must remain empty, i.e., ''.\n#define GIT_CURRENT_COMMIT \\\"\${GIT_COMMIT}\\\"\n\")
+# Port version: the piclas-win tag, distinct from the upstream PICLas version. Exactly the tag
+# on a release build (e.g. v2.3), tag-commits-ghash on a dev build, so the banner cannot go
+# stale the way the previously hard-coded \"piclas-win 2.0\" string did.
+EXECUTE_PROCESS(
+  COMMAND git describe --tags --always --dirty
+  WORKING_DIRECTORY \"${CMAKE_CURRENT_SOURCE_DIR}\"
+  OUTPUT_VARIABLE PICLAS_WIN_VERSION
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+  ERROR_QUIET
+)
+IF(NOT PICLAS_WIN_VERSION)
+  SET(PICLAS_WIN_VERSION \"\$ENV{GITHUB_REF_NAME}\")
+ENDIF()
+IF(NOT PICLAS_WIN_VERSION)
+  SET(PICLAS_WIN_VERSION \"unversioned\")
+ENDIF()
+FILE(WRITE \"\${commit_header}\" \"! Define the current commit hash. The default must remain empty, i.e., ''.\n#define GIT_CURRENT_COMMIT \\\"\${GIT_COMMIT}\\\"\n! piclas-win port version (git tag). Generated -- do not edit.\n#define PICLAS_WIN_VERSION \\\"\${PICLAS_WIN_VERSION}\\\"\n\")
 ")
 
 # Create a custom target that always updates the commit header.

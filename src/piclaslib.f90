@@ -95,7 +95,8 @@ SWRITE(UNIT_stdOut,'(132(" "))')
 SWRITE(UNIT_stdOut,'(A)')"piclas version "&
     //TRIM(int2strf(MajorVersion))//"."//TRIM(int2strf(MinorVersion))//"."//TRIM(int2strf(PatchVersion))&
     //" with commit "//TRIM(GIT_CURRENT_COMMIT)//" and build type "//TRIM(BuildType)
-SWRITE(UNIT_stdOut,'(A)')"piclas-win 2.0 -- unofficial Windows port, based on PICLas 4.2.0 (https://github.com/piclas-framework/piclas)"
+SWRITE(UNIT_stdOut,'(A)')"piclas-win "//TRIM(PICLAS_WIN_VERSION)//&
+    " -- unofficial Windows port, based on PICLas 4.2.0 (https://github.com/piclas-framework/piclas)"
 ! Block form: SWRITE expands to `IF(MPIRoot) WRITE(...)`, so it cannot follow a one-line IF.
 IF(BlasSetToSerial.EQ.1)THEN
   SWRITE(UNIT_stdOut,'(A)')"BLAS pinned to 1 thread per rank (override with OMP_NUM_THREADS)"
