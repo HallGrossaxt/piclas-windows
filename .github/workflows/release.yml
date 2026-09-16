@@ -234,10 +234,12 @@ jobs:
 
             **Which build should I download?**
             - **DSMC / rarefied gas → `-nogpu`.** **Electrostatic plasma / particle-in-cell → `-picmc`** (the new PIC + Poisson + Monte-Carlo-Collision build with parallel PETSc, so the HDG field solve and floating conductors run at MPI>1).
-            - **The GPU (`piclas-win-*`) build is rarely worth it.** It accelerates only the particle **push**; DSMC runtime is dominated by **CPU-side** collision/pairing, tracking and sampling, so the GPU gives **no meaningful speedup for DSMC**. It needs an NVIDIA driver and adds overhead with no payback for the DSMC binary shipped here.
+            - **`PrecondType` in the `-picmc` build:** `2` (block-Jacobi) is the better choice at **1 rank**, where `4` (GAMG) is ~0.8× because the multigrid setup does not pay for itself. From **2 ranks up GAMG wins and keeps widening** — measured 1.12× / 1.14× / 1.21× at 2 / 4 / 6 ranks on the benchmark case.
+            - **The GPU (`piclas-win-*`) build is measurably *slower* — don't use it for DSMC.** Benchmarked against the identical CPU build (one CMake option apart, interleaved runs, RTX 3060): **0.93× / 0.88× / 0.96× / 0.88×** at 1 / 2 / 4 / 6 ranks, with GPU utilisation of only **0–6%**. It accelerates the particle **push** only, while collision/pairing, **tracking**, sampling and the field solve all stay on the CPU — so every step pays a host↔device copy to run one cheap kernel, and DSMC is tracking-dominated. It also needs an NVIDIA driver. Kept for people specifically experimenting with the GPU push.
 
             **Runtime notes**
             - **No install needed for single-process runs:** `msmpi.dll` is bundled, so the tools run on a machine with no Microsoft MPI installed. Parallel runs (`mpiexec -n N`) still need the full MS-MPI runtime (`msmpisetup.exe`).
+            - **BLAS is pinned to one thread per rank at startup** (printed in the header). MSYS2's OpenBLAS is built multithreaded and paid a fixed ~50 µs thread-team wakeup on every call, which dominated PETSc's ~110k small `BLASaxpy` calls per run — worth **1.35× on a 1-rank HDG/PETSc solve**, tapering to nothing by 4 ranks as domain decomposition shrinks the vectors. Override with `OMP_NUM_THREADS` if you have a reason to (note `OPENBLAS_NUM_THREADS` has no effect on this build — its OpenBLAS uses the OpenMP backend).
 
             **Example:** unzip, then `cd example && ..\piclas-win\piclas-win.exe parameter.ini DSMC.ini`
             (see its `README.md`); convert output with `..\piclas2vtk\piclas2vtk.exe <State>.h5`. ~30 min single-process.

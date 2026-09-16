@@ -22,6 +22,12 @@
 #     against PICLas's mpi_f08 shim.
 #   * PETSc mis-derives the import name and writes "-lmsmpi.dll" into petsc.pc;
 #     patch it back to "-lmsmpi" after install.
+#   * --with-debugging=0 ALONE DOES NOT GIVE AN OPTIMISED BUILD. Without an explicit
+#     COPTFLAGS/FOPTFLAGS, PETSc silently falls back to "-g -O", i.e. -O1 with debug info
+#     and generic arch. Every release before this script grew PETSC_OPTFLAGS shipped an
+#     -O1 PETSc inside the PIC-MC bundle. Verify after building with:
+#         grep '^CC_FLAGS' $PREFIX/lib/petsc/conf/petscvariables
+#     Dropping -g also shrinks libpetsc.a substantially (130 MB at -g -O vs 45 MB at -O3).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -29,6 +35,13 @@ PETSC_VERSION="${PETSC_VERSION:-3.24.5}"
 PREFIX="${PETSC_PREFIX:?set PETSC_PREFIX (MSYS path to install dir)}"
 SRC="${PETSC_SRC:-$PWD/petsc-src}"
 MINGW="${MINGW_PREFIX:?MINGW_PREFIX not set (run in the MSYS2 UCRT64 shell)}"
+
+# Optimisation flags for PETSc's own C/Fortran. MUST STAY PORTABLE: these binaries are
+# redistributed, so -march=native would produce a bundle that crashes with an illegal
+# instruction on any machine older than the CI runner. x86-64-v2 matches the floor the
+# CMake presets already target (PICLAS_INSTRUCTION in CMakePresets.json) -- keep the two
+# in step if that floor is ever raised.
+PETSC_OPTFLAGS="${PETSC_OPTFLAGS:--O3 -march=x86-64-v2 -mtune=generic}"
 
 echo "=== PETSc $PETSC_VERSION  ->  $PREFIX  (MINGW=$MINGW) ==="
 
@@ -65,7 +78,10 @@ cd "$SRC"
   --with-openmp=0 \
   --with-precision=double \
   --with-scalar-type=real \
-  --with-debugging=0
+  --with-debugging=0 \
+  COPTFLAGS="$PETSC_OPTFLAGS" \
+  FOPTFLAGS="$PETSC_OPTFLAGS" \
+  CXXOPTFLAGS="$PETSC_OPTFLAGS"
 
 # --- build + install ------------------------------------------------------
 make PETSC_DIR="$SRC" PETSC_ARCH=mswin-msmpi all
@@ -79,4 +95,22 @@ if [ -f "$pc" ]; then
 fi
 
 test -f "$PREFIX/lib/libpetsc.a" || { echo "ERROR: libpetsc.a not installed"; exit 1; }
+
+# --- guard: prove the optimisation flags actually reached the compiler -----
+# PETSc silently downgrades to "-g -O" when COPTFLAGS is missing, and the only symptom is
+# a slower release. Fail the build rather than ship that again.
+vars="$PREFIX/lib/petsc/conf/petscvariables"
+ccflags="$(grep '^CC_FLAGS' "$vars" 2>/dev/null || true)"
+echo "=== $ccflags ==="
+case "$ccflags" in
+  *-O3*) ;;
+  *) echo "ERROR: PETSc was not built optimised -- CC_FLAGS lacks -O3."
+     echo "       Expected COPTFLAGS='$PETSC_OPTFLAGS' to reach the compiler."
+     exit 1 ;;
+esac
+# Redistributed binaries must not be tuned to the build host.
+case "$ccflags" in
+  *-march=native*) echo "ERROR: -march=native in a redistributable PETSc build."; exit 1 ;;
+esac
+
 echo "=== PETSc installed: $(ls -la "$PREFIX/lib/libpetsc.a") ==="
