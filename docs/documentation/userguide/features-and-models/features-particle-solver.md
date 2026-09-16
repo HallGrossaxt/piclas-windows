@@ -302,6 +302,8 @@ An automatic determination of the optimal particle weights in each cell can be p
 
     Part-Weight-Type = cell_local
 
+The reference weight of each cell is taken from the `WeightingFactorCell` variable of the given `DSMCState`, which is written whenever the preceding simulation used a radial, linear or cell-local weighting. When starting from a simulation with a constant weight, that variable is not part of the `DSMCState` and `Part-Species1-MacroParticleFactor` of the current run is used as the reference weight instead. A warning is issued in that case, since that value is taken from the current parameter file rather than from the reference simulation.
+
 The adaption is based on multiple criteria. If a quality factor {ref}`sec:DSMC-quality` is not resolved in a cell, the weighting factor is lowered. For a 3D case, the following equation is used to set the bound of the weight.
 
 $$w < \frac{1}{\left(\sqrt{2}\pi d_{\mathrm{ref}}^2 n^{2/3}\right)^3}$$

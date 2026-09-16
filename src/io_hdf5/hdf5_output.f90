@@ -902,16 +902,22 @@ IF(.NOT.DoNotSplit)THEN
   ! even when it has no local particles — avoiding File_ID=0 on the sole writer proc.
   CALL MPI_COMM_SIZE(communicator, dseqNProcs, iError)
   CALL MPI_COMM_RANK(communicator, dseqMyCommRank, iError)
-  dseqNPerFront  = MERGE(PRODUCT(nVal(1:rank-1)), 1_IK, rank.GT.1)
+  ! The gather displacement has to be derived from the distributed dimension offSetDim, which is not necessarily the last one:
+  ! 'ElemTimeStep'/'ElemLocalWeight' are distributed over dimension 1 of a (nGlobalElems,1) array. Using rank instead would yield
+  ! offset(rank)=0 for those, i.e. every rank gathering to displacement zero. The leading extents have to be the global ones, which
+  ! equal the local ones for every contiguous block (nVal(i)=nValGlobal(i) for i<offSetDim).
+  dseqNPerFront  = MERGE(PRODUCT(nValGlobal(1:offSetDim-1)), 1_IK, offSetDim.GT.1)
   dseqLocalCount = INT(PRODUCT(nVal))        ! = 0 for non-data procs
-  dseqLocalDisp  = INT(offset(rank) * dseqNPerFront)
+  dseqLocalDisp  = INT(offset(offSetDim) * dseqNPerFront)
   ALLOCATE(dseqAllCounts(dseqNProcs), dseqAllDisps(dseqNProcs))
   CALL MPI_ALLGATHER(dseqLocalCount, 1, MPI_INTEGER, dseqAllCounts, 1, MPI_INTEGER, communicator, iError)
   CALL MPI_ALLGATHER(dseqLocalDisp,  1, MPI_INTEGER, dseqAllDisps,  1, MPI_INTEGER, communicator, iError)
   IF(dseqMyCommRank.EQ.0)THEN
-    IF(PRESENT(RealArray))       ALLOCATE(dseqGatheredReal(PRODUCT(nValGlobal)))
-    IF(PRESENT(IntegerArray))    ALLOCATE(dseqGatheredInt( PRODUCT(nValGlobal)))
-    IF(PRESENT(IntegerArray_i4)) ALLOCATE(dseqGatheredInt4(PRODUCT(nValGlobal)))
+    ! Initialize: should the local blocks not tile the global array completely, the gaps are written as zero instead of as
+    ! whatever the allocation happened to contain
+    IF(PRESENT(RealArray))       THEN; ALLOCATE(dseqGatheredReal(PRODUCT(nValGlobal))); dseqGatheredReal = 0.  ; END IF
+    IF(PRESENT(IntegerArray))    THEN; ALLOCATE(dseqGatheredInt( PRODUCT(nValGlobal))); dseqGatheredInt  = 0_IK; END IF
+    IF(PRESENT(IntegerArray_i4)) THEN; ALLOCATE(dseqGatheredInt4(PRODUCT(nValGlobal))); dseqGatheredInt4 = 0   ; END IF
   ELSE
     IF(PRESENT(RealArray))       ALLOCATE(dseqGatheredReal(1))
     IF(PRESENT(IntegerArray))    ALLOCATE(dseqGatheredInt(1))
@@ -1001,16 +1007,22 @@ ELSE
 ! Sequential HDF5: gather all data to comm rank 0, then root writes
   CALL MPI_COMM_SIZE(communicator, dseqNProcs,     iError)
   CALL MPI_COMM_RANK(communicator, dseqMyCommRank, iError)
-  dseqNPerFront  = MERGE(PRODUCT(nVal(1:rank-1)), 1_IK, rank.GT.1)
+  ! The gather displacement has to be derived from the distributed dimension offSetDim, which is not necessarily the last one:
+  ! 'ElemTimeStep'/'ElemLocalWeight' are distributed over dimension 1 of a (nGlobalElems,1) array. Using rank instead would yield
+  ! offset(rank)=0 for those, i.e. every rank gathering to displacement zero. The leading extents have to be the global ones, which
+  ! equal the local ones for every contiguous block (nVal(i)=nValGlobal(i) for i<offSetDim).
+  dseqNPerFront  = MERGE(PRODUCT(nValGlobal(1:offSetDim-1)), 1_IK, offSetDim.GT.1)
   dseqLocalCount = INT(PRODUCT(nVal))
-  dseqLocalDisp  = INT(offset(rank) * dseqNPerFront)
+  dseqLocalDisp  = INT(offset(offSetDim) * dseqNPerFront)
   ALLOCATE(dseqAllCounts(dseqNProcs), dseqAllDisps(dseqNProcs))
   CALL MPI_ALLGATHER(dseqLocalCount, 1, MPI_INTEGER, dseqAllCounts, 1, MPI_INTEGER, communicator, iError)
   CALL MPI_ALLGATHER(dseqLocalDisp,  1, MPI_INTEGER, dseqAllDisps,  1, MPI_INTEGER, communicator, iError)
   IF(dseqMyCommRank.EQ.0)THEN
-    IF(PRESENT(RealArray))       ALLOCATE(dseqGatheredReal(PRODUCT(nValGlobal)))
-    IF(PRESENT(IntegerArray))    ALLOCATE(dseqGatheredInt( PRODUCT(nValGlobal)))
-    IF(PRESENT(IntegerArray_i4)) ALLOCATE(dseqGatheredInt4(PRODUCT(nValGlobal)))
+    ! Initialize: should the local blocks not tile the global array completely, the gaps are written as zero instead of as
+    ! whatever the allocation happened to contain
+    IF(PRESENT(RealArray))       THEN; ALLOCATE(dseqGatheredReal(PRODUCT(nValGlobal))); dseqGatheredReal = 0.  ; END IF
+    IF(PRESENT(IntegerArray))    THEN; ALLOCATE(dseqGatheredInt( PRODUCT(nValGlobal))); dseqGatheredInt  = 0_IK; END IF
+    IF(PRESENT(IntegerArray_i4)) THEN; ALLOCATE(dseqGatheredInt4(PRODUCT(nValGlobal))); dseqGatheredInt4 = 0   ; END IF
   ELSE
     IF(PRESENT(RealArray))       ALLOCATE(dseqGatheredReal(1))
     IF(PRESENT(IntegerArray))    ALLOCATE(dseqGatheredInt(1))

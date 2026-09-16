@@ -75,17 +75,18 @@ ELSE
   NewMPF = CalcVarWeightMPF(PartState(:,iPart),(iElem-offSetElem),iPart)
 END IF
 OldMPF = PartMPF(iPart)
+! Sanity check: a single clone can at most double the represented weight, thus the weight ratio a particle experiences within one
+! time step must stay below two. The check has to be independent of the random draw below: otherwise a ratio of two or above is only
+! caught in the fraction of cases in which cloning is drawn, while the remaining cases silently discard the excess weight.
+IF(OldMPF.GE.2.*NewMPF) THEN
+  IPWRITE(*,*) 'New weighting factor:', NewMPF, 'Old weighting factor:', OldMPF
+  CALL Abort(__STAMP__,&
+    'ERROR in particle weighting: More than one clone per particle is not allowed! Reduce the time step or'//&
+      ' the radial/linear weighting factor! Ratio of the old to the new weighting factor is:',RealInfoOpt=OldMPF/NewMPF)
+END IF
 CloneProb = (OldMPF/NewMPF)-INT(OldMPF/NewMPF)
 CALL RANDOM_NUMBER(iRan)
-IF((CloneProb.GT.iRan).AND.(NewMPF.LT.OldMPF)) THEN
-  DoCloning = .TRUE.
-  IF(INT(OldMPF/NewMPF).GT.1) THEN
-    IPWRITE(*,*) 'New weighting factor:', NewMPF, 'Old weighting factor:', OldMPF
-    CALL Abort(__STAMP__,&
-      'ERROR in particle weighting: More than one clone per particle is not allowed! Reduce the time step or'//&
-        ' the radial/linear weighting factor! Cloning probability is:',RealInfoOpt=CloneProb)
-  END IF
-END IF
+IF((CloneProb.GT.iRan).AND.(NewMPF.LT.OldMPF)) DoCloning = .TRUE.
 PartMPF(iPart) = NewMPF
 
 IF(DoCloning) THEN

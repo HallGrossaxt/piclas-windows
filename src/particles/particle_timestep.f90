@@ -208,7 +208,10 @@ SWRITE(UNIT_stdOut,'(A)') ' INIT VARIABLE TIME STEP DISTRIBUTION...'
 
 TimeStepExists = .FALSE.
 QualityExists = .FALSE.
-nVar_TimeStep = 0
+nVar_TimeStep = 0; nVar_MaxCollProb = 0; nVar_MCSoverMFP = 0; nVar_TotalPartNum = 0
+#if (PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400)
+nVar_MaxRelaxFac = 0
+#endif /*PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400*/
 
 IF(DoRestart) THEN
 ! Try to get the time step factor distribution directly from state file
@@ -295,6 +298,19 @@ IF(VarTimeStep%AdaptDistribution) THEN
     END IF
 #endif /*PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400*/
   END DO
+
+  ! The quality factors are accessed unconditionally below, an unavailable variable would be read at index zero of the ElemData array
+  IF(nVar_MaxCollProb.EQ.0) CALL abort(__STAMP__,&
+    'ERROR: Adapting the time step distribution requires "DSMC_MaxCollProb" in the DSMCState: '//TRIM(MacroRestartFileName))
+  IF(nVar_MCSoverMFP.EQ.0) CALL abort(__STAMP__,&
+    'ERROR: Adapting the time step distribution requires "DSMC_MCS_over_MFP" in the DSMCState: '//TRIM(MacroRestartFileName))
+  IF(nVar_TotalPartNum.EQ.0) CALL abort(__STAMP__,&
+    'ERROR: Adapting the time step distribution requires "Total_SimPartNum" in the DSMCState: '//TRIM(MacroRestartFileName))
+#if (PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400)
+  IF(nVar_MaxRelaxFac.EQ.0) CALL abort(__STAMP__,&
+    'ERROR: Adapting the time step distribution requires "BGK_MaxRelaxationFactor" or "FP_MaxRelaxationFactor" in the DSMCState: '//&
+    TRIM(MacroRestartFileName))
+#endif /*PP_TimeDiscMethod==300 || PP_TimeDiscMethod==400*/
 
   ALLOCATE(ElemData_HDF5(1:nVar_HDF5,1:nGlobalElems))
   ! Associate construct for integer KIND=8 possibility
@@ -500,6 +516,9 @@ IF(Species(iSpec)%TimeStepFactor.LT.1.) THEN
   SpecID = iSpec
 ELSE IF(Species(jSpec)%TimeStepFactor.LT.1.) THEN
   SpecID = jSpec
+ELSE
+  ! Neither species uses a reduced time step, the default of 1. applies
+  RETURN
 END IF
 GetSpeciesTimeStep = Species(SpecID)%TimeStepFactor
 

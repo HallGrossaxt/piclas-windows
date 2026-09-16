@@ -41,7 +41,6 @@ USE MOD_io_hdf5
 USE MOD_MPI_Shared
 USE MOD_MPI_Shared_Vars
 USE MOD_DSMC_Vars               ,ONLY: AdaptMPFInfo_Shared
-USE MOD_Symmetry_Vars           ,ONLY: Symmetry
 USE MOD_Mesh_Tools              ,ONLY: GetGlobalElemID
 USE MOD_Mesh_Vars               ,ONLY: nGlobalElems
 USE MOD_Particle_Mesh_Vars      ,ONLY: nComputeNodeElems
@@ -63,19 +62,27 @@ IMPLICIT NONE
 INTEGER                             :: nVar_HDF5, N_HDF5, iVar
 INTEGER                             :: nVar_TotalPartNum, nVar_TotalDens, nVar_DSMC, nVar_BGK, nVar_FP, nVar_AdaptMPF
 INTEGER                             :: offSetLocal, nVar_Ratio_FP, nVar_Ratio_BGK
-INTEGER                             :: iElem, ReadInElems, iCNElem, firstElem, lastElem
+INTEGER                             :: iElem, ReadInElems, iCNElem, firstElem, lastElem, nElems_HDF5
 REAL, ALLOCATABLE                   :: ElemData_HDF5(:,:)
 CHARACTER(LEN=255),ALLOCATABLE      :: VarNames_tmp(:)
 !===================================================================================================================================
-nVar_TotalPartNum = 0; nVar_TotalDens = 0; nVar_Ratio_FP = 0; nVar_Ratio_BGK = 0; nVar_DSMC = 0; nVar_BGK = 0; nVar_AdaptMPF = 0
+nVar_TotalPartNum = 0; nVar_TotalDens = 0; nVar_Ratio_FP = 0; nVar_Ratio_BGK = 0; nVar_DSMC = 0; nVar_BGK = 0; nVar_FP = 0
+nVar_AdaptMPF = 0
 
 ! Open DSMC state file
 CALL OpenDataFile(MacroRestartFileName,create=.FALSE.,single=.FALSE.,readOnly=.TRUE.,communicatorOpt=MPI_COMM_PICLAS)
-CALL GetDataProps('ElemData',nVar_HDF5,N_HDF5,nGlobalElems)
+! Read into a local variable: the element count is an INTENT(OUT) argument, passing nGlobalElems itself would silently overwrite
+! the mesh element count with the one of the DSMCState
+CALL GetDataProps('ElemData',nVar_HDF5,N_HDF5,nElems_HDF5)
 
 IF(nVar_HDF5.LE.0) THEN
   SWRITE(*,*) 'ERROR: Something is wrong with the MacroscopicRestart file:', TRIM(MacroRestartFileName)
   CALL abort(__STAMP__, 'ERROR: Number of variables in the ElemData array appears to be zero!')
+END IF
+
+IF(nElems_HDF5.NE.nGlobalElems) THEN
+  SWRITE(*,*) 'Number of elements in ',TRIM(MacroRestartFileName),':',nElems_HDF5,' but the mesh has ',nGlobalElems
+  CALL abort(__STAMP__, 'ERROR: The DSMCState given by Particles-MacroscopicRestart-Filename was created on a different mesh!')
 END IF
 
 ! Get the variable names from the DSMC state and find the position of required quality factors
@@ -93,9 +100,19 @@ DO iVar=1,nVar_HDF5
   IF (STRICMP(VarNames_tmp(iVar),"WeightingFactorCell")) nVar_AdaptMPF = iVar
 END DO
 
-IF(Symmetry%Axisymmetric) THEN
-  IF(nVar_AdaptMPF.EQ.0) CALL abort(__STAMP__, 'ERROR: Restart of an axisymmetric simulation with the weighting type cell_local'//&
-    'from a DSMCState without WeightingFactorCell is not supported!')
+! The particle number and the number density of the reference simulation are required in every case, an unavailable variable would
+! otherwise be accessed at index zero of the ElemData array
+IF(nVar_TotalPartNum.EQ.0) CALL abort(__STAMP__, 'ERROR: The weighting type cell_local requires "Total_SimPartNum" in the '//&
+  'DSMCState given by Particles-MacroscopicRestart-Filename: '//TRIM(MacroRestartFileName))
+IF(nVar_TotalDens.EQ.0) CALL abort(__STAMP__, 'ERROR: The weighting type cell_local requires "Total_NumberDensity" in the '//&
+  'DSMCState given by Particles-MacroscopicRestart-Filename: '//TRIM(MacroRestartFileName))
+
+! WeightingFactorCell is written whenever the reference simulation used a variable weighting (ParticleWeighting%EnableOutput).
+! Its absence therefore implies a constant weight, in which case Part-Species1-MacroParticleFactor is the reference weight (see
+! PerformCellLocalWeighting below). Warn nevertheless, since that value is taken from the current run and not from the reference.
+IF(nVar_AdaptMPF.EQ.0) THEN
+  SWRITE(UNIT_stdOut,'(A)') ' | WARNING: Cell-local weighting: the DSMCState "'//TRIM(MacroRestartFileName)//'" does not contain'//&
+    ' WeightingFactorCell. Assuming the reference simulation used a constant weight of Part-Species1-MacroParticleFactor.'
 END IF
 
 #if USE_MPI
@@ -138,14 +155,10 @@ DO iCNElem=firstElem, lastElem
   ELSE
     AdaptMPFInfo_Shared(3,iCNElem) = 0.
   END IF
-  ! BGK-DSMC Ratio
+  ! Maximal relaxation factor of the continuum method of the reference simulation (either BGK or FP, never both)
   IF (nVar_BGK.NE.0) THEN
     AdaptMPFInfo_Shared(4,iCNElem) = ElemData_HDF5(nVar_BGK,iElem)
-  ELSE
-    AdaptMPFInfo_Shared(4,iCNElem) = 0.
-  END IF
-  ! FP-DSMC Ratio
-  IF (nVar_FP.NE.0) THEN
+  ELSE IF (nVar_FP.NE.0) THEN
     AdaptMPFInfo_Shared(4,iCNElem) = ElemData_HDF5(nVar_FP,iElem)
   ELSE
     AdaptMPFInfo_Shared(4,iCNElem) = 0.
